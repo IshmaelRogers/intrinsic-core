@@ -18,9 +18,12 @@ on:
     branches:
       - main
 
+# Cancel a stuck run so a new push is not held behind it. The
+# ubuntu-24.04-8core attempt stayed queued and, with cancel-in-progress
+# false, the ubuntu-24.04 run never created a job.
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: false
+  cancel-in-progress: true
 
 jobs:
   build-protected-manipulator-targets:
