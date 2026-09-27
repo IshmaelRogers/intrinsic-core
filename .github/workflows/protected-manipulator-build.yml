@@ -24,7 +24,10 @@ concurrency:
 
 jobs:
   build-protected-manipulator-targets:
-    runs-on: ubuntu-24.04-8core
+    # Standard runner so the job can start on this fork. ubuntu-24.04-8core
+    # has no assigned runners here. A partial fetch of this manifest used
+    # about 27 GB, so this runner can run out of disk before the build ends.
+    runs-on: ubuntu-24.04
     permissions:
       contents: read
     steps:

@@ -69,11 +69,17 @@ build` plus a target-pattern file and a build-event log. It does not pass
 `.github/workflows/postsubmit.yml` and `.github/workflows/release.yml` are
 unchanged.
 
-The job uses the same runner and Bazel setup as the post-submit build
-(`ubuntu-24.04-8core`, `bazel-contrib/setup-bazel@0.14.0`, shared
-`intrinsic-core-build` cache). That runner is a GitHub larger runner. A
-repository whose Actions runners do not provide `ubuntu-24.04-8core` will
-queue this job instead of building.
+The job runs on `ubuntu-24.04`, the same runner label as
+[manipulator schema compatibility](../workflows/manipulator-schema-compat.yml).
+Bazel setup matches post-submit (`bazel-contrib/setup-bazel@0.14.0`, shared
+`intrinsic-core-build` cache). Post-submit still uses `ubuntu-24.04-8core`.
+This fork has no runners for that label, so the protected build uses the
+standard runner in order to start.
+
+A partial fetch of this manifest used about 27 GB of disk before analysis
+stopped. `ubuntu-24.04` has less disk than an 8-core larger runner, so the
+job can run out of space before the build finishes. The target list is
+unchanged.
 
 From the repository root, the local equivalent of the CI step is:
 
