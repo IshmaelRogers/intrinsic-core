@@ -1,0 +1,225 @@
+{
+  "inventory_version": 1,
+  "out_of_scope_imports": [
+    "google/protobuf/empty.proto"
+  ],
+  "schemas": [
+    {
+      "enums": [
+        {
+          "allow_alias": false,
+          "name": "Fault",
+          "qualified_name": "Fault",
+          "reserved_names": [],
+          "reserved_ranges": [],
+          "underlying_type": "uint8",
+          "values": [
+            {
+              "deprecated": false,
+              "name": "NONE",
+              "number": 0
+            },
+            {
+              "deprecated": false,
+              "name": "TRIP",
+              "number": 1
+            }
+          ]
+        }
+      ],
+      "extends": [],
+      "file_extension": "",
+      "file_identifier": "",
+      "imports": [],
+      "includes": [
+        "other.fbs"
+      ],
+      "kind": "flatbuffer",
+      "messages": [
+        {
+          "deprecated": false,
+          "extension_ranges": [],
+          "fields": [
+            {
+              "default": "",
+              "deprecated": false,
+              "extra_attributes": [],
+              "id_kind": "vtable",
+              "json_name": "",
+              "label": "",
+              "name": "min_position",
+              "number": 0,
+              "oneof": "",
+              "packed": null,
+              "required": false,
+              "type": "double"
+            }
+          ],
+          "layout": "table",
+          "name": "JointLimits",
+          "qualified_name": "JointLimits",
+          "reserved_names": [],
+          "reserved_ranges": []
+        },
+        {
+          "deprecated": false,
+          "extension_ranges": [],
+          "fields": [
+            {
+              "default": "",
+              "deprecated": false,
+              "extra_attributes": [],
+              "id_kind": "positional",
+              "json_name": "",
+              "label": "",
+              "name": "x",
+              "number": 0,
+              "oneof": "",
+              "packed": null,
+              "required": false,
+              "type": "double"
+            },
+            {
+              "default": "",
+              "deprecated": false,
+              "extra_attributes": [],
+              "id_kind": "positional",
+              "json_name": "",
+              "label": "",
+              "name": "y",
+              "number": 1,
+              "oneof": "",
+              "packed": null,
+              "required": false,
+              "type": "double"
+            },
+            {
+              "default": "",
+              "deprecated": false,
+              "extra_attributes": [],
+              "id_kind": "positional",
+              "json_name": "",
+              "label": "",
+              "name": "z",
+              "number": 2,
+              "oneof": "",
+              "packed": null,
+              "required": false,
+              "type": "double"
+            }
+          ],
+          "layout": "struct",
+          "name": "Vec3",
+          "qualified_name": "Vec3",
+          "reserved_names": [],
+          "reserved_ranges": []
+        }
+      ],
+      "namespace": "demo",
+      "package": "",
+      "path": "demo/joint_limits.fbs",
+      "root_type": "JointLimits",
+      "services": [],
+      "syntax": "fbs",
+      "unions": []
+    },
+    {
+      "enums": [
+        {
+          "allow_alias": false,
+          "name": "Mode",
+          "qualified_name": "Mode",
+          "reserved_names": [
+            "LEGACY"
+          ],
+          "reserved_ranges": [
+            {
+              "end": 5,
+              "start": 5
+            }
+          ],
+          "underlying_type": "",
+          "values": [
+            {
+              "deprecated": false,
+              "name": "OFF",
+              "number": 0
+            },
+            {
+              "deprecated": false,
+              "name": "ON",
+              "number": 1
+            }
+          ]
+        }
+      ],
+      "extends": [],
+      "file_extension": "",
+      "file_identifier": "",
+      "imports": [
+        "google/protobuf/empty.proto"
+      ],
+      "includes": [],
+      "kind": "protobuf",
+      "messages": [
+        {
+          "deprecated": false,
+          "extension_ranges": [],
+          "fields": [
+            {
+              "default": "",
+              "deprecated": false,
+              "extra_attributes": [],
+              "id_kind": "tag",
+              "json_name": "",
+              "label": "singular",
+              "name": "x",
+              "number": 1,
+              "oneof": "",
+              "packed": null,
+              "required": false,
+              "type": "double"
+            }
+          ],
+          "layout": "message",
+          "name": "Pose",
+          "qualified_name": "Pose",
+          "reserved_names": [
+            "old_goal"
+          ],
+          "reserved_ranges": [
+            {
+              "end": 9,
+              "start": 8
+            }
+          ]
+        }
+      ],
+      "namespace": "",
+      "package": "demo.manipulator.v1",
+      "path": "demo/manipulator.proto",
+      "root_type": "",
+      "services": [
+        {
+          "methods": [
+            {
+              "client_streaming": false,
+              "name": "Move",
+              "request_type": "MoveRequest",
+              "response_type": "MoveResponse",
+              "server_streaming": false
+            }
+          ],
+          "name": "Manipulator"
+        }
+      ],
+      "syntax": "proto3",
+      "unions": []
+    }
+  ],
+  "selection_rule": "Fixture inventory for schema compatibility tests. Not the protected manipulator baseline.",
+  "selection_rule_id": "manipulator-public-wire-v1",
+  "summary": {
+    "schema_count": 2
+  }
+}

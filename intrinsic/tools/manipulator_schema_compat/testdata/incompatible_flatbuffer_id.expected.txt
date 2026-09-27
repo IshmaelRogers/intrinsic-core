@@ -1,0 +1,3 @@
+incompatible: demo/joint_limits.fbs message JointLimits field min_position flatbuffer id 0 -> 3
+incompatible: demo/joint_limits.fbs message Vec3 field x flatbuffer id 0 -> 1
+incompatible: demo/joint_limits.fbs message Vec3 field y flatbuffer id 1 -> 0

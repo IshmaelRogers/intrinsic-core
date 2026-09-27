@@ -1,0 +1,2 @@
+incompatible: demo/manipulator.proto enum Mode removed value ON number 1
+incompatible: demo/manipulator.proto enum Mode value number 1 reused by PAUSED (was ON)

@@ -1,0 +1,2 @@
+incompatible: demo/joint_limits.fbs enum Fault value TRIP number 1 -> 5
+incompatible: demo/manipulator.proto enum Mode value ON number 1 -> 4

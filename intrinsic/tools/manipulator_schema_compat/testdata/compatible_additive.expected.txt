@@ -1,0 +1,4 @@
+additive: demo/joint_limits.fbs enum Fault added value WARN number 2
+additive: demo/joint_limits.fbs message JointLimits added field max_velocity flatbuffer id 2
+additive: demo/manipulator.proto enum Mode added value HOLD number 2
+additive: demo/manipulator.proto message Pose added field z proto tag 3
