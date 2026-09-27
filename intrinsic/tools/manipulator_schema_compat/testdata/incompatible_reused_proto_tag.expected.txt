@@ -1,0 +1,2 @@
+incompatible: demo/manipulator.proto message Pose proto tag 2 reused by yaw (was y)
+incompatible: demo/manipulator.proto message Pose removed field y proto tag 2

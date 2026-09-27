@@ -1,0 +1,2 @@
+incompatible: demo/joint_limits.fbs message JointLimits removed field max_position flatbuffer id 1
+incompatible: demo/manipulator.proto message Pose removed field y proto tag 2

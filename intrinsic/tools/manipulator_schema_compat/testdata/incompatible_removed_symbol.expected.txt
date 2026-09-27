@@ -1,0 +1,3 @@
+incompatible: demo/manipulator.proto removed enum Mode
+incompatible: demo/manipulator.proto removed message Pose
+incompatible: demo/manipulator.proto service Manipulator removed rpc Move
