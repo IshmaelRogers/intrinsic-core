@@ -8,6 +8,13 @@
 #     --manifest .github/baseline/manipulator_targets.tsv
 #
 # On failure the log ends with: First failing target: <label>
+#
+# Manipulator meshes are Git LFS. Before Bazel, the job pulls
+# third_party/** and intrinsic_control/intrinsic/models/robot_definitions/**
+# and rejects these paths if they are still pointers:
+#   third_party/kuka/kr10_r1100_2/visual/base_link.dae
+#   third_party/kuka/kr16_r2010_2/visual/base.stl
+#   intrinsic_control/intrinsic/models/robot_definitions/abb/irb1300_10_115/visual/irb1300_visual_1.glb
 
 name: Protected manipulator build
 
@@ -34,10 +41,25 @@ jobs:
     permissions:
       contents: read
     steps:
+      - name: Install Git LFS
+        run: |
+          if ! command -v git-lfs >/dev/null 2>&1; then
+            sudo apt-get update
+            sudo apt-get install -y git-lfs
+          fi
+          git lfs version
+
       - name: Checkout
         uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
         with:
           lfs: true
+
+      - name: Materialize manipulator Git LFS meshes
+        run: |
+          unset GIT_LFS_SKIP_SMUDGE
+          git lfs install
+          git lfs pull --include="third_party/**,intrinsic_control/intrinsic/models/robot_definitions/**"
+          python3 tools/build_protected_manipulator_targets.py --check-lfs-meshes
 
       - name: Set up Bazel
         uses: bazel-contrib/setup-bazel@0.14.0
@@ -55,5 +77,6 @@ jobs:
         run: |
           # https://github.com/bazel-contrib/rules_kotlin/issues/1352
           unset -v ANDROID_HOME ANDROID_SDK_HOME
+          unset GIT_LFS_SKIP_SMUDGE
           python3 tools/build_protected_manipulator_targets.py \
             --manifest .github/baseline/manipulator_targets.tsv

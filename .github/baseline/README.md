@@ -81,12 +81,37 @@ stopped. `ubuntu-24.04` has less disk than an 8-core larger runner, so the
 job can run out of space before the build finishes. The target list is
 unchanged.
 
-From the repository root, the local equivalent of the CI step is:
+Manipulator meshes are Git LFS. The job installs `git-lfs`, checks out
+with `lfs: true`, unsets `GIT_LFS_SKIP_SMUDGE`, and runs:
 
 ```bash
+git lfs pull --include="third_party/**,intrinsic_control/intrinsic/models/robot_definitions/**"
+```
+
+`third_party/` is about 172 MB of LFS objects. ABB visual meshes such as
+`irb1300_visual_1.glb` live under `robot_definitions/`, not `third_party/`,
+so that tree is included too. The job then fails before Bazel if any of
+these sampled paths is still a pointer (the file starts with
+`version https://git-lfs.github.com/spec/v1`) or is under 1024 bytes:
+
+- `third_party/kuka/kr10_r1100_2/visual/base_link.dae`
+- `third_party/kuka/kr16_r2010_2/visual/base.stl`
+- `intrinsic_control/intrinsic/models/robot_definitions/abb/irb1300_10_115/visual/irb1300_visual_1.glb`
+
+If `git lfs pull` fails (authentication or bandwidth), the job fails. It
+does not skip the meshes.
+
+From the repository root, materialize those meshes, then run the same
+helper the workflow runs:
+
+```bash
+git lfs pull --include="third_party/**,intrinsic_control/intrinsic/models/robot_definitions/**"
 python3 tools/build_protected_manipulator_targets.py \
   --manifest .github/baseline/manipulator_targets.tsv
 ```
+
+Unset `GIT_LFS_SKIP_SMUDGE` if it is set. The helper repeats the sampled
+pointer check before it invokes Bazel.
 
 On failure the helper prints the earliest manifest label that failed, after
 Bazel's own log:

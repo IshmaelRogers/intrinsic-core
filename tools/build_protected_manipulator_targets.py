@@ -34,6 +34,20 @@ import tempfile
 
 HEADER = "label\tsubsystem\tbuild_vs_test\towner\n"
 DEFAULT_MANIFEST = Path(".github/baseline/manipulator_targets.tsv")
+_LFS_POINTER_PREFIX = b"version https://git-lfs.github.com/spec/v1"
+# Pointers are about 130 bytes. These meshes are much larger once smudged.
+_MIN_SAMPLED_MESH_BYTES = 1024
+# CI samples these paths after `git lfs pull`. The ABB glb is not under
+# third_party/; robot-definition meshes are included in the same pull.
+SAMPLED_LFS_MESHES = (
+    "third_party/kuka/kr10_r1100_2/visual/base_link.dae",
+    "third_party/kuka/kr16_r2010_2/visual/base.stl",
+    "intrinsic_control/intrinsic/models/robot_definitions/abb/"
+    "irb1300_10_115/visual/irb1300_visual_1.glb",
+)
+LFS_PULL_INCLUDE = (
+    "third_party/**,intrinsic_control/intrinsic/models/robot_definitions/**"
+)
 BUILD_CLASS = "build"
 TEST_CLASS = "test"
 _FAILURE_ABORT_REASONS = frozenset(
@@ -53,6 +67,47 @@ _LOG_FAILURE_PATTERNS = (
 
 def repo_root() -> Path:
   return Path(__file__).resolve().parents[1]
+
+
+def sampled_lfs_pointer_errors(root: Path) -> list[str]:
+  """Return problems for sampled meshes that are still LFS pointers."""
+  errors: list[str] = []
+  for relative in SAMPLED_LFS_MESHES:
+    path = root / relative
+    if not path.is_file():
+      errors.append(f"{relative} is missing")
+      continue
+    data = path.read_bytes()
+    if (
+        data.startswith(_LFS_POINTER_PREFIX)
+        or len(data) < _MIN_SAMPLED_MESH_BYTES
+    ):
+      errors.append(
+          f"{relative} is a Git LFS pointer or too small ({len(data)} bytes)"
+      )
+  return errors
+
+
+def require_sampled_meshes(root: Path) -> None:
+  """Fail with a `git lfs pull` hint when sampled meshes are pointers."""
+  errors = sampled_lfs_pointer_errors(root)
+  if not errors:
+    print(
+        "Checked"
+        f" {len(SAMPLED_LFS_MESHES)} manipulator meshes are not Git LFS"
+        " pointers"
+    )
+    return
+  print("Manipulator meshes are still Git LFS pointers.", file=sys.stderr)
+  print("From the repository root, run:", file=sys.stderr)
+  print(
+      f'  git lfs pull --include="{LFS_PULL_INCLUDE}"',
+      file=sys.stderr,
+  )
+  print("Unset GIT_LFS_SKIP_SMUDGE if it is set.", file=sys.stderr)
+  for item in errors:
+    print(f"  {item}", file=sys.stderr)
+  raise SystemExit(1)
 
 
 def load_build_labels(path: Path) -> list[str]:
@@ -260,8 +315,16 @@ def main() -> None:
       action="store_true",
       help="Print the build count without running Bazel.",
   )
+  parser.add_argument(
+      "--check-lfs-meshes",
+      action="store_true",
+      help="Fail if sampled manipulator meshes are still Git LFS pointers.",
+  )
   args = parser.parse_args()
   root = repo_root()
+  if args.check_lfs_meshes:
+    require_sampled_meshes(root)
+    return
   manifest = args.manifest
   if not manifest.is_absolute():
     manifest = root / manifest
@@ -277,6 +340,7 @@ def main() -> None:
         f" from {display}"
     )
     return
+  require_sampled_meshes(root)
   print(f"Building {len(labels)} protected manipulator targets from {display}")
   raise SystemExit(build_labels(root, args.bazel, labels))
 
