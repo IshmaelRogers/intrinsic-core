@@ -1,0 +1,365 @@
+# arm feature-registration golden
+# schema: arm-feature-registration-v1
+# Regenerate only with an explicit flag. This test does not rewrite the
+# fixture unless one of these commands is used:
+#   bazel run //intrinsic_control/intrinsic/icon/control/parts/testing:arm_feature_registration_golden_test -- --update_golden
+#   UPDATE_ARM_FEATURE_REGISTRATION_GOLDEN=1 bazel run //intrinsic_control/intrinsic/icon/control/parts/testing:arm_feature_registration_golden_test
+# Policy: byte-for-byte. Added, removed, or renumbered FeatureInterfaceTypes
+# fail until that command is run and a senior owner reviews the result.
+# register_as_compatible records the HalArmPart registration entry point.
+
+enum_catalog:
+FEATURE_INTERFACE_INVALID 0
+FEATURE_INTERFACE_JOINT_POSITION 1
+FEATURE_INTERFACE_JOINT_VELOCITY 2
+FEATURE_INTERFACE_JOINT_POSITION_SENSOR 3
+FEATURE_INTERFACE_JOINT_VELOCITY_ESTIMATOR 4
+FEATURE_INTERFACE_JOINT_ACCELERATION_ESTIMATOR 5
+FEATURE_INTERFACE_JOINT_LIMITS 6
+FEATURE_INTERFACE_CARTESIAN_LIMITS 7
+FEATURE_INTERFACE_SIMPLE_GRIPPER 8
+FEATURE_INTERFACE_ADIO 9
+FEATURE_INTERFACE_RANGE_FINDER 10
+FEATURE_INTERFACE_MANIPULATOR_KINEMATICS 11
+FEATURE_INTERFACE_JOINT_TORQUE 12
+FEATURE_INTERFACE_JOINT_TORQUE_SENSOR 13
+FEATURE_INTERFACE_DYNAMICS 14
+FEATURE_INTERFACE_FORCE_TORQUE_SENSOR 15
+FEATURE_INTERFACE_LINEAR_GRIPPER 16
+FEATURE_INTERFACE_HAND_GUIDING 17
+FEATURE_INTERFACE_CONTROL_MODE_EXPORTER 18
+FEATURE_INTERFACE_MOVE_OK 19
+FEATURE_INTERFACE_IMU 20
+FEATURE_INTERFACE_STANDALONE_FORCE_TORQUE_SENSOR 21
+FEATURE_INTERFACE_PROCESS_WRENCH_AT_ENDEFFECTOR 22
+FEATURE_INTERFACE_PAYLOAD 23
+FEATURE_INTERFACE_PAYLOAD_STATE 24
+FEATURE_INTERFACE_CARTESIAN_POSITION_STATE 25
+FEATURE_INTERFACE_HOMING 26
+FEATURE_INTERFACE_JOINT_ACCELERATION 27
+
+empty_registry:
+supported_count 0
+
+registration FEATURE_INTERFACE_JOINT_POSITION 1
+nullptr INVALID_ARGUMENT Cannot register nullptr as JointPosition.
+first OK
+duplicate ALREADY_EXISTS JointPosition is already registered.
+get_interface present
+get_interface_const present
+supported_count 1
+supported FEATURE_INTERFACE_JOINT_POSITION 1
+missing NOT_FOUND Registry does not have requested interface intrinsic::icon::JointPosition
+
+registration FEATURE_INTERFACE_JOINT_VELOCITY 2
+nullptr INVALID_ARGUMENT Cannot register nullptr as JointVelocity.
+first OK
+duplicate ALREADY_EXISTS JointVelocity is already registered.
+get_interface present
+get_interface_const present
+supported_count 1
+supported FEATURE_INTERFACE_JOINT_VELOCITY 2
+missing NOT_FOUND Registry does not have requested interface intrinsic::icon::JointVelocity
+
+registration FEATURE_INTERFACE_JOINT_POSITION_SENSOR 3
+nullptr INVALID_ARGUMENT Cannot register nullptr as JointPositionSensor.
+first OK
+duplicate ALREADY_EXISTS JointPositionSensor is already registered.
+get_interface present
+get_interface_const present
+supported_count 1
+supported FEATURE_INTERFACE_JOINT_POSITION_SENSOR 3
+missing NOT_FOUND Registry does not have requested interface intrinsic::icon::JointPositionSensor
+
+registration FEATURE_INTERFACE_JOINT_VELOCITY_ESTIMATOR 4
+nullptr INVALID_ARGUMENT Cannot register nullptr as JointVelocityEstimator.
+first OK
+duplicate ALREADY_EXISTS JointVelocityEstimator is already registered.
+get_interface present
+get_interface_const present
+supported_count 1
+supported FEATURE_INTERFACE_JOINT_VELOCITY_ESTIMATOR 4
+missing NOT_FOUND Registry does not have requested interface intrinsic::icon::JointVelocityEstimator
+
+registration FEATURE_INTERFACE_JOINT_ACCELERATION_ESTIMATOR 5
+nullptr INVALID_ARGUMENT Cannot register nullptr as JointAccelerationEstimator.
+first OK
+duplicate ALREADY_EXISTS JointAccelerationEstimator is already registered.
+get_interface present
+get_interface_const present
+supported_count 1
+supported FEATURE_INTERFACE_JOINT_ACCELERATION_ESTIMATOR 5
+missing NOT_FOUND Registry does not have requested interface intrinsic::icon::JointAccelerationEstimator
+
+registration FEATURE_INTERFACE_JOINT_LIMITS 6
+nullptr INVALID_ARGUMENT Cannot register nullptr as JointLimitsInterface.
+first OK
+duplicate ALREADY_EXISTS JointLimitsInterface is already registered.
+get_interface present
+get_interface_const present
+supported_count 1
+supported FEATURE_INTERFACE_JOINT_LIMITS 6
+missing NOT_FOUND Registry does not have requested interface intrinsic::icon::JointLimitsInterface
+
+registration FEATURE_INTERFACE_CARTESIAN_LIMITS 7
+nullptr INVALID_ARGUMENT Cannot register nullptr as CartesianLimitsInterface.
+first OK
+duplicate ALREADY_EXISTS CartesianLimitsInterface is already registered.
+get_interface present
+get_interface_const present
+supported_count 1
+supported FEATURE_INTERFACE_CARTESIAN_LIMITS 7
+missing NOT_FOUND Registry does not have requested interface intrinsic::icon::CartesianLimitsInterface
+
+registration FEATURE_INTERFACE_SIMPLE_GRIPPER 8
+nullptr INVALID_ARGUMENT Cannot register nullptr as SimpleGripper.
+first OK
+duplicate ALREADY_EXISTS SimpleGripper is already registered.
+get_interface present
+get_interface_const present
+supported_count 1
+supported FEATURE_INTERFACE_SIMPLE_GRIPPER 8
+missing NOT_FOUND Registry does not have requested interface intrinsic::icon::SimpleGripper
+
+registration FEATURE_INTERFACE_ADIO 9
+nullptr INVALID_ARGUMENT Cannot register nullptr as ADIO.
+first OK
+duplicate ALREADY_EXISTS ADIO is already registered.
+get_interface present
+get_interface_const present
+supported_count 1
+supported FEATURE_INTERFACE_ADIO 9
+missing NOT_FOUND Registry does not have requested interface intrinsic::icon::ADIO
+
+registration FEATURE_INTERFACE_RANGE_FINDER 10
+nullptr INVALID_ARGUMENT Cannot register nullptr as RangeFinder.
+first OK
+duplicate ALREADY_EXISTS RangeFinder is already registered.
+get_interface present
+get_interface_const present
+supported_count 1
+supported FEATURE_INTERFACE_RANGE_FINDER 10
+missing NOT_FOUND Registry does not have requested interface intrinsic::icon::RangeFinder
+
+registration FEATURE_INTERFACE_MANIPULATOR_KINEMATICS 11
+nullptr INVALID_ARGUMENT Cannot register nullptr as ManipulatorKinematics.
+first OK
+duplicate ALREADY_EXISTS ManipulatorKinematics is already registered.
+get_interface present
+get_interface_const present
+supported_count 1
+supported FEATURE_INTERFACE_MANIPULATOR_KINEMATICS 11
+missing NOT_FOUND Registry does not have requested interface intrinsic::icon::ManipulatorKinematics
+
+registration FEATURE_INTERFACE_JOINT_TORQUE 12
+nullptr INVALID_ARGUMENT Cannot register nullptr as JointTorque.
+first OK
+duplicate ALREADY_EXISTS JointTorque is already registered.
+get_interface present
+get_interface_const present
+supported_count 1
+supported FEATURE_INTERFACE_JOINT_TORQUE 12
+missing NOT_FOUND Registry does not have requested interface intrinsic::icon::JointTorque
+
+registration FEATURE_INTERFACE_JOINT_TORQUE_SENSOR 13
+nullptr INVALID_ARGUMENT Cannot register nullptr as JointTorqueSensor.
+first OK
+duplicate ALREADY_EXISTS JointTorqueSensor is already registered.
+get_interface present
+get_interface_const present
+supported_count 1
+supported FEATURE_INTERFACE_JOINT_TORQUE_SENSOR 13
+missing NOT_FOUND Registry does not have requested interface intrinsic::icon::JointTorqueSensor
+
+registration FEATURE_INTERFACE_DYNAMICS 14
+nullptr INVALID_ARGUMENT Cannot register nullptr as Dynamics.
+first OK
+duplicate ALREADY_EXISTS Dynamics is already registered.
+get_interface present
+get_interface_const present
+supported_count 1
+supported FEATURE_INTERFACE_DYNAMICS 14
+missing NOT_FOUND Registry does not have requested interface intrinsic::icon::Dynamics
+
+registration FEATURE_INTERFACE_FORCE_TORQUE_SENSOR 15
+nullptr INVALID_ARGUMENT Cannot register nullptr as ForceTorqueSensor.
+first OK
+duplicate ALREADY_EXISTS ForceTorqueSensor is already registered.
+get_interface present
+get_interface_const present
+supported_count 1
+supported FEATURE_INTERFACE_FORCE_TORQUE_SENSOR 15
+missing NOT_FOUND Registry does not have requested interface intrinsic::icon::ForceTorqueSensor
+
+registration FEATURE_INTERFACE_LINEAR_GRIPPER 16
+nullptr INVALID_ARGUMENT Cannot register nullptr as LinearGripper.
+first OK
+duplicate ALREADY_EXISTS LinearGripper is already registered.
+get_interface present
+get_interface_const present
+supported_count 1
+supported FEATURE_INTERFACE_LINEAR_GRIPPER 16
+missing NOT_FOUND Registry does not have requested interface intrinsic::icon::LinearGripper
+
+registration FEATURE_INTERFACE_HAND_GUIDING 17
+nullptr INVALID_ARGUMENT Cannot register nullptr as HandGuiding.
+first OK
+duplicate ALREADY_EXISTS HandGuiding is already registered.
+get_interface present
+get_interface_const present
+supported_count 1
+supported FEATURE_INTERFACE_HAND_GUIDING 17
+missing NOT_FOUND Registry does not have requested interface intrinsic::icon::HandGuiding
+
+registration FEATURE_INTERFACE_CONTROL_MODE_EXPORTER 18
+nullptr INVALID_ARGUMENT Cannot register nullptr as ControlModeExporter.
+first OK
+duplicate ALREADY_EXISTS ControlModeExporter is already registered.
+get_interface present
+get_interface_const present
+supported_count 1
+supported FEATURE_INTERFACE_CONTROL_MODE_EXPORTER 18
+missing NOT_FOUND Registry does not have requested interface intrinsic::icon::ControlModeExporter
+
+registration FEATURE_INTERFACE_MOVE_OK 19
+nullptr INVALID_ARGUMENT Cannot register nullptr as MoveOk.
+first OK
+duplicate ALREADY_EXISTS MoveOk is already registered.
+get_interface present
+get_interface_const present
+supported_count 1
+supported FEATURE_INTERFACE_MOVE_OK 19
+missing NOT_FOUND Registry does not have requested interface intrinsic::icon::MoveOk
+
+registration FEATURE_INTERFACE_IMU 20
+nullptr INVALID_ARGUMENT Cannot register nullptr as IMU.
+first OK
+duplicate ALREADY_EXISTS IMU is already registered.
+get_interface present
+get_interface_const present
+supported_count 1
+supported FEATURE_INTERFACE_IMU 20
+missing NOT_FOUND Registry does not have requested interface intrinsic::icon::InertialMeasurementUnit
+
+registration FEATURE_INTERFACE_STANDALONE_FORCE_TORQUE_SENSOR 21
+nullptr INVALID_ARGUMENT Cannot register nullptr as StandaloneForceTorqueSensor.
+first OK
+duplicate ALREADY_EXISTS StandaloneForceTorqueSensor is already registered.
+get_interface present
+get_interface_const present
+supported_count 1
+supported FEATURE_INTERFACE_STANDALONE_FORCE_TORQUE_SENSOR 21
+missing NOT_FOUND Registry does not have requested interface intrinsic::icon::StandaloneForceTorqueSensor
+
+registration FEATURE_INTERFACE_PROCESS_WRENCH_AT_ENDEFFECTOR 22
+nullptr INVALID_ARGUMENT Cannot register nullptr as ProcessWrenchAtEndeffector.
+first OK
+duplicate ALREADY_EXISTS ProcessWrenchAtEndeffector is already registered.
+get_interface present
+get_interface_const present
+supported_count 1
+supported FEATURE_INTERFACE_PROCESS_WRENCH_AT_ENDEFFECTOR 22
+missing NOT_FOUND Registry does not have requested interface intrinsic::icon::ProcessWrenchAtEndeffector
+
+registration FEATURE_INTERFACE_PAYLOAD 23
+nullptr INVALID_ARGUMENT Cannot register nullptr as Payload.
+first OK
+duplicate ALREADY_EXISTS Payload is already registered.
+get_interface present
+get_interface_const present
+supported_count 1
+supported FEATURE_INTERFACE_PAYLOAD 23
+missing NOT_FOUND Registry does not have requested interface intrinsic::icon::Payload
+
+registration FEATURE_INTERFACE_PAYLOAD_STATE 24
+nullptr INVALID_ARGUMENT Cannot register nullptr as PayloadState.
+first OK
+duplicate ALREADY_EXISTS PayloadState is already registered.
+get_interface present
+get_interface_const present
+supported_count 1
+supported FEATURE_INTERFACE_PAYLOAD_STATE 24
+missing NOT_FOUND Registry does not have requested interface intrinsic::icon::PayloadState
+
+registration FEATURE_INTERFACE_CARTESIAN_POSITION_STATE 25
+nullptr INVALID_ARGUMENT Cannot register nullptr as CartesianPositionState.
+first OK
+duplicate ALREADY_EXISTS CartesianPositionState is already registered.
+get_interface present
+get_interface_const present
+supported_count 1
+supported FEATURE_INTERFACE_CARTESIAN_POSITION_STATE 25
+missing NOT_FOUND Registry does not have requested interface intrinsic::icon::CartesianPositionState
+
+registration FEATURE_INTERFACE_HOMING 26
+nullptr INVALID_ARGUMENT Cannot register nullptr as Homing.
+first OK
+duplicate ALREADY_EXISTS Homing is already registered.
+get_interface present
+get_interface_const present
+supported_count 1
+supported FEATURE_INTERFACE_HOMING 26
+missing NOT_FOUND Registry does not have requested interface intrinsic::icon::Homing
+
+registration FEATURE_INTERFACE_JOINT_ACCELERATION 27
+nullptr INVALID_ARGUMENT Cannot register nullptr as JointAcceleration.
+first OK
+duplicate ALREADY_EXISTS JointAcceleration is already registered.
+get_interface present
+get_interface_const present
+supported_count 1
+supported FEATURE_INTERFACE_JOINT_ACCELERATION 27
+missing NOT_FOUND Registry does not have requested interface intrinsic::icon::JointAcceleration
+
+all_registered:
+supported_count 27
+supported FEATURE_INTERFACE_JOINT_POSITION 1
+supported FEATURE_INTERFACE_JOINT_VELOCITY 2
+supported FEATURE_INTERFACE_JOINT_POSITION_SENSOR 3
+supported FEATURE_INTERFACE_JOINT_VELOCITY_ESTIMATOR 4
+supported FEATURE_INTERFACE_JOINT_ACCELERATION_ESTIMATOR 5
+supported FEATURE_INTERFACE_JOINT_LIMITS 6
+supported FEATURE_INTERFACE_CARTESIAN_LIMITS 7
+supported FEATURE_INTERFACE_SIMPLE_GRIPPER 8
+supported FEATURE_INTERFACE_ADIO 9
+supported FEATURE_INTERFACE_RANGE_FINDER 10
+supported FEATURE_INTERFACE_MANIPULATOR_KINEMATICS 11
+supported FEATURE_INTERFACE_JOINT_TORQUE 12
+supported FEATURE_INTERFACE_JOINT_TORQUE_SENSOR 13
+supported FEATURE_INTERFACE_DYNAMICS 14
+supported FEATURE_INTERFACE_FORCE_TORQUE_SENSOR 15
+supported FEATURE_INTERFACE_LINEAR_GRIPPER 16
+supported FEATURE_INTERFACE_HAND_GUIDING 17
+supported FEATURE_INTERFACE_CONTROL_MODE_EXPORTER 18
+supported FEATURE_INTERFACE_MOVE_OK 19
+supported FEATURE_INTERFACE_IMU 20
+supported FEATURE_INTERFACE_STANDALONE_FORCE_TORQUE_SENSOR 21
+supported FEATURE_INTERFACE_PROCESS_WRENCH_AT_ENDEFFECTOR 22
+supported FEATURE_INTERFACE_PAYLOAD 23
+supported FEATURE_INTERFACE_PAYLOAD_STATE 24
+supported FEATURE_INTERFACE_CARTESIAN_POSITION_STATE 25
+supported FEATURE_INTERFACE_HOMING 26
+supported FEATURE_INTERFACE_JOINT_ACCELERATION 27
+
+from_interfaces:
+status OK
+supported_count 1
+supported FEATURE_INTERFACE_JOINT_POSITION 1
+
+register_as_compatible FEATURE_INTERFACE_MANIPULATOR_KINEMATICS 11
+first OK
+duplicate ALREADY_EXISTS ManipulatorKinematics is already registered.
+supported_count 1
+supported FEATURE_INTERFACE_MANIPULATOR_KINEMATICS 11
+
+register_as_compatible FEATURE_INTERFACE_DYNAMICS 14
+first OK
+duplicate ALREADY_EXISTS Dynamics is already registered.
+supported_count 1
+supported FEATURE_INTERFACE_DYNAMICS 14
+
+status_values:
+ALREADY_EXISTS
+INVALID_ARGUMENT
+NOT_FOUND
+OK

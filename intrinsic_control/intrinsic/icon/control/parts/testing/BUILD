@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-load("//bazel:cc_macros.bzl", "cc_library")
+load("//bazel:cc_macros.bzl", "cc_library", "cc_test")
 
 cc_library(
     name = "fake_realtime_part",
@@ -31,5 +31,27 @@ cc_library(
         "@abseil-cpp//absl/algorithm:container",
         "@abseil-cpp//absl/container:fixed_array",
         "@abseil-cpp//absl/log:check",
+    ],
+)
+
+cc_test(
+    name = "arm_feature_registration_golden_test",
+    size = "small",
+    srcs = ["arm_feature_registration_golden_test.cc"],
+    data = ["testdata/arm_feature_registration.golden"],
+    deps = [
+        "//intrinsic_control/intrinsic/icon/control/parts:fake_feature_interfaces",
+        "//intrinsic_control/intrinsic/icon/control/parts:feature_interface_registry",
+        "//intrinsic_control/intrinsic/icon/control/parts:feature_interfaces",
+        "//intrinsic_kinematics/intrinsic/kinematics/types:cartesian_limits",
+        "//intrinsic_kinematics/intrinsic/kinematics/types:joint_limits",
+        "//intrinsic_sdk/intrinsic/eigenmath",
+        "//intrinsic_sdk/intrinsic/math:pose3",
+        "@abseil-cpp//absl/container:flat_hash_set",
+        "@abseil-cpp//absl/status",
+        "@abseil-cpp//absl/status:statusor",
+        "@abseil-cpp//absl/strings",
+        "@com_google_googletest//:gtest",
+        "@intrinsic_apis//intrinsic/icon/proto/v1:types_cc_proto",
     ],
 )
