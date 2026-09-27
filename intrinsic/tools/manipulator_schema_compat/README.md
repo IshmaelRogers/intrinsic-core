@@ -7,9 +7,11 @@ package [#13](https://github.com/IshmaelRogers/intrinsic-core/issues/13)).
 
 The protected scope stays `manipulator-public-wire-v1`. This package does not
 edit [`manipulator_public_schema_inventory.json`](../manipulator_schema_baseline/manipulator_public_schema_inventory.json),
-does not expand `out_of_scope_imports`, and does not parse or change `.proto`
-or `.fbs` sources. The #47 extractor's local `--compare` remains an in-script
-stand-in. This package is the fixture-backed gate.
+does not expand `out_of_scope_imports`, and does not change production
+`.proto` or `.fbs` sources. The comparer reads inventories. The schema-break
+test parses isolated fixtures with the #47 extractor. The extractor's local
+`--compare` remains an in-script stand-in. This package is the fixture-backed
+gate.
 
 ## Policy
 
@@ -66,6 +68,31 @@ Fixtures under [`testdata/`](testdata/) are synthetic inventories in the #47
 shape. They are not production schemas. Each candidate has a
 `.expected.txt` file with the exact report.
 
+## Schema-break negative fixture
+
+[`testdata/schema_break/`](testdata/schema_break/) is an isolated `.proto` and
+`.fbs` pair (issue
+[#49](https://github.com/IshmaelRogers/intrinsic-core/issues/49)). `baseline/`
+parses and compares identical to itself. `broken/` changes one proto tag and
+one FlatBuffer id:
+
+- `proto tag` on `Pose.y` (`2 -> 9`)
+- `flatbuffer id` on `JointLimits.max_position` (`1 -> 4`)
+
+`schema_break_negative_test.py` parses those sources with the #47 extractor
+and requires those two diagnostic categories. The files live under
+`testdata`, so allowlist discovery skips them. This package has no Bazel
+`BUILD` file. The fixtures are not compiled into production targets and are
+not added to `manipulator-public-wire-v1`. The checked-in baseline JSON is
+not edited.
+
+## CI
+
+[`.github/workflows/manipulator-schema-compat.yml`](../../../.github/workflows/manipulator-schema-compat.yml)
+runs the negative test, the unit tests in this package, the #47
+`--self-check`, and a compare of the checked-in inventory against itself. It
+does not build the protected Bazel target list.
+
 ## Assumptions
 
 - The #47 JSON shape is the comparison input. Field numbers are proto tags,
@@ -73,5 +100,5 @@ shape. They are not production schemas. Each candidate has a
 - Additive evolution keeps old tags and ids and allocates a fresh number.
 - Reserving a number and then using it is a tag reuse, even though the #47
   in-script compare classifies that new field as additive.
-- #49 owns an intentional break of real schema sources and the CI wiring.
-  This package does not add that job.
+- The schema-break sources are test fixtures. Production `.proto` and
+  `.fbs` files stay on the frozen allowlist.
