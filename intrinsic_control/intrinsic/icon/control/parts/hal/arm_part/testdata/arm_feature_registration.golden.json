@@ -1,0 +1,740 @@
+{
+  "from_proto_status_values": [
+    {
+      "code": "FAILED_PRECONDITION",
+      "message_literals": [
+        "AssemblyService does not provide a Skeleton, cannot initialize ",
+        "collision checker."
+      ]
+    },
+    {
+      "code": "FAILED_PRECONDITION",
+      "message_literals": [
+        "Cannot define `linear_joint_acceleration_filter` without ",
+        "`joint_position_state`."
+      ]
+    },
+    {
+      "code": "FAILED_PRECONDITION",
+      "message_literals": [
+        "Cannot define `linear_joint_acceleration_filter` without ",
+        "`joint_velocity_state`."
+      ]
+    },
+    {
+      "code": "FAILED_PRECONDITION",
+      "message_literals": [
+        "Collision checking is enabled but AssemblyService is not ",
+        "available."
+      ]
+    },
+    {
+      "code": "FAILED_PRECONDITION",
+      "message_literals": [
+        "Collision checking is enabled but GeometryLibraryService is not ",
+        "available. Cannot initialize collision world from world."
+      ]
+    },
+    {
+      "code": "FAILED_PRECONDITION",
+      "message_literals": [
+        "Collision checking is enabled but WorldService is not available."
+      ]
+    },
+    {
+      "code": "FAILED_PRECONDITION",
+      "message_literals": [
+        "HAL Arm Part '",
+        " for RTCL HALArmPart '",
+        "' has kinematics, but no Cartesian Limits."
+      ]
+    },
+    {
+      "code": "FAILED_PRECONDITION",
+      "message_literals": [
+        "ManipulatorKinematics interface is not available, cannot set end ",
+        "effector dynamics parameters."
+      ]
+    },
+    {
+      "code": "INTERNAL",
+      "message_literals": [
+        "Generic config for part '",
+        "' does not contain cartesian_limits for '",
+        "'."
+      ]
+    },
+    {
+      "code": "INTERNAL",
+      "message_literals": [
+        "Generic config for part '",
+        "' does not contain joint_limits for '",
+        "'."
+      ]
+    },
+    {
+      "code": "INTERNAL",
+      "message_literals": [
+        "Invalid Cartesian Limits specified in the world."
+      ]
+    },
+    {
+      "code": "INVALID_ARGUMENT",
+      "message_literals": [
+        "Cannot define both `joint_acceleration_state` and ",
+        "`linear_joint_acceleration_filter_config` in the HalArmPart ",
+        "config."
+      ]
+    },
+    {
+      "code": "INVALID_ARGUMENT",
+      "message_literals": [
+        "Cannot define both a `joint_position_command` and ",
+        "`arm_position_pid_torque_controller_config`."
+      ]
+    },
+    {
+      "code": "INVALID_ARGUMENT",
+      "message_literals": [
+        "Cannot register a `payload_state` without a `payload_command`."
+      ]
+    },
+    {
+      "code": "INVALID_ARGUMENT",
+      "message_literals": [
+        "Only one of joint_velocity_state and ",
+        "calculate_velocity_state_from_position can be set."
+      ]
+    },
+    {
+      "code": "NOT_FOUND",
+      "message_literals": [
+        "Could not get ManipulatorKinematics when creating ",
+        "JointPositionCommand."
+      ]
+    },
+    {
+      "code": "NOT_FOUND",
+      "message_literals": [
+        "HalArmPart '",
+        "' is configured to use a dynamics model, but there ",
+        "is no DynamicsService."
+      ]
+    },
+    {
+      "code": "NOT_FOUND",
+      "message_literals": [
+        "HalArmPart '",
+        "' is configured to use a kinematics model, but the ",
+        "KinematicsService does not have a kinematics model named '",
+        "'."
+      ]
+    },
+    {
+      "code": "NOT_FOUND",
+      "message_literals": [
+        "HalArmPart '",
+        "' is configured to use a kinematics model, but the ",
+        "KinematicsService does not have an IK interface for a model named '",
+        "'."
+      ]
+    },
+    {
+      "code": "NOT_FOUND",
+      "message_literals": [
+        "HalArmPart '",
+        "' is configured to use a kinematics model, but there ",
+        "is no KinematicsService."
+      ]
+    },
+    {
+      "code": "NOT_FOUND",
+      "message_literals": [
+        "HalArmPart '$0' does not read limits from Hardware ",
+        "Module, and there is no WorldService available ",
+        "to read application limits from either."
+      ]
+    },
+    {
+      "code": "NOT_FOUND",
+      "message_literals": [
+        "HalArmPart '$0' is attempting to fetch Cartesian limits from the ",
+        "world, but there's no world service available"
+      ]
+    },
+    {
+      "code": "NOT_FOUND",
+      "message_literals": [
+        "HalArmPart '$0' is attempting to fetch the payload from the ",
+        "world, but there's no world service available"
+      ]
+    },
+    {
+      "code": "NOT_FOUND",
+      "message_literals": [
+        "JointPositionCommand requires JointLimits"
+      ]
+    },
+    {
+      "code": "NOT_FOUND",
+      "message_literals": [
+        "JointPositionCommand requires JointPositionState"
+      ]
+    },
+    {
+      "code": "NOT_FOUND",
+      "message_literals": [
+        "JointPositionPidTorqueControllerFeature requires ",
+        "JointPositionState"
+      ]
+    },
+    {
+      "code": "NOT_FOUND",
+      "message_literals": [
+        "JointPositionPidTorqueControllerFeature requires JointLimits"
+      ]
+    }
+  ],
+  "part": {
+    "config_message": "intrinsic_proto.icon.HalArmPartConfig",
+    "factory": "HalArmPart::FromProto",
+    "part_factory_statuses": [
+      {
+        "condition": "part_type_already_registered",
+        "result": "false"
+      },
+      {
+        "condition": "part_type_inserted",
+        "result": "true"
+      },
+      {
+        "condition": "part_type_not_found",
+        "result": "empty_factory"
+      }
+    ],
+    "part_type_name": "HalArmPart",
+    "registry_call": "RegisterTyped"
+  },
+  "registrations": [
+    {
+      "call_sites": 1,
+      "cpp_interface": "JointPosition",
+      "feature_class": "JointPositionCommandFeature",
+      "feature_type": "FEATURE_INTERFACE_JOINT_POSITION",
+      "feature_type_number": 1,
+      "statuses": {
+        "already_registered": {
+          "code": "ALREADY_EXISTS",
+          "message": "JointPosition is already registered."
+        },
+        "nullptr": {
+          "code": "INVALID_ARGUMENT",
+          "message": "Cannot register nullptr as JointPosition."
+        },
+        "ok": {
+          "code": "OK",
+          "message": ""
+        }
+      }
+    },
+    {
+      "call_sites": 1,
+      "cpp_interface": "JointPosition",
+      "feature_class": "JointPositionPidTorqueControllerFeature",
+      "feature_type": "FEATURE_INTERFACE_JOINT_POSITION",
+      "feature_type_number": 1,
+      "statuses": {
+        "already_registered": {
+          "code": "ALREADY_EXISTS",
+          "message": "JointPosition is already registered."
+        },
+        "nullptr": {
+          "code": "INVALID_ARGUMENT",
+          "message": "Cannot register nullptr as JointPosition."
+        },
+        "ok": {
+          "code": "OK",
+          "message": ""
+        }
+      }
+    },
+    {
+      "call_sites": 1,
+      "cpp_interface": "JointVelocity",
+      "feature_class": "JointVelocityCommandFeature",
+      "feature_type": "FEATURE_INTERFACE_JOINT_VELOCITY",
+      "feature_type_number": 2,
+      "statuses": {
+        "already_registered": {
+          "code": "ALREADY_EXISTS",
+          "message": "JointVelocity is already registered."
+        },
+        "nullptr": {
+          "code": "INVALID_ARGUMENT",
+          "message": "Cannot register nullptr as JointVelocity."
+        },
+        "ok": {
+          "code": "OK",
+          "message": ""
+        }
+      }
+    },
+    {
+      "call_sites": 1,
+      "cpp_interface": "JointPositionSensor",
+      "feature_class": "JointPositionStateFeature",
+      "feature_type": "FEATURE_INTERFACE_JOINT_POSITION_SENSOR",
+      "feature_type_number": 3,
+      "statuses": {
+        "already_registered": {
+          "code": "ALREADY_EXISTS",
+          "message": "JointPositionSensor is already registered."
+        },
+        "nullptr": {
+          "code": "INVALID_ARGUMENT",
+          "message": "Cannot register nullptr as JointPositionSensor."
+        },
+        "ok": {
+          "code": "OK",
+          "message": ""
+        }
+      }
+    },
+    {
+      "call_sites": 4,
+      "cpp_interface": "JointVelocityEstimator",
+      "feature_class": "JointVelocityStateFeature",
+      "feature_type": "FEATURE_INTERFACE_JOINT_VELOCITY_ESTIMATOR",
+      "feature_type_number": 4,
+      "statuses": {
+        "already_registered": {
+          "code": "ALREADY_EXISTS",
+          "message": "JointVelocityEstimator is already registered."
+        },
+        "nullptr": {
+          "code": "INVALID_ARGUMENT",
+          "message": "Cannot register nullptr as JointVelocityEstimator."
+        },
+        "ok": {
+          "code": "OK",
+          "message": ""
+        }
+      }
+    },
+    {
+      "call_sites": 1,
+      "cpp_interface": "JointAccelerationEstimator",
+      "feature_class": "JointAccelerationEstimatedStateFeature",
+      "feature_type": "FEATURE_INTERFACE_JOINT_ACCELERATION_ESTIMATOR",
+      "feature_type_number": 5,
+      "statuses": {
+        "already_registered": {
+          "code": "ALREADY_EXISTS",
+          "message": "JointAccelerationEstimator is already registered."
+        },
+        "nullptr": {
+          "code": "INVALID_ARGUMENT",
+          "message": "Cannot register nullptr as JointAccelerationEstimator."
+        },
+        "ok": {
+          "code": "OK",
+          "message": ""
+        }
+      }
+    },
+    {
+      "call_sites": 1,
+      "cpp_interface": "JointAccelerationEstimator",
+      "feature_class": "JointAccelerationStateFeature",
+      "feature_type": "FEATURE_INTERFACE_JOINT_ACCELERATION_ESTIMATOR",
+      "feature_type_number": 5,
+      "statuses": {
+        "already_registered": {
+          "code": "ALREADY_EXISTS",
+          "message": "JointAccelerationEstimator is already registered."
+        },
+        "nullptr": {
+          "code": "INVALID_ARGUMENT",
+          "message": "Cannot register nullptr as JointAccelerationEstimator."
+        },
+        "ok": {
+          "code": "OK",
+          "message": ""
+        }
+      }
+    },
+    {
+      "call_sites": 1,
+      "cpp_interface": "JointLimitsInterface",
+      "feature_class": "JointLimitsFeature",
+      "feature_type": "FEATURE_INTERFACE_JOINT_LIMITS",
+      "feature_type_number": 6,
+      "statuses": {
+        "already_registered": {
+          "code": "ALREADY_EXISTS",
+          "message": "JointLimitsInterface is already registered."
+        },
+        "nullptr": {
+          "code": "INVALID_ARGUMENT",
+          "message": "Cannot register nullptr as JointLimitsInterface."
+        },
+        "ok": {
+          "code": "OK",
+          "message": ""
+        }
+      }
+    },
+    {
+      "call_sites": 2,
+      "cpp_interface": "CartesianLimitsInterface",
+      "feature_class": "CartesianLimitsFeature",
+      "feature_type": "FEATURE_INTERFACE_CARTESIAN_LIMITS",
+      "feature_type_number": 7,
+      "statuses": {
+        "already_registered": {
+          "code": "ALREADY_EXISTS",
+          "message": "CartesianLimitsInterface is already registered."
+        },
+        "nullptr": {
+          "code": "INVALID_ARGUMENT",
+          "message": "Cannot register nullptr as CartesianLimitsInterface."
+        },
+        "ok": {
+          "code": "OK",
+          "message": ""
+        }
+      }
+    },
+    {
+      "call_sites": 1,
+      "cpp_interface": "ManipulatorKinematics",
+      "feature_class": "NewManipulatorKinematicsImpl",
+      "feature_type": "FEATURE_INTERFACE_MANIPULATOR_KINEMATICS",
+      "feature_type_number": 11,
+      "statuses": {
+        "already_registered": {
+          "code": "ALREADY_EXISTS",
+          "message": "ManipulatorKinematics is already registered."
+        },
+        "nullptr": {
+          "code": "INVALID_ARGUMENT",
+          "message": "Cannot register nullptr as ManipulatorKinematics."
+        },
+        "ok": {
+          "code": "OK",
+          "message": ""
+        }
+      }
+    },
+    {
+      "call_sites": 1,
+      "cpp_interface": "JointTorque",
+      "feature_class": "JointTorqueCommandFeature",
+      "feature_type": "FEATURE_INTERFACE_JOINT_TORQUE",
+      "feature_type_number": 12,
+      "statuses": {
+        "already_registered": {
+          "code": "ALREADY_EXISTS",
+          "message": "JointTorque is already registered."
+        },
+        "nullptr": {
+          "code": "INVALID_ARGUMENT",
+          "message": "Cannot register nullptr as JointTorque."
+        },
+        "ok": {
+          "code": "OK",
+          "message": ""
+        }
+      }
+    },
+    {
+      "call_sites": 1,
+      "cpp_interface": "JointTorqueSensor",
+      "feature_class": "JointTorqueStateFeature",
+      "feature_type": "FEATURE_INTERFACE_JOINT_TORQUE_SENSOR",
+      "feature_type_number": 13,
+      "statuses": {
+        "already_registered": {
+          "code": "ALREADY_EXISTS",
+          "message": "JointTorqueSensor is already registered."
+        },
+        "nullptr": {
+          "code": "INVALID_ARGUMENT",
+          "message": "Cannot register nullptr as JointTorqueSensor."
+        },
+        "ok": {
+          "code": "OK",
+          "message": ""
+        }
+      }
+    },
+    {
+      "call_sites": 1,
+      "cpp_interface": "Dynamics",
+      "feature_class": "DynamicsImpl",
+      "feature_type": "FEATURE_INTERFACE_DYNAMICS",
+      "feature_type_number": 14,
+      "statuses": {
+        "already_registered": {
+          "code": "ALREADY_EXISTS",
+          "message": "Dynamics is already registered."
+        },
+        "nullptr": {
+          "code": "INVALID_ARGUMENT",
+          "message": "Cannot register nullptr as Dynamics."
+        },
+        "ok": {
+          "code": "OK",
+          "message": ""
+        }
+      }
+    },
+    {
+      "call_sites": 1,
+      "cpp_interface": "HandGuiding",
+      "feature_class": "HandGuidingCommandFeature",
+      "feature_type": "FEATURE_INTERFACE_HAND_GUIDING",
+      "feature_type_number": 17,
+      "statuses": {
+        "already_registered": {
+          "code": "ALREADY_EXISTS",
+          "message": "HandGuiding is already registered."
+        },
+        "nullptr": {
+          "code": "INVALID_ARGUMENT",
+          "message": "Cannot register nullptr as HandGuiding."
+        },
+        "ok": {
+          "code": "OK",
+          "message": ""
+        }
+      }
+    },
+    {
+      "call_sites": 1,
+      "cpp_interface": "ControlModeExporter",
+      "feature_class": "ControlModeStateFeature",
+      "feature_type": "FEATURE_INTERFACE_CONTROL_MODE_EXPORTER",
+      "feature_type_number": 18,
+      "statuses": {
+        "already_registered": {
+          "code": "ALREADY_EXISTS",
+          "message": "ControlModeExporter is already registered."
+        },
+        "nullptr": {
+          "code": "INVALID_ARGUMENT",
+          "message": "Cannot register nullptr as ControlModeExporter."
+        },
+        "ok": {
+          "code": "OK",
+          "message": ""
+        }
+      }
+    },
+    {
+      "call_sites": 1,
+      "cpp_interface": "MoveOk",
+      "feature_class": "MoveOkFeature",
+      "feature_type": "FEATURE_INTERFACE_MOVE_OK",
+      "feature_type_number": 19,
+      "statuses": {
+        "already_registered": {
+          "code": "ALREADY_EXISTS",
+          "message": "MoveOk is already registered."
+        },
+        "nullptr": {
+          "code": "INVALID_ARGUMENT",
+          "message": "Cannot register nullptr as MoveOk."
+        },
+        "ok": {
+          "code": "OK",
+          "message": ""
+        }
+      }
+    },
+    {
+      "call_sites": 1,
+      "cpp_interface": "ProcessWrenchAtEndeffector",
+      "feature_class": "ProcessWrenchAtEndeffectorFeature",
+      "feature_type": "FEATURE_INTERFACE_PROCESS_WRENCH_AT_ENDEFFECTOR",
+      "feature_type_number": 22,
+      "statuses": {
+        "already_registered": {
+          "code": "ALREADY_EXISTS",
+          "message": "ProcessWrenchAtEndeffector is already registered."
+        },
+        "nullptr": {
+          "code": "INVALID_ARGUMENT",
+          "message": "Cannot register nullptr as ProcessWrenchAtEndeffector."
+        },
+        "ok": {
+          "code": "OK",
+          "message": ""
+        }
+      }
+    },
+    {
+      "call_sites": 1,
+      "cpp_interface": "Payload",
+      "feature_class": "PayloadCommandFeature",
+      "feature_type": "FEATURE_INTERFACE_PAYLOAD",
+      "feature_type_number": 23,
+      "statuses": {
+        "already_registered": {
+          "code": "ALREADY_EXISTS",
+          "message": "Payload is already registered."
+        },
+        "nullptr": {
+          "code": "INVALID_ARGUMENT",
+          "message": "Cannot register nullptr as Payload."
+        },
+        "ok": {
+          "code": "OK",
+          "message": ""
+        }
+      }
+    },
+    {
+      "call_sites": 1,
+      "cpp_interface": "PayloadState",
+      "feature_class": "PayloadStateFeature",
+      "feature_type": "FEATURE_INTERFACE_PAYLOAD_STATE",
+      "feature_type_number": 24,
+      "statuses": {
+        "already_registered": {
+          "code": "ALREADY_EXISTS",
+          "message": "PayloadState is already registered."
+        },
+        "nullptr": {
+          "code": "INVALID_ARGUMENT",
+          "message": "Cannot register nullptr as PayloadState."
+        },
+        "ok": {
+          "code": "OK",
+          "message": ""
+        }
+      }
+    },
+    {
+      "call_sites": 1,
+      "cpp_interface": "Homing",
+      "feature_class": "HomingFeature",
+      "feature_type": "FEATURE_INTERFACE_HOMING",
+      "feature_type_number": 26,
+      "statuses": {
+        "already_registered": {
+          "code": "ALREADY_EXISTS",
+          "message": "Homing is already registered."
+        },
+        "nullptr": {
+          "code": "INVALID_ARGUMENT",
+          "message": "Cannot register nullptr as Homing."
+        },
+        "ok": {
+          "code": "OK",
+          "message": ""
+        }
+      }
+    },
+    {
+      "call_sites": 1,
+      "cpp_interface": "JointAcceleration",
+      "feature_class": "JointAccelerationCommandFeature",
+      "feature_type": "FEATURE_INTERFACE_JOINT_ACCELERATION",
+      "feature_type_number": 27,
+      "statuses": {
+        "already_registered": {
+          "code": "ALREADY_EXISTS",
+          "message": "JointAcceleration is already registered."
+        },
+        "nullptr": {
+          "code": "INVALID_ARGUMENT",
+          "message": "Cannot register nullptr as JointAcceleration."
+        },
+        "ok": {
+          "code": "OK",
+          "message": ""
+        }
+      }
+    }
+  ],
+  "schema": "arm-feature-registration-v1",
+  "supported_feature_types": [
+    {
+      "feature_type": "FEATURE_INTERFACE_JOINT_POSITION",
+      "feature_type_number": 1
+    },
+    {
+      "feature_type": "FEATURE_INTERFACE_JOINT_VELOCITY",
+      "feature_type_number": 2
+    },
+    {
+      "feature_type": "FEATURE_INTERFACE_JOINT_POSITION_SENSOR",
+      "feature_type_number": 3
+    },
+    {
+      "feature_type": "FEATURE_INTERFACE_JOINT_VELOCITY_ESTIMATOR",
+      "feature_type_number": 4
+    },
+    {
+      "feature_type": "FEATURE_INTERFACE_JOINT_ACCELERATION_ESTIMATOR",
+      "feature_type_number": 5
+    },
+    {
+      "feature_type": "FEATURE_INTERFACE_JOINT_LIMITS",
+      "feature_type_number": 6
+    },
+    {
+      "feature_type": "FEATURE_INTERFACE_CARTESIAN_LIMITS",
+      "feature_type_number": 7
+    },
+    {
+      "feature_type": "FEATURE_INTERFACE_MANIPULATOR_KINEMATICS",
+      "feature_type_number": 11
+    },
+    {
+      "feature_type": "FEATURE_INTERFACE_JOINT_TORQUE",
+      "feature_type_number": 12
+    },
+    {
+      "feature_type": "FEATURE_INTERFACE_JOINT_TORQUE_SENSOR",
+      "feature_type_number": 13
+    },
+    {
+      "feature_type": "FEATURE_INTERFACE_DYNAMICS",
+      "feature_type_number": 14
+    },
+    {
+      "feature_type": "FEATURE_INTERFACE_HAND_GUIDING",
+      "feature_type_number": 17
+    },
+    {
+      "feature_type": "FEATURE_INTERFACE_CONTROL_MODE_EXPORTER",
+      "feature_type_number": 18
+    },
+    {
+      "feature_type": "FEATURE_INTERFACE_MOVE_OK",
+      "feature_type_number": 19
+    },
+    {
+      "feature_type": "FEATURE_INTERFACE_PROCESS_WRENCH_AT_ENDEFFECTOR",
+      "feature_type_number": 22
+    },
+    {
+      "feature_type": "FEATURE_INTERFACE_PAYLOAD",
+      "feature_type_number": 23
+    },
+    {
+      "feature_type": "FEATURE_INTERFACE_PAYLOAD_STATE",
+      "feature_type_number": 24
+    },
+    {
+      "feature_type": "FEATURE_INTERFACE_HOMING",
+      "feature_type_number": 26
+    },
+    {
+      "feature_type": "FEATURE_INTERFACE_JOINT_ACCELERATION",
+      "feature_type_number": 27
+    }
+  ]
+}
