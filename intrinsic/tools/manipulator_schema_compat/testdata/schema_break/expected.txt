@@ -1,0 +1,2 @@
+incompatible: intrinsic/tools/manipulator_schema_compat/testdata/schema_break/joint_limits.fbs message JointLimits field max_position flatbuffer id 1 -> 4
+incompatible: intrinsic/tools/manipulator_schema_compat/testdata/schema_break/pose.proto message Pose field y proto tag 2 -> 9
