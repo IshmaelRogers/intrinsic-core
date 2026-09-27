@@ -2,8 +2,8 @@
 
 This directory holds the reviewed list of existing manipulator build and test
 targets for the compatibility baseline ([issue #45](https://github.com/IshmaelRogers/intrinsic-core/issues/45),
-parent work package #13). Later jobs may execute this list. This directory does
-not add a CI job.
+parent work package #13). The protected build job reads this list. It does not
+enable UUV configuration.
 
 ## Manifest
 
@@ -57,3 +57,38 @@ python3 tools/inventory_manipulator_targets.py \
 
 Two consecutive generations must be byte-identical. `--verify` fails if any
 manifest label does not resolve through `bazel query`.
+
+## CI build
+
+[`.github/workflows/protected-manipulator-build.yml`](../workflows/protected-manipulator-build.yml)
+builds every manifest row whose `build_vs_test` column is `build`. Test rows
+are left for a later job. The workflow calls the helper below and does not
+copy labels into the YAML. The helper's Bazel invocation is plain `bazel
+build` plus a target-pattern file and a build-event log. It does not pass
+`--config`, so no UUV configuration is enabled.
+`.github/workflows/postsubmit.yml` and `.github/workflows/release.yml` are
+unchanged.
+
+The job uses the same runner and Bazel setup as the post-submit build
+(`ubuntu-24.04-8core`, `bazel-contrib/setup-bazel@0.14.0`, shared
+`intrinsic-core-build` cache). That runner is a GitHub larger runner. A
+repository whose Actions runners do not provide `ubuntu-24.04-8core` will
+queue this job instead of building.
+
+From the repository root, the local equivalent of the CI step is:
+
+```bash
+python3 tools/build_protected_manipulator_targets.py \
+  --manifest .github/baseline/manipulator_targets.tsv
+```
+
+On failure the helper prints the earliest manifest label that failed, after
+Bazel's own log:
+
+```text
+First failing target: //pkg:name
+```
+
+If the only recorded failure is outside the manifest, that label is printed
+instead. `--dry-run` checks the manifest and prints how many `build` labels
+would be built, without invoking Bazel.

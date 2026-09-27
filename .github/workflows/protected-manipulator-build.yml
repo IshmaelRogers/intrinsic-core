@@ -1,0 +1,53 @@
+# Builds the protected manipulator targets listed in
+# .github/baseline/manipulator_targets.tsv (rows whose build_vs_test column
+# is "build"). Does not pass a Bazel --config flag, so no UUV configuration
+# is enabled. Release and post-submit workflows are unchanged.
+#
+# Local equivalent, from the repository root:
+#   python3 tools/build_protected_manipulator_targets.py \
+#     --manifest .github/baseline/manipulator_targets.tsv
+#
+# On failure the log ends with: First failing target: <label>
+
+name: Protected manipulator build
+
+on:
+  workflow_dispatch:
+  pull_request:
+  push:
+    branches:
+      - main
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  build-protected-manipulator-targets:
+    runs-on: ubuntu-24.04-8core
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+        with:
+          lfs: true
+
+      - name: Set up Bazel
+        uses: bazel-contrib/setup-bazel@0.14.0
+        with:
+          # Avoid downloading Bazel every time.
+          bazelisk-cache: true
+          # Store build cache under a shared key across workflows.
+          disk-cache: intrinsic-core-build
+          # Cache external/ repositories
+          external-cache: true
+          # Share repository cache between workflows.
+          repository-cache: true
+
+      - name: Build protected manipulator targets
+        run: |
+          # https://github.com/bazel-contrib/rules_kotlin/issues/1352
+          unset -v ANDROID_HOME ANDROID_SDK_HOME
+          python3 tools/build_protected_manipulator_targets.py \
+            --manifest .github/baseline/manipulator_targets.tsv
