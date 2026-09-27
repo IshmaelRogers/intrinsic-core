@@ -45,6 +45,7 @@ _FAILURE_ABORT_REASONS = frozenset(
 _LOG_FAILURE_PATTERNS = (
     re.compile(r"^Target (//\S+) failed to build$", re.MULTILINE),
     re.compile(r"Analysis of target '(//[^']+)' failed"),
+    re.compile(r"\(from target (//[^)\s]+)\)"),
     re.compile(r"no such target '(//[^']+)'"),
     re.compile(r"Skipping '(//[^']+)': (?:no such package|no such target)"),
 )
