@@ -1,0 +1,304 @@
+{
+  "cases": [
+    {
+      "input": {
+        "motion_types": [
+          "JOINT"
+        ],
+        "point_path": [
+          [
+            -0.1,
+            0.0,
+            -1.36,
+            -0.77,
+            0.0,
+            -1.0
+          ]
+        ],
+        "robot_name": "agilus_04"
+      },
+      "name": "valid_joint_segment",
+      "result": {
+        "motion_segment_count": 1,
+        "motion_type": "JOINT",
+        "motion_type_number": 2,
+        "request_textproto": [
+          "robot_specification {",
+          "  robot_reference {",
+          "    object_id {",
+          "      by_name {",
+          "        object_name: \"agilus_04\"",
+          "      }",
+          "    }",
+          "  }",
+          "}",
+          "motion_specification {",
+          "  motion_segments {",
+          "    target {",
+          "      joint_position {",
+          "        joints: -0.1",
+          "        joints: 0.0",
+          "        joints: -1.36",
+          "        joints: -0.77",
+          "        joints: 0.0",
+          "        joints: -1.0",
+          "      }",
+          "    }",
+          "    motion_type: JOINT",
+          "  }",
+          "}"
+        ],
+        "robot_object_name": "agilus_04",
+        "status_code": "OK",
+        "status_message": "",
+        "target_joints": [
+          [
+            -0.1,
+            0.0,
+            -1.36,
+            -0.77,
+            0.0,
+            -1.0
+          ]
+        ]
+      }
+    },
+    {
+      "input": {
+        "motion_types": [
+          "JOINT",
+          "LINEAR"
+        ],
+        "point_path": [
+          [
+            -0.1,
+            0.0,
+            -1.36,
+            -0.77,
+            0.0,
+            -1.0
+          ]
+        ],
+        "robot_name": "agilus_04"
+      },
+      "name": "invalid_size_mismatch",
+      "result": {
+        "motion_segment_count": 0,
+        "motion_type": null,
+        "motion_type_number": null,
+        "request_textproto": null,
+        "robot_object_name": null,
+        "status_code": "INVALID_ARGUMENT",
+        "status_message": "The size of `point_path` and `motion_types` must be the same, but got 1 and 2, respectively.",
+        "target_joints": null
+      }
+    },
+    {
+      "input": {
+        "motion_types": [],
+        "point_path": [],
+        "robot_name": "agilus_04"
+      },
+      "name": "invalid_empty_point_path",
+      "result": {
+        "motion_segment_count": 0,
+        "motion_type": null,
+        "motion_type_number": null,
+        "request_textproto": null,
+        "robot_object_name": null,
+        "status_code": "INVALID_ARGUMENT",
+        "status_message": "The size of `point_path` must be greater than 0.",
+        "target_joints": null
+      }
+    }
+  ],
+  "factory": {
+    "documented_status_code": "INVALID_ARGUMENT",
+    "function": "CreateMotionPlanningRequestFromPointPath",
+    "header": "intrinsic_motion_planning/intrinsic/motion_planning/service/motion_planner_service_utils.h",
+    "source": "intrinsic_motion_planning/intrinsic/motion_planning/service/motion_planner_service_utils.cc",
+    "success_status_code": "OK"
+  },
+  "schema": "manipulator-planning-request-v1",
+  "serialization": {
+    "fields_left_unset": [
+      {
+        "label": "singular",
+        "name": "world_id",
+        "number": 1,
+        "type": "string"
+      },
+      {
+        "label": "optional",
+        "name": "motion_planner_config",
+        "number": 4,
+        "type": "MotionPlannerConfiguration"
+      },
+      {
+        "label": "singular",
+        "name": "compute_swept_volume",
+        "number": 5,
+        "type": "bool"
+      },
+      {
+        "label": "optional",
+        "name": "caller_id",
+        "number": 6,
+        "type": "string"
+      },
+      {
+        "label": "optional",
+        "name": "context",
+        "number": 7,
+        "type": "intrinsic_proto.data_logger.Context"
+      },
+      {
+        "label": "singular",
+        "name": "snapshot_world_id",
+        "number": 10,
+        "type": "string"
+      }
+    ],
+    "fields_written": [
+      {
+        "leaf": "object_name",
+        "steps": [
+          {
+            "label": "singular",
+            "message": "MotionPlanningRequest",
+            "name": "robot_specification",
+            "number": 2,
+            "type": "RobotSpecification"
+          },
+          {
+            "label": "singular",
+            "message": "RobotSpecification",
+            "name": "robot_reference",
+            "number": 1,
+            "type": "RobotReference"
+          },
+          {
+            "label": "singular",
+            "message": "RobotReference",
+            "name": "object_id",
+            "number": 1,
+            "oneof": "robot_reference",
+            "type": "intrinsic_proto.world.ObjectReference"
+          },
+          {
+            "label": "singular",
+            "message": "ObjectReference",
+            "name": "by_name",
+            "number": 2,
+            "oneof": "object_reference",
+            "type": "ObjectReferenceByName"
+          },
+          {
+            "label": "singular",
+            "message": "ObjectReferenceByName",
+            "name": "object_name",
+            "number": 1,
+            "type": "string"
+          }
+        ]
+      },
+      {
+        "leaf": "motion_type",
+        "steps": [
+          {
+            "label": "singular",
+            "message": "MotionPlanningRequest",
+            "name": "motion_specification",
+            "number": 3,
+            "type": "MotionSpecification"
+          },
+          {
+            "label": "repeated",
+            "message": "MotionSpecification",
+            "name": "motion_segments",
+            "number": 1,
+            "type": "MotionSegment"
+          },
+          {
+            "label": "singular",
+            "message": "MotionSegment",
+            "name": "motion_type",
+            "number": 15,
+            "type": "MotionType"
+          }
+        ]
+      },
+      {
+        "leaf": "joints",
+        "steps": [
+          {
+            "label": "singular",
+            "message": "MotionPlanningRequest",
+            "name": "motion_specification",
+            "number": 3,
+            "type": "MotionSpecification"
+          },
+          {
+            "label": "repeated",
+            "message": "MotionSpecification",
+            "name": "motion_segments",
+            "number": 1,
+            "type": "MotionSegment"
+          },
+          {
+            "label": "singular",
+            "message": "MotionSegment",
+            "name": "target",
+            "number": 5,
+            "type": "intrinsic_proto.motion_planning.v1.GeometricConstraint"
+          },
+          {
+            "label": "singular",
+            "message": "GeometricConstraint",
+            "name": "joint_position",
+            "number": 13,
+            "oneof": "constraint",
+            "type": "intrinsic_proto.icon.JointVec"
+          },
+          {
+            "label": "repeated",
+            "message": "JointVec",
+            "name": "joints",
+            "number": 1,
+            "type": "double"
+          }
+        ]
+      }
+    ],
+    "message": "intrinsic_proto.motion_planning.v1.MotionPlanningRequest",
+    "motion_type_values": [
+      {
+        "name": "ANY",
+        "number": 0
+      },
+      {
+        "name": "LINEAR",
+        "number": 1
+      },
+      {
+        "name": "JOINT",
+        "number": 2
+      }
+    ],
+    "proto": "intrinsic_motion_planning/intrinsic/motion_planning/proto/v1/motion_planner_service.proto"
+  },
+  "validation_rules": [
+    {
+      "factory": "InvalidArgumentError",
+      "kind": "size_mismatch",
+      "message_template": "The size of `point_path` and `motion_types` must be the same, but got {point_path_size} and {motion_types_size}, respectively.",
+      "status_code": "INVALID_ARGUMENT"
+    },
+    {
+      "factory": "InvalidArgumentError",
+      "kind": "empty_point_path",
+      "message_template": "The size of `point_path` must be greater than 0.",
+      "status_code": "INVALID_ARGUMENT"
+    }
+  ]
+}
