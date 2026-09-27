@@ -1,0 +1,266 @@
+{
+  "ci_runtime_budget_seconds": 5.0,
+  "command_status": {
+    "apply_command_blocks": false,
+    "clock_queue_timeout_seconds": 10,
+    "queues_sim_time_without_realtime_clock": false,
+    "read_status_blocks_until_tick": true,
+    "realtime_clock": null,
+    "steps": [
+      {
+        "active_after": false,
+        "call": "Init",
+        "expected_read_status_calls": 0,
+        "interfaces_registered": 12,
+        "status": "OK"
+      },
+      {
+        "active_after": false,
+        "call": "Prepare",
+        "expected_read_status_calls": 0,
+        "state": "kPrepared",
+        "status": "OK"
+      },
+      {
+        "active_after": false,
+        "call": "RequestIconTick",
+        "expected_read_status_calls": 0,
+        "inactive_noop": true,
+        "status": "OK"
+      },
+      {
+        "active_after": true,
+        "call": "Activate",
+        "expected_read_status_calls": 0,
+        "status": "OK"
+      },
+      {
+        "active_after": true,
+        "call": "RequestIconTick",
+        "expected_read_status_calls": 1,
+        "status": "OK"
+      },
+      {
+        "active_after": true,
+        "call": "ReadStatus",
+        "expected_read_status_calls": 0,
+        "status": "OK"
+      },
+      {
+        "active_after": true,
+        "blocks": false,
+        "call": "ApplyCommand",
+        "expected_read_status_calls": 0,
+        "status": "OK"
+      },
+      {
+        "active_after": true,
+        "call": "WaitForIconTicksToFinish",
+        "expected_read_status_calls": 0,
+        "status": "OK"
+      }
+    ]
+  },
+  "discovery": {
+    "counted_joint_types": [
+      "prismatic",
+      "revolute"
+    ],
+    "hardware_interfaces_case": "HARDWARE_INTERFACES_NOT_SET",
+    "inference_branch": "from_self",
+    "interfaces": [
+      {
+        "advertise": "AdvertiseInterface",
+        "direction": "command",
+        "flatbuffer": "JointPositionCommand",
+        "joint_group": "auto_joint_group",
+        "name": "joint_position_command",
+        "strict": false,
+        "tracks_joint_count": true
+      },
+      {
+        "advertise": "AdvertiseInterface",
+        "direction": "command",
+        "flatbuffer": "JointTorqueCommand",
+        "joint_group": "auto_joint_group",
+        "name": "joint_torque_command",
+        "strict": false,
+        "tracks_joint_count": true
+      },
+      {
+        "advertise": "AdvertiseMutableInterface",
+        "direction": "status",
+        "flatbuffer": "JointPositionState",
+        "joint_group": "auto_joint_group",
+        "name": "joint_position_state",
+        "strict": false,
+        "tracks_joint_count": true
+      },
+      {
+        "advertise": "AdvertiseMutableInterface",
+        "direction": "status",
+        "flatbuffer": "JointCommandedPosition",
+        "joint_group": "auto_joint_group",
+        "name": "joint_commanded_position",
+        "strict": false,
+        "tracks_joint_count": true
+      },
+      {
+        "advertise": "AdvertiseMutableInterface",
+        "direction": "status",
+        "flatbuffer": "JointVelocityState",
+        "joint_group": "auto_joint_group",
+        "name": "joint_velocity_state",
+        "strict": false,
+        "tracks_joint_count": true
+      },
+      {
+        "advertise": "AdvertiseMutableInterface",
+        "direction": "status",
+        "flatbuffer": "JointAccelerationState",
+        "joint_group": "auto_joint_group",
+        "name": "joint_acceleration_state",
+        "strict": false,
+        "tracks_joint_count": true
+      },
+      {
+        "advertise": "AdvertiseMutableInterface",
+        "direction": "status",
+        "flatbuffer": "JointTorqueState",
+        "joint_group": "auto_joint_group",
+        "name": "joint_torque_state",
+        "strict": false,
+        "tracks_joint_count": true
+      },
+      {
+        "advertise": "AdvertiseInterface",
+        "direction": "command",
+        "flatbuffer": "PayloadCommand",
+        "joint_group": "auto_joint_group",
+        "name": "payload_command",
+        "strict": false,
+        "tracks_joint_count": false
+      },
+      {
+        "advertise": "AdvertiseMutableInterface",
+        "direction": "status",
+        "flatbuffer": "PayloadState",
+        "joint_group": "auto_joint_group",
+        "name": "payload_state",
+        "strict": false,
+        "tracks_joint_count": false
+      },
+      {
+        "advertise": "AdvertiseInterface",
+        "direction": "command",
+        "flatbuffer": "Wrench",
+        "joint_group": "auto_joint_group",
+        "name": "process_wrench_command",
+        "strict": false,
+        "tracks_joint_count": false
+      },
+      {
+        "advertise": "AdvertiseInterface",
+        "direction": "command",
+        "flatbuffer": "JointLimits",
+        "joint_group": "auto_joint_group",
+        "name": "joint_system_limits",
+        "strict": false,
+        "tracks_joint_count": true
+      },
+      {
+        "advertise": "AdvertiseMutableInterface",
+        "direction": "status",
+        "flatbuffer": "SafetyStatusMessage",
+        "joint_group": null,
+        "name": "safety_status",
+        "strict": false,
+        "tracks_joint_count": false
+      }
+    ],
+    "joint_group": "auto_joint_group",
+    "safety_interface": "safety_status",
+    "shared_cases": [
+      "HARDWARE_INTERFACES_NOT_SET",
+      "kFromSelf"
+    ]
+  },
+  "launch": {
+    "fixture": "intrinsic/simulation/gazebo/plugins/testdata/gazebo_hwm_manipulator.world.sdf",
+    "headless_rendering": true,
+    "model_file": "intrinsic/robot_definitions/ur/ur5e/ur5e.urdf",
+    "model_name": "ur5e",
+    "model_uri": "model://intrinsic/robot_definitions/ur/ur5e",
+    "physics_engine": "static://gz::physics::bullet_featherstone::Plugin",
+    "physics_engine_when_use_dart": "static://gz::physics::dartsim::Plugin",
+    "plugins": [
+      {
+        "filename": "static://gz::sim::systems::Physics",
+        "name": "gz::sim::systems::Physics",
+        "source": "world_template"
+      },
+      {
+        "filename": "static://gz::sim::systems::SceneBroadcaster",
+        "name": "gz::sim::systems::SceneBroadcaster",
+        "source": "world_template"
+      },
+      {
+        "filename": "static://gz::sim::systems::Sensors",
+        "name": "gz::sim::systems::Sensors",
+        "source": "world_template"
+      },
+      {
+        "filename": "static://gz::sim::systems::ForceTorque",
+        "name": "gz::sim::systems::ForceTorque",
+        "source": "world_template"
+      },
+      {
+        "filename": "static://gz::sim::systems::UserCommands",
+        "name": "gz::sim::systems::UserCommands",
+        "source": "world_template"
+      },
+      {
+        "filename": "static://intrinsic::simulation::ServiceStateAggregator",
+        "name": "intrinsic::simulation::ServiceStateAggregator",
+        "source": "world_template"
+      },
+      {
+        "filename": "static://intrinsic::simulation::SimInputsSystem",
+        "name": "intrinsic::simulation::SimInputsSystem",
+        "source": "world_template"
+      },
+      {
+        "filename": "static://intrinsic::simulation::HardwareModuleLauncher",
+        "name": "intrinsic::simulation::HardwareModuleLauncher",
+        "source": "fixture"
+      }
+    ],
+    "rendering": "headless",
+    "sensors": {
+      "force_torque": 0,
+      "rangefinder": 0
+    },
+    "world_template": "intrinsic/simulation/gazebo/world_templates/default.sdf.tpl"
+  },
+  "part": {
+    "joint_count": 6,
+    "joint_names": [
+      "shoulder_pan_joint",
+      "shoulder_lift_joint",
+      "elbow_joint",
+      "wrist_1_joint",
+      "wrist_2_joint",
+      "wrist_3_joint"
+    ],
+    "joint_types": [
+      "revolute",
+      "revolute",
+      "revolute",
+      "revolute",
+      "revolute",
+      "revolute"
+    ],
+    "name": "ur5e"
+  },
+  "schema": "gazebo-hwm-path-v1"
+}
