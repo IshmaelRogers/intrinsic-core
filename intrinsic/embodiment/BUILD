@@ -60,6 +60,7 @@ py_test(
     name = "frame_policy_test_py",
     size = "small",
     srcs = ["frame_policy_test.py"],
+    main = "frame_policy_test.py",
     deps = [":frame_policy_py"],
 )
 
@@ -67,6 +68,7 @@ py_test(
     name = "stamped_header_serialization_test_py",
     size = "small",
     srcs = ["stamped_header_serialization_test.py"],
+    main = "stamped_header_serialization_test.py",
     deps = [
         ":frame_policy_py",
         "@intrinsic_apis//intrinsic/embodiment/proto:stamped_header_py_pb2",
