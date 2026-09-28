@@ -43,9 +43,29 @@ using intrinsic_proto::vehicle::VehicleState;
 
 // Canonical serializations of the fillers below. Keep in sync with
 // vehicle_contract_serialization_test.py.
-constexpr std::string_view kVehicleStateGoldenHex = "pending";
-constexpr std::string_view kDesiredMotionGoldenHex = "pending";
-constexpr std::string_view kBodyWrenchGoldenHex = "pending";
+constexpr std::string_view kVehicleStateGoldenHex =
+    "0a37082a120b0880e2cfaa061080e59a771a060881e2cfaa06220465736b662a09776f72"
+    "6c645f656e7532096d6f6e6f746f6e69633a02080112280a1b09000000000000f03f1100"
+    "000000000000401900000000000008c0120921000000000000f03f1a1209000000000000"
+    "e03f31000000000000c03f220919000000000000d03f2aa3020aa002000000000000d03f"
+    "000000000000000000000000000000000000000000000000000000000000000000000000"
+    "000000000000000000000000000000000000d03f00000000000000000000000000000000"
+    "000000000000000000000000000000000000000000000000000000000000000000000000"
+    "0000d03f0000000000000000000000000000000000000000000000000000000000000000"
+    "00000000000000000000000000000000000000000000b03f000000000000000000000000"
+    "000000000000000000000000000000000000000000000000000000000000000000000000"
+    "000000000000b03f00000000000000000000000000000000000000000000000000000000"
+    "0000000000000000000000000000000000000000000000000000b03f380342090a036476"
+    "6c1202080142070a0564657074684803";
+constexpr std::string_view kDesiredMotionGoldenHex =
+    "0a390807120b0882e2cfaa061080e59a771a060883e2cfaa062206706f6c6963792a0977"
+    "6f726c645f656e7532096d6f6e6f746f6e69633a02080112210a1f0a1209000000000000"
+    "10401900000000000000c0120921000000000000f03f2a02080531000000000000e03f3a"
+    "1c0a0a7575765f696e74656e74120276311a0a7368613235363a616263";
+constexpr std::string_view kBodyWrenchGoldenHex =
+    "0a360809120b0883e2cfaa061080e59a771a060884e2cfaa06220867756964616e63652a"
+    "04626f647932096d6f6e6f746f6e69633a02080111000000000000f83f39000000000000"
+    "d03f";
 
 std::array<double, kCovarianceValues> PoseCovariance() {
   std::array<double, kCovarianceValues> values = {};
@@ -264,10 +284,15 @@ std::string LoadExample(const std::string& name) {
   }
   const std::string suffix = "intrinsic/vehicle/proto/examples/" + name;
   const char* workspace = std::getenv("TEST_WORKSPACE");
+  // Bzlmod canonical repo name is intrinsic_apis+. The apparent name
+  // intrinsic_apis is kept for layouts that symlink it.
   std::vector<std::string> candidates = {
+      std::string(src) + "/intrinsic_apis+/" + suffix,
       std::string(src) + "/intrinsic_apis/" + suffix,
   };
   if (workspace != nullptr) {
+    candidates.push_back(std::string(src) + "/" + workspace +
+                         "/external/intrinsic_apis+/" + suffix);
     candidates.push_back(std::string(src) + "/" + workspace +
                          "/external/intrinsic_apis/" + suffix);
     candidates.push_back(std::string(src) + "/" + workspace + "/" + suffix);
