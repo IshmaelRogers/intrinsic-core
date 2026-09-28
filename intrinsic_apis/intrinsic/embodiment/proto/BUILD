@@ -43,3 +43,24 @@ go_proto_library(
         "@org_golang_google_protobuf//types/known/timestamppb",
     ],
 )
+
+proto_library(
+    name = "capability_descriptor_proto",
+    srcs = ["capability_descriptor.proto"],
+)
+
+cc_proto_library(
+    name = "capability_descriptor_cc_proto",
+    deps = [":capability_descriptor_proto"],
+)
+
+py_proto_library(
+    name = "capability_descriptor_py_pb2",
+    deps = [":capability_descriptor_proto"],
+)
+
+go_proto_library(
+    name = "capability_descriptor_go_proto",
+    importpath = "intrinsic/embodiment/proto/capability_descriptor_go_proto",
+    protos = [":capability_descriptor_proto"],
+)

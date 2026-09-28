@@ -74,3 +74,53 @@ py_test(
         "@intrinsic_apis//intrinsic/embodiment/proto:stamped_header_py_pb2",
     ],
 )
+
+cc_library(
+    name = "capability_policy",
+    hdrs = ["capability_policy.h"],
+)
+
+cc_test(
+    name = "capability_descriptor_test",
+    size = "small",
+    srcs = ["capability_descriptor_test.cc"],
+    deps = [
+        ":capability_policy",
+        "@com_google_googletest//:gtest_main",
+    ],
+)
+
+cc_test(
+    name = "capability_descriptor_serialization_test",
+    size = "small",
+    srcs = ["capability_descriptor_serialization_test.cc"],
+    deps = [
+        ":capability_policy",
+        "@com_google_googletest//:gtest_main",
+        "@intrinsic_apis//intrinsic/embodiment/proto:capability_descriptor_cc_proto",
+    ],
+)
+
+py_library(
+    name = "capability_policy_py",
+    srcs = ["capability_policy.py"],
+)
+
+py_test(
+    name = "capability_descriptor_test_py",
+    size = "small",
+    srcs = ["capability_descriptor_test.py"],
+    main = "capability_descriptor_test.py",
+    deps = [":capability_policy_py"],
+)
+
+py_test(
+    name = "capability_descriptor_serialization_test_py",
+    size = "small",
+    srcs = ["capability_descriptor_serialization_test.py"],
+    main = "capability_descriptor_serialization_test.py",
+    deps = [
+        ":capability_policy_py",
+        "@intrinsic_apis//intrinsic/embodiment/proto:capability_descriptor_py_pb2",
+    ],
+)
