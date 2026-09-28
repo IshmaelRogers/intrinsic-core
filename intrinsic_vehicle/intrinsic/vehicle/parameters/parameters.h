@@ -12,20 +12,19 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#ifndef INTRINSIC_VEHICLE_DYNAMICS_DYNAMICS_H_
-#define INTRINSIC_VEHICLE_DYNAMICS_DYNAMICS_H_
+#ifndef INTRINSIC_VEHICLE_PARAMETERS_PARAMETERS_H_
+#define INTRINSIC_VEHICLE_PARAMETERS_PARAMETERS_H_
 
 #include <string_view>
 
-namespace intrinsic::vehicle::dynamics {
+namespace intrinsic::vehicle::parameters {
 
-// Soft-real-time package scaffold. Vehicle dynamics belong here,
-// outside the ICON cycle. This header defines no dynamics.
-// Marine model parameters are validated in the parameters package.
+// Soft-real-time parameter package. Marine model schemas and validation
+// live in marine_model.h and are not loaded by ICON.
 // Timing and ownership: README.md in this tree.
 inline constexpr std::string_view kPackageName =
-    "intrinsic_vehicle/intrinsic/vehicle/dynamics";
+    "intrinsic_vehicle/intrinsic/vehicle/parameters";
 
-}  // namespace intrinsic::vehicle::dynamics
+}  // namespace intrinsic::vehicle::parameters
 
-#endif  // INTRINSIC_VEHICLE_DYNAMICS_DYNAMICS_H_
+#endif  // INTRINSIC_VEHICLE_PARAMETERS_PARAMETERS_H_

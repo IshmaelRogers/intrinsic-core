@@ -38,6 +38,7 @@ cc_library(
         "//intrinsic_vehicle/intrinsic/vehicle/control",
         "//intrinsic_vehicle/intrinsic/vehicle/dynamics",
         "//intrinsic_vehicle/intrinsic/vehicle/guidance",
+        "//intrinsic_vehicle/intrinsic/vehicle/parameters",
         "//intrinsic_vehicle/intrinsic/vehicle/state",
     ],
 )
@@ -62,6 +63,7 @@ py_test(
         "//intrinsic_vehicle/intrinsic/vehicle/control:package_files",
         "//intrinsic_vehicle/intrinsic/vehicle/dynamics:package_files",
         "//intrinsic_vehicle/intrinsic/vehicle/guidance:package_files",
+        "//intrinsic_vehicle/intrinsic/vehicle/parameters:package_files",
         "//intrinsic_vehicle/intrinsic/vehicle/state:package_files",
         "//intrinsic_vehicle/intrinsic/vehicle/testing:package_files",
     ],

@@ -19,6 +19,7 @@
 #include "intrinsic/vehicle/control/control.h"
 #include "intrinsic/vehicle/dynamics/dynamics.h"
 #include "intrinsic/vehicle/guidance/guidance.h"
+#include "intrinsic/vehicle/parameters/parameters.h"
 #include "intrinsic/vehicle/state/state.h"
 
 namespace intrinsic::vehicle::testing {
@@ -26,7 +27,7 @@ namespace intrinsic::vehicle::testing {
 // Test-only umbrella over the vehicle package scaffold.
 // Production targets must not depend on this library.
 inline constexpr char kScaffoldPackages[] =
-    "allocation,control,dynamics,guidance,state";
+    "allocation,control,dynamics,guidance,parameters,state";
 
 }  // namespace intrinsic::vehicle::testing
 

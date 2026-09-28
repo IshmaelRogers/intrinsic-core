@@ -27,6 +27,7 @@ _PACKAGES = (
     "control",
     "dynamics",
     "guidance",
+    "parameters",
     "state",
     "testing",
     "vehicle",
@@ -40,6 +41,7 @@ _ALLOWED["testing"] = frozenset(
         "control",
         "dynamics",
         "guidance",
+        "parameters",
         "state",
     )
 )
@@ -57,6 +59,7 @@ _HEADER_MARKERS = {
     "control.h": "Soft-real-time package scaffold",
     "dynamics.h": "Soft-real-time package scaffold",
     "guidance.h": "Soft-real-time package scaffold",
+    "parameters.h": "Soft-real-time parameter package",
     "scaffold.h": "Test-only umbrella",
     "state.h": "Real-time package scaffold",
 }
@@ -175,7 +178,7 @@ class PackageGraphTest(unittest.TestCase):
     self.assertIn("### Soft-real-time", readme)
     self.assertIn("### Test-only", readme)
     self.assertEqual(readme.count("| Real-time |"), 2)
-    self.assertEqual(readme.count("| Soft-real-time |"), 3)
+    self.assertEqual(readme.count("| Soft-real-time |"), 4)
     self.assertEqual(readme.count("| Test-only |"), 1)
     self.assertIn("no Bazel dependency in either direction", readme)
     self.assertIn("manipulator_targets.tsv", readme)

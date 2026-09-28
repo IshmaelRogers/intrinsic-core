@@ -22,7 +22,8 @@ namespace {
 
 TEST(VehicleScaffold, CompilesEveryPackage) {
   EXPECT_EQ(std::string_view(intrinsic::vehicle::testing::kScaffoldPackages),
-            std::string_view("allocation,control,dynamics,guidance,state"));
+            std::string_view(
+                "allocation,control,dynamics,guidance,parameters,state"));
   EXPECT_EQ(intrinsic::vehicle::allocation::kPackageName,
             std::string_view("intrinsic_vehicle/intrinsic/vehicle/allocation"));
   EXPECT_EQ(intrinsic::vehicle::control::kPackageName,
@@ -31,6 +32,8 @@ TEST(VehicleScaffold, CompilesEveryPackage) {
             std::string_view("intrinsic_vehicle/intrinsic/vehicle/dynamics"));
   EXPECT_EQ(intrinsic::vehicle::guidance::kPackageName,
             std::string_view("intrinsic_vehicle/intrinsic/vehicle/guidance"));
+  EXPECT_EQ(intrinsic::vehicle::parameters::kPackageName,
+            std::string_view("intrinsic_vehicle/intrinsic/vehicle/parameters"));
   EXPECT_EQ(intrinsic::vehicle::state::kPackageName,
             std::string_view("intrinsic_vehicle/intrinsic/vehicle/state"));
 }
