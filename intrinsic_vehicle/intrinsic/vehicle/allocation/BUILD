@@ -1,0 +1,44 @@
+# Copyright 2026 Intrinsic Innovation LLC
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     https://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+load("//bazel:cc_macros.bzl", "cc_library", "cc_test")
+
+# Opt-in vehicle allocation scaffold. Not part of the protected manipulator
+# baseline. Do not add this package to
+# .github/baseline/manipulator_targets.tsv.
+
+package(default_visibility = ["//visibility:public"])
+
+filegroup(
+    name = "package_files",
+    srcs = [
+        "BUILD",
+        "allocation.h",
+    ],
+)
+
+cc_library(
+    name = "allocation",
+    hdrs = ["allocation.h"],
+)
+
+cc_test(
+    name = "allocation_test",
+    size = "small",
+    srcs = ["allocation_test.cc"],
+    deps = [
+        ":allocation",
+        "@com_google_googletest//:gtest_main",
+    ],
+)

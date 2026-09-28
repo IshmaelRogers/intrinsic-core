@@ -31,4 +31,5 @@ GOOGLE3_OR_IOC_LOCATIONS = [
     "intrinsic_inference",
     "incode/intrinsic_simulation",
     "intrinsic_hardware",
+    "intrinsic_vehicle",
 ]

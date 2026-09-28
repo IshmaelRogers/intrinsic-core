@@ -32,6 +32,7 @@ The accepted multi-embodiment decision is recorded in [ADR 0001](docs/adr/0001-m
 - **intrinsic_apis**: The interface definitions for Intrinsic Core.
 - **intrinsic_hardware**: Hardware device drivers, manifests, and service integrations for industrial peripherals.
 - **intrinsic_kinematics**: Kinematic modeling and solver library for robotic manipulators.
+- **intrinsic_vehicle**: Opt-in free-body vehicle packages (state, dynamics, allocation, guidance, control). Real-time and soft-real-time boundaries are documented in [intrinsic_vehicle/intrinsic/vehicle/README.md](intrinsic_vehicle/intrinsic/vehicle/README.md). Manipulator kinematics stay in `intrinsic_kinematics`.
 
 ## Intrinsic Open Machine Tending Solution (OMTS)
 
