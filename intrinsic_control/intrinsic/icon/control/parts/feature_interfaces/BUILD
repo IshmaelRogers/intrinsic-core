@@ -13,6 +13,7 @@
 # limitations under the License.
 
 load("//bazel:cc_macros.bzl", "cc_library")
+load("//intrinsic_control/intrinsic/icon/testing:cc_test_and_malloc_test.bzl", "cc_test_and_malloc_test")
 
 package(default_visibility = [
     "//intrinsic_control/intrinsic/icon/control:icon_rtcl",
@@ -685,6 +686,50 @@ cc_library(
         "//intrinsic_control/intrinsic/icon/utils:realtime_status_macro",
         "//intrinsic_sdk/intrinsic/world/robot_payload:robot_payload_base",
         "@abseil-cpp//absl/status:statusor",
+    ],
+)
+
+cc_library(
+    name = "vehicle_body_features",
+    srcs = ["vehicle_body_features.cc"],
+    hdrs = ["vehicle_body_features.h"],
+    deps = [
+        ":hal_feature_interface_base",
+        "//intrinsic/embodiment:frame_policy",
+        "//intrinsic_control/intrinsic/icon/control/parts:feature_interfaces",
+        "//intrinsic_control/intrinsic/icon/control/parts:realtime_part_interface",
+        "//intrinsic_control/intrinsic/icon/control/safety:safety_messages_fbs_cc",
+        "//intrinsic_control/intrinsic/icon/hal:hardware_interface_handle",
+        "//intrinsic_control/intrinsic/icon/hal/interfaces:vehicle_hal_fbs_cc",
+        "//intrinsic_control/intrinsic/icon/hal/interfaces:vehicle_hal_utils",
+        "//intrinsic_control/intrinsic/icon/utils:core_time",
+        "//intrinsic_control/intrinsic/icon/utils:realtime_status",
+        "@abseil-cpp//absl/status",
+        "@abseil-cpp//absl/status:statusor",
+    ],
+)
+
+cc_test_and_malloc_test(
+    name = "vehicle_body_features_test",
+    size = "small",
+    srcs = ["vehicle_body_features_test.cc"],
+    deps = [
+        ":vehicle_body_features",
+        "//intrinsic_control/intrinsic/icon/control/parts:feature_interface_registry",
+        "//intrinsic_control/intrinsic/icon/control/parts:feature_interfaces",
+        "//intrinsic_control/intrinsic/icon/control/parts:realtime_part_interface",
+        "//intrinsic_control/intrinsic/icon/hal:hardware_interface_registry",
+        "//intrinsic_control/intrinsic/icon/hal/interfaces:vehicle_hal_fbs_cc",
+        "//intrinsic_control/intrinsic/icon/hal/interfaces:vehicle_hal_utils",
+        "//intrinsic_control/intrinsic/icon/hal/interfaces:vehicle_hardware_interfaces",
+        "//intrinsic_control/intrinsic/icon/interprocess/shared_memory_manager",
+        "//intrinsic_control/intrinsic/icon/testing:malloc_test",
+        "//intrinsic_control/intrinsic/icon/utils:core_time",
+        "//intrinsic_control/intrinsic/icon/utils:realtime_status",
+        "//intrinsic_control/intrinsic/icon/utils:realtime_status_matchers",
+        "@abseil-cpp//absl/container:fixed_array",
+        "@abseil-cpp//absl/status",
+        "@intrinsic_apis//intrinsic/icon/proto/v1:types_cc_proto",
     ],
 )
 
