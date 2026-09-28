@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-load("//bazel:cc_macros.bzl", "cc_library")
+load("//bazel:cc_macros.bzl", "cc_library", "cc_test")
 load("//intrinsic/platform:flatbuffers.bzl", "cc_flatbuffers_library", "flatbuffers_library")
 
 package(default_visibility = ["//visibility:public"])
@@ -583,6 +583,49 @@ cc_library(
         "//intrinsic_control/intrinsic/icon/flatbuffers:control_types_utils",
         "//intrinsic_control/intrinsic/icon/flatbuffers:transform_types_fbs_cc",
         "//intrinsic_sdk/intrinsic/math:pose3",
+        "@com_github_google_flatbuffers//:runtime_cc",
+    ],
+)
+
+# Opt-in vehicle HAL. Not part of the protected manipulator baseline.
+
+flatbuffers_library(
+    name = "vehicle_hal_fbs",
+    srcs = ["vehicle_hal.fbs"],
+)
+
+cc_flatbuffers_library(
+    name = "vehicle_hal_fbs_cc",
+    deps = [":vehicle_hal_fbs"],
+)
+
+cc_library(
+    name = "vehicle_hal_utils",
+    srcs = ["vehicle_hal_utils.cc"],
+    hdrs = ["vehicle_hal_utils.h"],
+    deps = [
+        ":vehicle_hal_fbs_cc",
+        "@com_github_google_flatbuffers//:runtime_cc",
+    ],
+)
+
+cc_library(
+    name = "vehicle_hardware_interfaces",
+    hdrs = ["vehicle_hardware_interfaces.h"],
+    deps = [
+        ":vehicle_hal_fbs_cc",
+        ":vehicle_hal_utils",
+        "//intrinsic_control/intrinsic/icon/hal:hardware_interface_traits",
+    ],
+)
+
+cc_test(
+    name = "vehicle_hal_verifier_test",
+    size = "small",
+    srcs = ["vehicle_hal_verifier_test.cc"],
+    deps = [
+        ":vehicle_hal_fbs_cc",
+        ":vehicle_hal_utils",
         "@com_github_google_flatbuffers//:runtime_cc",
     ],
 )
