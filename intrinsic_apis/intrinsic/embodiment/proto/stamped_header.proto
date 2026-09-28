@@ -1,0 +1,73 @@
+// Copyright 2026 Intrinsic Innovation LLC
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     https://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
+syntax = "proto3";
+
+package intrinsic_proto.embodiment;
+
+import "google/protobuf/timestamp.proto";
+
+option go_package = "intrinsic/embodiment/proto/stamped_header_go_proto";
+
+// Companion validity judgment shared by embodiment messages.
+//
+// Absence is not a State value. An unset StampedHeader.validity field means
+// the producer supplied no judgment. A present Validity is a judgment, even
+// when state is STATE_UNSPECIFIED. STATE_INVALID is an explicit rejection.
+// Missing, unspecified, and invalid stay distinct.
+//
+// See README.md for frame, unit, time, and quaternion rules.
+message Validity {
+  enum State {
+    // A judgment message is present and no classification was recorded.
+    // This is not the same as an unset StampedHeader.validity field.
+    STATE_UNSPECIFIED = 0;
+    STATE_VALID = 1;
+    STATE_INVALID = 2;
+  }
+
+  State state = 1;
+}
+
+// Non-real-time stamp for embodiment data.
+//
+// Fields 1-6 match the PDR §5 StampedHeader sketch. Field 7 is the additive
+// Validity companion. Policy text is README.md. This message does not rename
+// or widen joint, Cartesian, kinematics, motion-planning, World, or Gazebo
+// contracts.
+message StampedHeader {
+  // Producer sequence. Consumers reject a sequence that does not advance.
+  uint64 sequence = 1;
+
+  // Measurement or model time. clock_domain selects the interpretation.
+  google.protobuf.Timestamp source_time = 2;
+
+  // Ingestion time. Same clock_domain as source_time.
+  google.protobuf.Timestamp receive_time = 3;
+
+  // Stable id of the producer. Not a frame name.
+  string source_id = 4;
+
+  // Explicit frame of the payload. Never inferred from the message type.
+  // Well-known world ids are "world_enu" and "world_ned". See README.md.
+  string frame_id = 5;
+
+  // Clock that produced source_time and receive_time.
+  // Well-known values are "utc" and "monotonic". Unknown strings are kept.
+  // Wall-clock values do not drive watchdogs. See README.md.
+  string clock_domain = 6;
+
+  // Additive companion. Unset means absent, which is not STATE_INVALID.
+  Validity validity = 7;
+}
