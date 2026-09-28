@@ -18,6 +18,8 @@ See the [Getting Started guide](https://github.com/intrinsic-ai/intrinsic-core/t
 ## Intrinsic Core Architecture
 ![Intrinsic Core Architecture](developer_resources/img/intrinsic_core_architecture.png)
 
+The accepted multi-embodiment decision is recorded in [ADR 0001](docs/adr/0001-multi-embodiment-capability-architecture.md). Existing manipulator contracts remain the first compatibility profile.
+
 ## Intrinsic Core modules
 
 - **intrinsic_runtime**: A pre-configured local execution engine for Intrinsic Core. Packaged as a native k3s containerized environment, it manages process life cycle, event scheduling, and application state synchronization out of the box—giving developers a stable, deterministic execution layer on top of ROS 2 without the need to manually configure low-level system plumbing.

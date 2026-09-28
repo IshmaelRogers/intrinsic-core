@@ -1,0 +1,380 @@
+Intrinsic Core Multi Embodiment Physical AI Platform
+Preliminary Design Review for regression safe UUV enablement
+Repository IshmaelRogers intrinsic-coreReference commit 64abb3cf1c645426b507f6cbe1f0bd297095ee8cPrepared 26 September 2026
+
+1 Executive decision
+Approve an additive capability architecture. Intrinsic Core should not be converted from a manipulator system into a vehicle system. It should become an embodiment-neutral platform whose current manipulator contracts remain the first compatibility profile and whose UUV implementation is a second profile composed from new capabilities. ICON remains deterministic execution authority; learned systems produce timestamped intent and never actuator commands.
+Decision
+PDR position
+Compatibility
+No renaming, widening, or reinterpretation of existing joint, Cartesian, kinematics, motion-planning, World, or Gazebo contracts.
+Polymorphism
+Select capabilities through registries and interfaces. Do not add a central switch on robot type.
+Real time
+FlatBuffers and fixed-size C++ types inside ICON. Protobuf and services outside the real-time loop.
+Safety
+AI intent passes through deterministic validation, planning, guidance, ICON limits, allocation, and hardware watchdogs.
+Simulation
+Gazebo plugins are opt-in adapters that reuse the same vehicle dynamics library and HAL contracts.
+Delivery
+Gate every phase on manipulator goldens, UUV conformance tests, replay determinism, and a headless scenario.
+2 Review scope and evidence
+This PDR is based on direct inspection of the repository at the commit above, including the root architecture guidance, Bazel package layout, ICON real-time part and feature-interface registry, FlatBuffer HAL schemas, intrinsic_kinematics model interfaces, motion-planning packages, World component protos, Gazebo simulator service and plugins, camera-oriented perception packages, and the Open Inference Protocol/Triton-backed inference service. The repository contains more than six thousand files; the design focuses on stable extension seams rather than exhaustive file-by-file modification.
+Observed baseline
+Design consequence
+ICON RealtimePartInterface brackets each cycle with ReadStatus and ApplyCommand and exposes action-facing features through FeatureInterfaceRegistry.
+Add body-state and body-wrench features through the registry; do not generalize every joint class.
+HAL messages are FlatBuffers; public services and skills are protobuf/gRPC.
+Maintain two representations with checked boundary conversions.
+intrinsic_kinematics models articulated trees and single-DoF joints.
+Keep it unchanged; put free-body dynamics in intrinsic_vehicle.
+World already uses additive entity components.
+Add marine components and synchronized snapshot service rather than a parallel world database.
+Simulation has a polymorphic Simulator interface and Gazebo plugin adapters.
+Add opt-in marine plugins and share equations with intrinsic_vehicle.
+Inference already serves OIP/Triton models and manages model assets.
+Add deadlines, provenance, validity and async orchestration around OIP; do not replace it.
+Skills are instantiated per interaction and must be stateless.
+State estimators, world fusion, policy execution, and recording are persistent service assets; skills remain thin clients.
+3 Goals non goals and success criteria
+Preserve source, wire, configuration, build, and behavioral compatibility for supported manipulator paths.
+Support a free-swimming six-DoF UUV in simulation with canonical state, guidance, safety, planning, perception contracts, and shadow-mode Physical AI.
+Make future UAV, UGV, USV, legged, and mobile-manipulator support possible without editing a central embodiment enumeration.
+Use the same public sensor and actuator contracts in simulation and hardware adapters.
+Make every safety-relevant decision replayable and attributable to state, world snapshot, configuration, and model versions.
+Non goals for the first release are certified functional safety, unrestricted end-to-end learned control, production acoustic swarm coordination, vendor-specific drivers, high-fidelity CFD, or real-water deployment. Those require later qualification after the architecture and evidence pipeline are stable.
+Metric
+PDR exit target
+Manipulator regression
+Protected build/tests and golden status/output digests unchanged.
+Real-time integrity
+No allocation, blocking inference, protobuf parsing, or unbounded work in ICON cycle.
+Safety isolation
+Static dependency test proves inference cannot link to actuator command interfaces.
+Determinism
+Fixed seed and fixed episode reproduce state, safety, plan, and command digests.
+Simulation parity
+Real and simulated adapters pass the same HAL conformance suite.
+UUV vertical slice
+Headless dive, transit, avoid, and resurface scenario completes inside CI budget.
+4 Architecture
+Mission Behavior Tree and stateless Skills                 |                 v Persistent services: estimation | world | perception | inference | replay                 |                    AI produces DesiredMotion only                 +--------------------+------------------+                                      v                         Deterministic Safety Supervisor                                      v                         Vehicle Planner and Guidance                                      v                    ICON BodyWrench Action and hard limits                                      v                         Bounded Control Allocation                                      v                  Thruster HAL adapter or Gazebo adapter                                      v                                Physical UUVFeedback: sensor HAL -> estimator -> immutable WorldSnapshot(epoch N)Audit: every boundary -> EpisodeEvent with source and provenance
+The architecture uses capability composition. An embodiment descriptor states what a resource provides, but business logic requests interfaces such as BodyState, BodyWrenchCommand, StateSpace, DynamicsModel, RangeObservation, or SafetyRule. Adding a robot class registers implementations; it does not extend a platform-wide enum or change existing consumers.
+4.1 Package ownership
+Package
+Owns
+Must not own
+intrinsic_control ICON
+Real-time parts, features, actions, limits, watchdogs
+Planning, inference, protobuf parsing, hydrodynamic parameter loading
+intrinsic_vehicle
+Vehicle state math, dynamics, allocation, guidance/control interfaces
+Gazebo APIs, vendor SDKs, mission behavior
+intrinsic_hardware
+Vendor-neutral sensor/actuator contracts and driver adapters
+Navigation fusion and mission logic
+intrinsic_estimation
+Persistent navigation filter and source-health logic
+Perception semantics or actuator commands
+intrinsic_world
+Entities, marine components, immutable snapshot construction
+Learned-policy execution
+intrinsic_motion_planning
+Vehicle state space, constraints, trajectory and planner registry
+Low-level control allocation
+intrinsic_safety
+Deterministic rules and authority state machine
+Neural inference backends
+intrinsic_inference
+Existing OIP model serving plus async envelopes
+ICON cycle or direct hardware dependencies
+intrinsic_simulation
+Simulator adapters/plugins and deterministic scenario configuration
+Duplicate vehicle equations
+intrinsic_data
+Episode schema, recorder, replay, digests
+Control authority
+5 Canonical data contracts
+Non-real-time contracts are protobuf. Real-time contracts are fixed-size C++ and FlatBuffers. Conversion occurs at one audited boundary and validates units, frames, age, finiteness, quaternion normalization, covariance shape, limits, and sequence monotonicity.
+message StampedHeader {  uint64 sequence = 1;  google.protobuf.Timestamp source_time = 2;  google.protobuf.Timestamp receive_time = 3;  string source_id = 4;  string frame_id = 5;  string clock_domain = 6;}message VehicleState {  StampedHeader header = 1;  Pose pose_world_from_body = 2;  Twist body_twist = 3;  Accel body_acceleration = 4;  Matrix6 pose_covariance = 5;  Matrix6 twist_covariance = 6;  NavigationMode mode = 7;  repeated SourceHealth sources = 8;  uint64 estimator_epoch = 9;}message DesiredMotion {  StampedHeader header = 1;  oneof objective { PoseTarget pose = 2; TwistTarget twist = 3;                    TrajectoryReference trajectory = 4; }  google.protobuf.Duration horizon = 5;  double confidence = 6;  ModelProvenance provenance = 7;}
+Invariant
+Rule
+Frames
+World is ENU at platform boundaries; marine NED is an explicit adapter. Body axes follow REP-103. Never infer a frame from message type.
+Units
+SI only. Field names include unit suffix when ambiguity remains, for example depth_m and pressure_pa.
+Time
+Source time is measurement/model time; receive time is ingestion time; ICON uses monotonic age. Wall clock never drives watchdogs.
+Validity
+Invalid and absent are distinct. Non-finite values are invalid. Every derived value carries age/source.
+Covariance
+Fixed order is documented and validated. Unknown covariance is explicit, not an all-zero matrix.
+Evolution
+Append fields and enum values; reserve removed tags/names; preserve unknown values; provide golden serialization fixtures.
+6 Core polymorphic interfaces
+class VehicleDynamics { public:  virtual ~VehicleDynamics() = default;  virtual StatusOr<DynamicsResult> Evaluate(      const VehicleStateRt&, const BodyWrenchRt&,      const EnvironmentRt&, Duration dt) const = 0;};class ControlAllocator { public:  virtual StatusOr<AllocationResult> Allocate(      const BodyWrenchRt&, const ActuatorHealthRt&) = 0;};class StateSpace { public:  virtual StatusOr<State> Interpolate(const State&, const State&, double u) const = 0;  virtual double Distance(const State&, const State&) const = 0;  virtual Status Validate(const State&, const ConstraintSet&) const = 0;};class SafetyRule { public:  virtual SafetyFinding Evaluate(const Intent&, const WorldSnapshot&) const = 0;};class InferenceClient { public:  virtual StatusOr<RequestId> Submit(const InferenceEnvelope&) = 0;  virtual optional<InferenceResult> Poll(RequestId) = 0;  virtual Status Cancel(RequestId) = 0;};
+Interfaces are narrow and domain-oriented. Polymorphism is appropriate at backend and algorithm boundaries; plain value types remain concrete. Real-time calls use fixed-size values, explicit ownership, bounded complexity, no exceptions, and status returns. Persistent services may use gRPC and protobuf but expose deadline and cancellation semantics.
+7 ICON and hardware execution design
+A VehicleRealtimePart implements the existing RealtimePartInterface. ReadStatus latches body state and actuator health at cycle start. Actions access BodyState, BodyWrenchCommand, and VehicleLimits through FeatureInterfaceRegistry. ApplyCommand performs final validation, invokes the allocator, writes bounded actuator commands, and neutralizes on timeout or fault. Existing HalArmPart and joint features are untouched.
+ReadStatus -> latch state/health -> run ICON actions -> validate wrench           -> allocate bounded actuator commands -> ApplyCommandFailure precedence:fatal hardware fault > safety emergency > watchdog expiry > allocator failure> action failure > normal command
+Failure
+Required response
+Missing vehicle capability
+Action creation fails with FailedPrecondition; manipulator remains unaffected.
+Stale/invalid state
+Reject new wrench; use configured neutral/hold behavior.
+Command timeout
+Latch watchdog status, command neutral, require explicit reset.
+Allocator infeasible
+Report residual and saturation; safety/controller chooses degrade or abort.
+Actuator fault
+Recompute with health/derating if safe; otherwise neutral and escalate.
+8 State estimation world and perception
+State estimation is a persistent service, not a Skill and not part of generic perception. It ingests typed IMU/INS, DVL, depth, altitude, and surface fixes; publishes the authoritative VehicleState; and records source health and mode transitions. The first implementation is an error-state filter with deterministic replay. Learned odometry can later enter as another measured observation, never as an unqualified state overwrite.
+World remains the spatial authority. New bathymetry, current-field, occupancy, semantic-contact, uncertainty, and validity components are additive. A WorldSnapshotBuilder reads revisions once per epoch and returns an immutable snapshot. Planning, safety, and AI consume the same snapshot ID; maximum skew is enforced. Sonar is introduced as an independent observation type with geometry, calibration, sound-speed context, and blob reference. Multimodal bundles allow any subset and state why a modality is absent.
+9 Safety and authority
+AI result -> envelope validation -> authority state -> SafetyRule set          -> ACCEPT | PROJECT | REJECT | ABORT | SURFACE          -> planner feasibility -> guidance/controller -> ICON limits          -> allocation -> actuator watchdog
+Boundary
+Enforcement
+Inference envelope
+Model/version, input digest, epoch, deadline, validity horizon, confidence, uncertainty, finite values.
+Authority state
+Shadow produces logs only; recommend requires operator/executive acceptance; constrained allows validated intent; revoked/emergency fail closed.
+Safety rule set
+Depth/altitude, attitude/rates, speed, geofence, collision, energy reserve, state age, covariance, health.
+Planner
+Produces dynamically feasible timed trajectory or no-solution; never silently degrades constraints.
+ICON
+Applies system/application limits and command age every cycle.
+Hardware
+Driver-level saturation, neutral-on-disable, health feedback, independent watchdog.
+Rules are deterministic, independent, side-effect free, and versioned. Projection precedence is safety emergency, collision/clearance, operating envelope, energy, then mission preferences. Conflicting hard projections reject rather than choose opportunistically. The inference package has no dependency path to actuator command APIs; CI checks this architecture property.
+10 Simulation architecture
+The simulator remains replaceable through the existing Simulator interface. Gazebo receives opt-in marine components and plugins. The hydrodynamics plugin calls intrinsic_vehicle VehicleDynamics so simulation and planning/control tests share equations. It applies buoyancy, restoring forces, added mass, damping, current-relative velocity, and actuator dynamics to configured free bodies. With components absent or the plugin disabled, existing terrestrial worlds execute unchanged.
+Simulation layer
+Abstraction
+Physics
+VehicleDynamics plus integrator adapter; Gazebo owns body integration.
+Environment
+Fluid/current/bathymetry/visibility components with deterministic defaults.
+Sensors
+Plugins publish the same HAL contracts as physical adapters.
+Actuators
+Thruster model implements lag, slew, saturation, efficiency, and faults.
+Randomization
+Seeded parameter sampler; realized values are recorded in episode metadata.
+Scenarios
+Repository-owned textproto/SDF assets; headless fixed-step CI execution.
+Fidelity is staged. Phase one validates architecture with coefficient-based six-DoF dynamics; later models may implement the same VehicleDynamics interface. CFD coupling is an external backend and cannot leak into control or planning contracts.
+11 Data flow and execution timing
+Loop
+Nominal rate
+Deadline behavior
+ICON control and allocation
+100 to 1000 Hz platform dependent
+Never waits; stale command neutralizes.
+Estimator propagation
+100 to 400 Hz
+Drops/rejects late observations by explicit policy.
+World snapshot
+10 to 50 Hz
+Publishes partial status or withholds snapshot when skew exceeds bound.
+Safety and guidance
+10 to 50 Hz
+Uses latest valid immutable snapshot; fail closed on expiry.
+Local planning
+1 to 10 Hz
+Cancellable; returns safe no-solution/timeout.
+Perception and inference
+Sensor/model dependent
+Async; expired results are logged and ignored.
+Strategic mission
+0.1 to 1 Hz
+Behavior tree timeouts and fallback.
+Each boundary records an EpisodeEvent with monotonically ordered sequence, source and receive times, source ID, frame, snapshot ID, configuration digest, model provenance when applicable, and typed payload. Replay supports step, accelerated, and real-time modes. Equal input episode and configuration must produce equal state, safety, plan, and command digests within documented floating-point tolerances.
+12 Compatibility and migration strategy
+Compatibility surface
+Policy
+C++
+No removal or signature change to current public manipulator classes. New namespaces/packages and adapters only.
+Proto
+Append fields; reserve removed identifiers; golden bytes and unknown-field tests.
+FlatBuffers
+Append fields/types with defaults; stable feature IDs; verifier fixtures.
+Bazel
+No new mandatory dependency in baseline targets; UUV targets are separate/opt-in.
+Runtime manifests
+No default UUV assets or plugins in industrial profile. Add a marine profile that composes existing services.
+World
+New component types; no reinterpretation of KinematicsComponent or PhysicsComponent.
+Motion planning
+New request/state-space types and registry; current manipulator services remain.
+Simulation
+Plugin absent means identical existing world behavior.
+SDK
+Capability discovery is additive; old clients may ignore unknown capability IDs.
+A feature may graduate only after its compatibility adapter and rollback path exist. Rollback removes the marine profile/plugin/asset registration; it does not require a data migration or restoration of old manipulator schemas.
+13 Verification strategy
+Level
+Evidence
+Schema
+Golden serialization, reserved tag checks, unknown enum/field tolerance, validators.
+Unit
+Dynamics terms, allocation bounds, frame conversion, filters, rules, interpolation, deadlines.
+Property
+Finite outputs, covariance PSD, bounded commands, time monotonicity, interpolation constraints.
+Conformance
+All HAL adapters and future embodiments run common contract suites.
+Integration
+Estimator-world-safety-planner-controller-ICON chain using fakes.
+Simulation
+Fixed-step fixed-seed UUV scenario plus sensor/actuator fault injection.
+Replay
+Digest equality and deadline/age reproduction from recorded episodes.
+Regression
+Manipulator goldens with UUV linked and excluded.
+Performance
+Cycle allocation guard, WCET budgets, queue bounds, scenario CI budget.
+Safety case
+Trace every applied command to state, snapshot, rules, plan, limits, and health.
+Tests never command real hardware. The reference solution is simulation-only. Physical trials require a separate readiness review, explicit operator consent, hardware emergency procedures, HIL evidence, and a validated operating envelope.
+14 Migration phases and PDR gates
+Phase
+Scope
+Exit gate
+0 Baseline
+#13 through #16
+Protected manipulator surface and architecture rules are executable in CI.
+1 Contracts and ICON
+#17 through #20
+Vehicle feature cycle works with fakes; manipulator goldens unchanged.
+2 Vehicle and HAL
+#21 through #28
+Dynamics, guidance, allocation, sensors, and thruster fakes pass unit/conformance tests.
+3 Estimation and safety
+#29 through #32
+Dive/recovery replay and fail-closed authority/rule tests pass.
+4 Planning world perception inference
+#33 through #37
+Coherent snapshot drives planner and async policy envelope; sonar-only is valid.
+5 Simulation and data
+#38 through #42
+Fixed-seed UUV scenario and deterministic replay pass in CI.
+6 Reference and shadow mode
+#43 and #44
+Policy cannot command actuators; classical behavior remains authoritative.
+7 Future embodiments
+#41 plus new profiles
+New embodiment passes conformance kit without core switches or baseline changes.
+15 Repository change map
+Proposed path
+Change form
+intrinsic_apis/intrinsic/embodiment/proto
+Stamped headers, capability descriptor, common validity/provenance.
+intrinsic_apis/intrinsic/vehicle/proto
+Vehicle state, commands, model parameters, trajectories.
+intrinsic_control/intrinsic/icon/hal/interfaces
+Append vehicle FlatBuffers and generated utilities.
+intrinsic_control/intrinsic/icon/control/parts/feature_interfaces
+Body state, wrench, limits; registered additively.
+intrinsic_vehicle/intrinsic/vehicle
+New dynamics, allocation, guidance, controller, tests.
+intrinsic_hardware/intrinsic/hardware/marine
+Sensor/actuator contracts, fakes, vendor adapter seams.
+intrinsic_estimation/intrinsic/estimation
+Persistent service API, marine ESKF, replay tests.
+intrinsic_safety/intrinsic/safety
+Intent decisions, rules, authority state machine.
+intrinsic_motion_planning/intrinsic/motion_planning/vehicle
+State space, trajectory, registry, reference planner.
+intrinsic_apis/intrinsic/world/proto
+New marine components only.
+intrinsic_perception/intrinsic/perception/sonar
+Sonar and multimodal contracts/adapters.
+intrinsic_inference
+Envelope and asynchronous client around existing OIP service.
+intrinsic/simulation/gazebo/plugins
+Opt-in hydrodynamics, sensors, randomization.
+intrinsic_data
+Episode schema, recorder, replay and digests.
+intrinsic_runtime/profiles/marine
+Composition profile; industrial profile unchanged.
+16 Risks and mitigations
+Risk
+Mitigation and evidence
+Generic abstraction weakens manipulator design
+Do not retrofit generic state into kinematics; use capability composition and goldens.
+Real-time regression
+Separate wire formats; no gRPC/protobuf/inference in ICON; allocation/WCET guards.
+Frame/units errors
+One written convention, explicit adapters, stamped frames, conversion property tests.
+Simulator and real drift
+Shared dynamics/HAL contracts, parameter provenance, replay, system identification later.
+Unsafe learned output
+No actuator dependency, fail-closed authority, deterministic layered rules and watchdogs.
+Overlarge first milestone
+Contract-sized issue graph and phase gates; defer swarm/CFD/certification.
+Schema lock-in
+Versioned additive messages, unknown-field tolerance, capability IDs, golden fixtures.
+Non-deterministic ML
+Record model/input digest and envelope; use replay backend for regression.
+17 GitHub implementation roadmap
+Issues #1 through #12 are now epics. Issues #13 through #44 are dependency-ordered implementation tasks. Each task contains a four-item Definition of Done and the common regression guard that #13 remains green and the feature is opt-in.
+Order
+Issue
+Deliverable
+1
+#13–#16
+Baseline, ADR, timing/frame policy, capability discovery
+2
+#17–#20
+Vehicle contracts, ICON feature path, manipulator goldens
+3
+#21–#28
+Vehicle model, dynamics, allocation, guidance, marine HAL
+4
+#29–#32
+Estimator, safety decisions, authority, rules
+5
+#33–#37
+Planning, world snapshots, sonar/multimodal, async inference
+6
+#38–#42
+Marine simulation, seeded faults, data/replay, conformance, golden scenario
+7
+#43–#44
+Reference solution and Physical AI shadow mode
+The communications/swarm epic #10 is intentionally deferred. Its next decomposition should begin only after #41 and #44 prove single-vehicle contracts, replay, authority, and extension mechanics. This prevents acoustic transport concerns from contaminating the first platform boundary.
+18 PDR approval checklist
+Architecture owners accept additive capability composition and the no-central-switch rule.
+ICON owners accept the new feature-interface path and fixed-size real-time representations.
+World and simulation owners accept additive components and opt-in plugins.
+Safety reviewers accept layered authority and the prohibition on learned actuator commands.
+Maintainers accept #13 and #20 as permanent merge gates.
+The team agrees that issues #13–#44 are the authorized implementation sequence and that broader scope requires a PDR or ADR update.
+Appendix A Detailed control and failure sequence
+1 Sensor adapters validate frame, time, quality and publish measurements.2 Estimator ingests in policy order; publishes VehicleState(epoch E).3 Snapshot builder captures state and World revisions as snapshot S.4 Classical logic and optional AI read exactly S.5 AI result must match S or a permitted lag and remain before valid_until.6 Authority and deterministic rules accept, project, reject or escalate.7 Planner returns a timed, dynamically feasible trajectory or typed failure.8 Guidance/controller returns bounded BodyWrench for state E/S.9 ICON checks state age, command age, finiteness and vehicle limits.10 Allocator uses current actuator health and reports residual/saturation.11 ApplyCommand sends bounded actuator values; driver watchdog remains final guard.12 Recorder appends every input, decision, transformation and applied command.
+Appendix B Future robot extension points
+Robot class
+Implementations supplied
+Core reused
+UAV
+Aero dynamics, rotor allocator, air-data sensors, flight envelope
+Capabilities, snapshots, safety, planner registry, inference, replay
+UGV
+Planar/slip dynamics, wheel/steering allocator, odometry
+Same platform contracts; SE(2) state-space specialization
+USV
+Surface marine dynamics, propulsor allocator, maritime sensors
+Marine components and most UUV infrastructure
+Legged
+Centroidal/contact dynamics and gait controller
+Intent, safety, snapshots, inference and data plane
+Mobile manipulator
+Composition of base and current manipulator capabilities
+Existing arm behavior plus multi-part coordination
+Soft robot
+Deformation state/dynamics backend and specialized limits
+Capability discovery, authority, simulation and evidence pipeline
+Appendix C Traceability
+Repository evidence is pinned to commit 64abb3cf1c645426b507f6cbe1f0bd297095ee8c. Roadmap state is represented by GitHub issues #1–#44 in IshmaelRogers/intrinsic-core. The PDR should be revised if upstream changes materially alter ICON cycle semantics, feature registration, World components, simulator service boundaries, or inference protocol handling.

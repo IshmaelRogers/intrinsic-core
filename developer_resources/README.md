@@ -2,6 +2,12 @@
 
 This directory contains documentation for Intrinsic Core.
 
+## Architecture
+
+- [ADR 0001: Additive multi-embodiment capability architecture](../docs/adr/0001-multi-embodiment-capability-architecture.md) —
+  accepted record of the 26 September 2026 multi-embodiment PDR. Manipulator
+  contracts stay the first compatibility profile.
+
 ## Learn
 
 - [Intrinsic terms](learn/glossary/intrinsic_terms.md) — glossary of

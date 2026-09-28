@@ -18,6 +18,10 @@ Robotic applications in Intrinsic Core are structured around four fundamental pr
 * **Zenoh Middleware Router**: High-throughput DDS/ROS 2 bridge and telemetry exchange operates on port `7447`.
 * **Execution Modes**: Solutions run in either `sim` (Gazebo physics & simulated sensors) or `real` (physical hardware modules & real-time `PREEMPT_RT` kernel).
 
+### Multi-embodiment decision
+
+The accepted record of the additive capability architecture is [ADR 0001](docs/adr/0001-multi-embodiment-capability-architecture.md). Manipulator joint and Cartesian contracts stay the first compatibility profile. Further embodiment behavior is opt-in when the capability or configuration is absent. The protected manipulator baseline (#13) remains the regression gate.
+
 ---
 
 ## 2. Core Agent Principles & Architecture Rules
