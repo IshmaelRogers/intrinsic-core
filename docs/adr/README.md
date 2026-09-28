@@ -14,6 +14,8 @@ Source for ADR 0001:
 - [Intrinsic-Core-Multi-Embodiment-PDR.docx](assets/Intrinsic-Core-Multi-Embodiment-PDR.docx)
 
 ADR 0001 records the decision and does not add packages. Issue #15 adds the
-stamped header, validity companion, and ENU/NED frame policy:
+stamped header, validity companion, and ENU/NED frame policy. Issue #16 adds
+the embodiment capability descriptor in that same package. Empty descriptors
+stay opt-in and leave the manipulator baseline unchanged.
 
-- [Stamped header README](../../intrinsic_apis/intrinsic/embodiment/proto/README.md)
+- [Embodiment proto README](../../intrinsic_apis/intrinsic/embodiment/proto/README.md)

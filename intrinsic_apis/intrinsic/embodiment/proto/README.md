@@ -6,6 +6,10 @@ Opt-in non-real-time contract for embodiment data. It implements the
 and PDR §5. It does not add `VehicleState`, `DesiredMotion`, vehicle packages,
 ICON features, or Gazebo plugins.
 
+The capability descriptor is specified under
+[Capability descriptor](#capability-descriptor). The stamped-header rules
+below are unchanged.
+
 Manipulator joint, Cartesian, kinematics, motion-planning, World, and Gazebo
 contracts are unchanged. `.github/baseline/manipulator_targets.tsv` does not
 list these targets. Callers that never set the new fields keep the previous
@@ -154,6 +158,116 @@ header are fixed in the C++ and Python serialization tests. A message that
 omits `validity` still parses, and those bytes are a prefix of the golden
 that includes `STATE_INVALID`.
 
+## Capability descriptor
+
+Opt-in advertisement of what one resource provides. PDR §15 places it in this
+directory beside `StampedHeader`. An embodiment descriptor states what a
+resource provides. Business logic requests interfaces. The descriptor has no
+robot-type field and no platform-wide embodiment enum. Adding a capability
+id registers an advertisement. It does not extend an embodiment enumeration
+and it does not change existing consumers.
+
+`capability_descriptor.proto` defines two messages.
+
+| Message | Field | Tag | Meaning |
+| --- | --- | --- | --- |
+| `CapabilityDescriptor` | `resource_id` | 1 | Opaque resource name. Helpers do not branch on it. |
+| `CapabilityDescriptor` | `capabilities` | 2 | Repeated declarations, in order. |
+| `CapabilityDeclaration` | `id` | 1 | Stable capability id. |
+| `CapabilityDeclaration` | `interface_id` | 2 | Optional interface binding. |
+
+`interface_id` is the interface business logic requests when the
+advertisement is more specific than `id`. Empty means `id` itself is that
+interface. The string does not define the named interface. This package does
+not add `BodyState`, `BodyWrenchCommand`, `StateSpace`, `DynamicsModel`,
+`RangeObservation`, or `SafetyRule`.
+
+A default `CapabilityDescriptor` serializes to zero bytes. Zero capabilities
+advertise nothing. That is prior behavior: joint, Cartesian, kinematics,
+motion-planning, World, and Gazebo contracts stay as they are. An absent
+descriptor is the same state.
+
+### Stable ids
+
+Comparison is exact, including the `ai.intrinsic.` prefix already used for
+skill and asset ids. The six category ids, in fixture order:
+
+| Category | Id |
+| --- | --- |
+| state | `ai.intrinsic.capability.state` |
+| command | `ai.intrinsic.capability.command` |
+| sensor | `ai.intrinsic.capability.sensor` |
+| actuator | `ai.intrinsic.capability.actuator` |
+| planning | `ai.intrinsic.capability.planning` |
+| simulation | `ai.intrinsic.capability.simulation` |
+
+These ids name categories. They do not split joint contracts from Cartesian
+contracts, and they are not a robot-type switch. An id outside this list is
+unknown. Unknown ids are stored and returned. Host checks do not reject them
+for being unknown. An old client ignores an id it does not recognize and
+leaves the bytes in place.
+
+### Duplicate and conflicting declarations
+
+`AssessCapabilityDeclarations` (`capability_policy.h`) and
+`assess_declarations` (`capability_policy.py`) apply one rule:
+
+| Condition | Result |
+| --- | --- |
+| `id` is empty | Rejected. This check runs first. |
+| Same `id`, same `interface_id`, more than once | Duplicate. |
+| Same `id`, two `interface_id` values, including empty versus set | Conflict. |
+| The list has both a duplicate pair and a conflicting pair | Conflict. |
+| Unknown `id`, declared once, with one `interface_id` | Accepted. |
+| No declarations | Accepted. Nothing is advertised. |
+
+Protobuf still serializes a rejected list. The helper reports the rejection.
+Parse and reserialize keep every declaration and every unknown field, so a
+rejected descriptor is not rewritten.
+
+A missing vehicle capability is not an error here. The manipulator fixture
+does not declare `ai.intrinsic.capability.vehicle`, and that string is not a
+well-known id. `FailedPrecondition` applies only when a later action requires
+a vehicle capability. This package does not create that action, and the
+manipulator declarations stay valid without it.
+
+### Manipulator descriptor
+
+`ManipulatorCapabilityDeclarations` and
+`MANIPULATOR_CAPABILITY_DECLARATIONS` advertise the six ids above, each with
+an empty `interface_id`. `kManipulatorResourceId` /
+`MANIPULATOR_RESOURCE_ID` is
+
+`ai.intrinsic.compatibility_profile.manipulator`.
+
+That string names the existing manipulator compatibility profile so the
+fixture has a stable resource id. It is not an embodiment enum, and helpers
+do not select code from it.
+
+The six ids describe the surface that already exists. Generating the
+descriptor does not change that surface:
+
+| Id | Existing surface the id describes |
+| --- | --- |
+| `ai.intrinsic.capability.state` | Joint state and Cartesian pose already produced for manipulators. |
+| `ai.intrinsic.capability.command` | Joint and Cartesian command contracts already accepted by ICON. |
+| `ai.intrinsic.capability.sensor` | Existing joint and workcell sensor parts. |
+| `ai.intrinsic.capability.actuator` | Existing arm actuation (`HalArmPart`) and gripper parts. |
+| `ai.intrinsic.capability.planning` | Existing motion-planning request and service contracts. |
+| `ai.intrinsic.capability.simulation` | Existing Gazebo manipulator simulation. |
+
+Kinematics, ICON, motion planning, World, and Gazebo do not depend on this
+package. `.github/baseline/manipulator_targets.tsv` does not list these
+targets. Callers that never build a `CapabilityDescriptor` keep the previous
+behavior.
+
+The manipulator golden is pinned in the C++ and Python serialization tests.
+Appending a declaration whose id is `ai.intrinsic.capability.extension`
+keeps those bytes as a prefix. That extension id is not well-known. Field
+100 on the descriptor is preserved the same way as on `StampedHeader`.
+
+Append fields and enum values. Reserve removed tags and names.
+
 ## Targets
 
 These targets are separate from the protected manipulator baseline:
@@ -168,3 +282,13 @@ These targets are separate from the protected manipulator baseline:
 - `//intrinsic/embodiment:frame_policy_test_py`
 - `//intrinsic/embodiment:stamped_header_serialization_test`
 - `//intrinsic/embodiment:stamped_header_serialization_test_py`
+- `@intrinsic_apis//intrinsic/embodiment/proto:capability_descriptor_proto`
+- `@intrinsic_apis//intrinsic/embodiment/proto:capability_descriptor_cc_proto`
+- `@intrinsic_apis//intrinsic/embodiment/proto:capability_descriptor_py_pb2`
+- `@intrinsic_apis//intrinsic/embodiment/proto:capability_descriptor_go_proto`
+- `//intrinsic/embodiment:capability_policy`
+- `//intrinsic/embodiment:capability_policy_py`
+- `//intrinsic/embodiment:capability_descriptor_test`
+- `//intrinsic/embodiment:capability_descriptor_test_py`
+- `//intrinsic/embodiment:capability_descriptor_serialization_test`
+- `//intrinsic/embodiment:capability_descriptor_serialization_test_py`
