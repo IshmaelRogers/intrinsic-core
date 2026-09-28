@@ -64,3 +64,24 @@ go_proto_library(
     importpath = "intrinsic/embodiment/proto/capability_descriptor_go_proto",
     protos = [":capability_descriptor_proto"],
 )
+
+proto_library(
+    name = "model_provenance_proto",
+    srcs = ["model_provenance.proto"],
+)
+
+cc_proto_library(
+    name = "model_provenance_cc_proto",
+    deps = [":model_provenance_proto"],
+)
+
+py_proto_library(
+    name = "model_provenance_py_pb2",
+    deps = [":model_provenance_proto"],
+)
+
+go_proto_library(
+    name = "model_provenance_go_proto",
+    importpath = "intrinsic/embodiment/proto/model_provenance_go_proto",
+    protos = [":model_provenance_proto"],
+)

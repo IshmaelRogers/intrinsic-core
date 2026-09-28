@@ -1,0 +1,104 @@
+// Copyright 2026 Intrinsic Innovation LLC
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     https://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
+syntax = "proto3";
+
+package intrinsic_proto.vehicle;
+
+import "google/protobuf/duration.proto";
+import "intrinsic/embodiment/proto/model_provenance.proto";
+import "intrinsic/embodiment/proto/stamped_header.proto";
+import "intrinsic/math/proto/pose.proto";
+import "intrinsic/vehicle/proto/vehicle_state.proto";
+
+option go_package = "intrinsic/vehicle/proto/vehicle_command_go_proto";
+
+// Body-frame force and torque. Not a thruster command and not an actuator
+// command.
+//
+// Force is newtons and torque is newton-meters, both at the body origin,
+// REP-103 axes (x forward, y left, z up). `header.frame_id` must be the
+// explicit body frame id "body" when this message is present. The frame is
+// not inferred from the message type. NaN and infinity are invalid.
+//
+// A default message serializes to zero bytes and is not a command. A
+// present message whose components are zero is a real zero wrench, which
+// is the neutral sample, and is distinct from the empty message.
+//
+// Learned systems do not write this message. ICON remains the only writer
+// of actuator commands. This package does not call ICON or a HAL.
+// See README.md.
+message BodyWrench {
+  intrinsic_proto.embodiment.StampedHeader header = 1;
+
+  double force_x_n = 2;
+  double force_y_n = 3;
+  double force_z_n = 4;
+
+  double torque_x_n_m = 5;
+  double torque_y_n_m = 6;
+  double torque_z_n_m = 7;
+}
+
+// Pose objective expressed in DesiredMotion.header.frame_id.
+message PoseTarget {
+  intrinsic_proto.Pose pose_world_from_body = 1;
+}
+
+// Body-frame twist objective. The header frame id must be "body".
+message TwistTarget {
+  BodyTwist body_twist = 1;
+}
+
+// Opaque reference to a trajectory owned by a later planner package.
+//
+// This message does not contain samples, a state space, or constraints.
+// `trajectory_id` is compared exactly. An empty id is rejected when this
+// objective is selected.
+message TrajectoryReference {
+  string trajectory_id = 1;
+}
+
+// Timestamped intent. Not an actuator command.
+//
+// Field numbers match the PDR §5 DesiredMotion sketch. Learned output
+// stops at this message. There is no robot-type field and no path from
+// this package to actuator command APIs.
+//
+// The `objective` oneof is unset when no objective was supplied. That is
+// absent, not a default pose. `confidence` is optional so a supplied 0 is
+// distinct from an omitted value. `horizon` unset means no horizon was
+// supplied. A present horizon is a non-negative duration.
+//
+// NaN and infinity are invalid. A STATE_VALID stamp does not repair them.
+// A default message serializes to zero bytes. See README.md.
+message DesiredMotion {
+  intrinsic_proto.embodiment.StampedHeader header = 1;
+
+  oneof objective {
+    PoseTarget pose = 2;
+    TwistTarget twist = 3;
+    TrajectoryReference trajectory = 4;
+  }
+
+  // How long the objective remains applicable. Unset means not supplied.
+  google.protobuf.Duration horizon = 5;
+
+  // Dimensionless confidence in [0, 1]. Unset means not supplied.
+  // Zero is a supplied value, not absence.
+  optional double confidence = 6;
+
+  // Unset means no provenance was supplied.
+  intrinsic_proto.embodiment.ModelProvenance provenance = 7;
+}

@@ -3,8 +3,10 @@
 Opt-in non-real-time contract for embodiment data. It implements the
 `StampedHeader` sketch and the frame, unit, time, and validity rules in
 [ADR 0001](../../../../docs/adr/0001-multi-embodiment-capability-architecture.md)
-and PDR §5. It does not add `VehicleState`, `DesiredMotion`, vehicle packages,
-ICON features, or Gazebo plugins.
+and PDR §5. `ModelProvenance` in this package is the common provenance
+message. Vehicle state and command messages live in
+[`intrinsic/vehicle/proto`](../../vehicle/proto/README.md). This package
+does not add ICON features or Gazebo plugins.
 
 The capability descriptor is specified under
 [Capability descriptor](#capability-descriptor). The stamped-header rules
@@ -268,6 +270,23 @@ keeps those bytes as a prefix. That extension id is not well-known. Field
 
 Append fields and enum values. Reserve removed tags and names.
 
+## Model provenance
+
+`model_provenance.proto` is the common provenance message from PDR §15.
+`DesiredMotion` carries it. An unset field is absent. A present message
+records which model produced an intent. It is not an inference envelope
+and it does not name a robot type.
+
+| Field | Tag | Meaning |
+| --- | --- | --- |
+| `model_id` | 1 | Stable model name. Required when the message is present. |
+| `model_version` | 2 | Producer version. Empty means unspecified. |
+| `digest` | 3 | Artifact digest. Empty means not supplied. |
+
+Empty strings are not the same as an unset `ModelProvenance`. Host checks
+on `DesiredMotion` reject a present provenance whose `model_id` is empty.
+A default `ModelProvenance` serializes to zero bytes.
+
 ## Targets
 
 These targets are separate from the protected manipulator baseline:
@@ -292,3 +311,7 @@ These targets are separate from the protected manipulator baseline:
 - `//intrinsic/embodiment:capability_descriptor_test_py`
 - `//intrinsic/embodiment:capability_descriptor_serialization_test`
 - `//intrinsic/embodiment:capability_descriptor_serialization_test_py`
+- `@intrinsic_apis//intrinsic/embodiment/proto:model_provenance_proto`
+- `@intrinsic_apis//intrinsic/embodiment/proto:model_provenance_cc_proto`
+- `@intrinsic_apis//intrinsic/embodiment/proto:model_provenance_py_pb2`
+- `@intrinsic_apis//intrinsic/embodiment/proto:model_provenance_go_proto`

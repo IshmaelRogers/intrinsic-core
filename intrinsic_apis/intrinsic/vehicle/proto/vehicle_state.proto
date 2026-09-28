@@ -1,0 +1,145 @@
+// Copyright 2026 Intrinsic Innovation LLC
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     https://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
+syntax = "proto3";
+
+package intrinsic_proto.vehicle;
+
+import "intrinsic/embodiment/proto/stamped_header.proto";
+import "intrinsic/math/proto/pose.proto";
+
+option go_package = "intrinsic/vehicle/proto/vehicle_state_go_proto";
+
+// Body-frame spatial vector. Component order matches Matrix6.
+//
+// Linear components are the first three. Angular components are the last
+// three. Units depend on the parent field. Axes are REP-103: x forward,
+// y left, z up. NaN and infinity are invalid. An unset parent field is
+// absent, which is not a zero vector. See README.md.
+message BodyTwist {
+  // Linear velocity of the body origin, meters per second.
+  double linear_x_m_s = 1;
+  double linear_y_m_s = 2;
+  double linear_z_m_s = 3;
+
+  // Angular velocity, radians per second, right-hand rule.
+  double angular_x_rad_s = 4;
+  double angular_y_rad_s = 5;
+  double angular_z_rad_s = 6;
+}
+
+// Body-frame acceleration. Same axis order as BodyTwist.
+//
+// Linear units are meters per second squared. Angular units are radians
+// per second squared. NaN and infinity are invalid. An unset parent field
+// is absent, which is not zero acceleration. See README.md.
+message BodyAcceleration {
+  double linear_x_m_s2 = 1;
+  double linear_y_m_s2 = 2;
+  double linear_z_m_s2 = 3;
+
+  double angular_x_rad_s2 = 4;
+  double angular_y_rad_s2 = 5;
+  double angular_z_rad_s2 = 6;
+}
+
+// Row-major 6x6 matrix used as a covariance.
+//
+// A present Matrix6 is specified data and must contain exactly 36 finite
+// values. Thirty-six zeros are a specified zero matrix, not unknown
+// covariance. Unknown covariance is an unset parent field. Component order
+// is fixed by the parent field. See README.md.
+//
+// Append fields. Reserve removed tags and names.
+message Matrix6 {
+  repeated double values = 1 [packed = true];
+}
+
+// Estimator navigation mode. This is not a robot-type enum.
+//
+// Unknown numbers stay on the wire. Host checks do not treat an unknown
+// number as NAVIGATION_MODE_FAULTED or as NAVIGATION_MODE_AIDED.
+// Append values. Reserve removed numbers and names.
+enum NavigationMode {
+  NAVIGATION_MODE_UNSPECIFIED = 0;
+  NAVIGATION_MODE_INITIALIZING = 1;
+  NAVIGATION_MODE_DEAD_RECKONING = 2;
+  NAVIGATION_MODE_AIDED = 3;
+  NAVIGATION_MODE_FAULTED = 4;
+}
+
+// Health of one estimation source. Not actuator health.
+//
+// `validity` uses the embodiment Validity companion. Unset validity means
+// the source supplied no health judgment. STATE_INVALID is an explicit
+// rejection. An empty `source_id` is rejected by host checks when this
+// message is present. See README.md.
+message SourceHealth {
+  // Stable producer id. Same role as StampedHeader.source_id. Not a frame.
+  string source_id = 1;
+
+  // Unset means absent, which is not STATE_INVALID.
+  intrinsic_proto.embodiment.Validity validity = 2;
+}
+
+// Authoritative non-real-time vehicle state from the estimation service.
+//
+// Field numbers match the PDR §5 VehicleState sketch. There is no
+// robot-type field. A default message serializes to zero bytes.
+//
+// `header.frame_id` is the frame of `pose_world_from_body` only. It is
+// never inferred from this message type, and it is not the frame of
+// `body_twist` or `body_acceleration`. Those two fields are body-frame
+// quantities (REP-103). Body axes are not converted to marine FRD.
+//
+// `pose_world_from_body` uses intrinsic_proto.Pose. Position is meters.
+// Orientation is a Hamilton quaternion stored x, y, z, w. Identity is
+// w = 1. A present pose with a non-finite or non-unit quaternion is
+// invalid. Helpers do not renormalize.
+//
+// Any NaN or infinity in a present numeric field is an invalid sample.
+// A STATE_VALID stamp does not make a non-finite value usable, and host
+// checks do not rewrite the stamp into STATE_INVALID.
+//
+// This message does not rename or widen joint, Cartesian, kinematics,
+// motion-planning, World, or Gazebo contracts. See README.md.
+message VehicleState {
+  intrinsic_proto.embodiment.StampedHeader header = 1;
+
+  // Pose of the body origin in header.frame_id. Unset means no pose.
+  intrinsic_proto.Pose pose_world_from_body = 2;
+
+  // Velocity of the body origin, body frame. Unset means no twist.
+  BodyTwist body_twist = 3;
+
+  // Acceleration of the body origin, body frame. Unset means no sample.
+  BodyAcceleration body_acceleration = 4;
+
+  // Covariance of the pose, in header.frame_id. Unset means unknown.
+  // Order: x, y, z, rotation about x, rotation about y, rotation about z.
+  Matrix6 pose_covariance = 5;
+
+  // Covariance of body_twist, in the body frame. Unset means unknown.
+  // Order matches BodyTwist: linear x, y, z, then angular x, y, z.
+  Matrix6 twist_covariance = 6;
+
+  NavigationMode mode = 7;
+
+  // Source health in producer order. Duplicate ids are not rewritten.
+  repeated SourceHealth sources = 8;
+
+  // Estimator epoch. Zero is omitted on the wire and observed as 0.
+  // A later epoch is a strictly greater value. Wrap does not advance.
+  uint64 estimator_epoch = 9;
+}
