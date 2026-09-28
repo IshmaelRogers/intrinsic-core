@@ -14,8 +14,8 @@
 
 load("//bazel:cc_macros.bzl", "cc_library", "cc_test")
 
-# Opt-in vehicle dynamics scaffold. Not part of the protected manipulator
-# baseline. Do not add this package to
+# Opt-in vehicle dynamics interface and zero-force test double. Not part of
+# the protected manipulator baseline. Do not add this package to
 # .github/baseline/manipulator_targets.tsv.
 
 package(default_visibility = ["//visibility:public"])
@@ -25,18 +25,40 @@ filegroup(
     srcs = [
         "BUILD",
         "dynamics.h",
+        "vehicle_dynamics.cc",
+        "vehicle_dynamics.h",
+        "zero_force_dynamics.cc",
+        "zero_force_dynamics.h",
     ],
 )
 
 cc_library(
     name = "dynamics",
-    hdrs = ["dynamics.h"],
+    srcs = [
+        "vehicle_dynamics.cc",
+        "zero_force_dynamics.cc",
+    ],
+    hdrs = [
+        "dynamics.h",
+        "vehicle_dynamics.h",
+        "zero_force_dynamics.h",
+    ],
 )
 
 cc_test(
     name = "dynamics_test",
     size = "small",
     srcs = ["dynamics_test.cc"],
+    deps = [
+        ":dynamics",
+        "@com_google_googletest//:gtest_main",
+    ],
+)
+
+cc_test(
+    name = "vehicle_dynamics_test",
+    size = "small",
+    srcs = ["vehicle_dynamics_test.cc"],
     deps = [
         ":dynamics",
         "@com_google_googletest//:gtest_main",

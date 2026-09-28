@@ -16,6 +16,8 @@
 
 The allowed graph is the scaffold graph. A later edge needs an update here
 and in README.md. Production packages stay independent of each other.
+Dynamics sources include only the C++ standard library and headers in that
+package.
 """
 
 import os
@@ -64,6 +66,26 @@ _HEADER_MARKERS = {
     "state.h": "Real-time package scaffold",
 }
 
+_DYNAMICS_SOURCES = (
+    "BUILD",
+    "dynamics.h",
+    "vehicle_dynamics.cc",
+    "vehicle_dynamics.h",
+    "zero_force_dynamics.cc",
+    "zero_force_dynamics.h",
+)
+
+_FORBIDDEN_INCLUDE_TOKENS = (
+    "absl",
+    "gazebo",
+    "grpc",
+    "icon",
+    "ignition",
+    "proto",
+    "sdformat",
+    "vendor",
+)
+
 _LABEL_RE = re.compile(r'"((?:@|//)[^"]+)"')
 _PACKAGE_RE = re.compile(
     r"^//intrinsic_vehicle/intrinsic/vehicle(?:/([a-z_]+))?(?::|$)"
@@ -94,6 +116,16 @@ def _strip_loads(text):
       continue
     lines.append(line)
   return "\n".join(lines)
+
+
+def _include_target(line):
+  stripped = line.strip()
+  if not stripped.startswith("#include"):
+    return None
+  rest = stripped[len("#include") :].strip()
+  if len(rest) >= 2 and rest[0] in "<\"" and rest[-1] in ">\"":
+    return rest[1:-1]
+  return rest
 
 
 def _package_of(label):
@@ -186,6 +218,38 @@ class PackageGraphTest(unittest.TestCase):
     for filename, marker in sorted(_HEADER_MARKERS.items()):
       with open(headers[filename], encoding="utf-8") as handle:
         self.assertIn(marker, handle.read(), filename)
+
+  def test_dynamics_headers_stay_in_package(self):
+    found = {}
+    for root in self._roots():
+      for dirpath, _, filenames in os.walk(root):
+        norm = dirpath.replace("\\", "/")
+        if not norm.endswith("intrinsic/vehicle/dynamics"):
+          continue
+        for filename in filenames:
+          if filename in _DYNAMICS_SOURCES:
+            found[filename] = os.path.join(dirpath, filename)
+    self.assertCountEqual(found, _DYNAMICS_SOURCES)
+    for filename, path in sorted(found.items()):
+      if not filename.endswith((".h", ".cc")):
+        continue
+      with open(path, encoding="utf-8") as handle:
+        for line in handle:
+          target = _include_target(line)
+          if target is None:
+            continue
+          lowered = target.lower()
+          for token in _FORBIDDEN_INCLUDE_TOKENS:
+            self.assertNotIn(
+                token,
+                lowered,
+                "%s includes %s" % (filename, target),
+            )
+          self.assertTrue(
+              "/" not in target
+              or target.startswith("intrinsic/vehicle/dynamics/"),
+              "%s includes %s" % (filename, target),
+          )
 
   def _assert_acyclic(self, graph):
     visiting = set()
