@@ -1,0 +1,26 @@
+# Twist objective. header.frame_id is the body frame, not the world.
+header {
+  sequence: 8
+  source_time {
+    seconds: 1700000002
+    nanos: 250000000
+  }
+  receive_time {
+    seconds: 1700000003
+  }
+  source_id: "policy"
+  frame_id: "body"
+  clock_domain: "monotonic"
+  validity {
+    state: STATE_VALID
+  }
+}
+twist {
+  body_twist {
+    linear_x_m_s: 0.5
+  }
+}
+horizon {
+  seconds: 1
+}
+confidence: 0.5

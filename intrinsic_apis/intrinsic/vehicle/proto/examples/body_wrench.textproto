@@ -1,0 +1,20 @@
+# Neutral-capable body wrench. Zero components that are omitted are zero.
+# frame_id is body. This is not a thruster or actuator command.
+header {
+  sequence: 9
+  source_time {
+    seconds: 1700000003
+    nanos: 250000000
+  }
+  receive_time {
+    seconds: 1700000004
+  }
+  source_id: "guidance"
+  frame_id: "body"
+  clock_domain: "monotonic"
+  validity {
+    state: STATE_VALID
+  }
+}
+force_x_n: 1.5
+torque_z_n_m: 0.25

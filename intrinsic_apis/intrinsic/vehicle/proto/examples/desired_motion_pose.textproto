@@ -1,0 +1,37 @@
+# Pose objective. Confidence 0.5 is supplied. Horizon is supplied.
+header {
+  sequence: 7
+  source_time {
+    seconds: 1700000002
+    nanos: 250000000
+  }
+  receive_time {
+    seconds: 1700000003
+  }
+  source_id: "policy"
+  frame_id: "world_enu"
+  clock_domain: "monotonic"
+  validity {
+    state: STATE_VALID
+  }
+}
+pose {
+  pose_world_from_body {
+    position {
+      x: 4
+      z: -2
+    }
+    orientation {
+      w: 1
+    }
+  }
+}
+horizon {
+  seconds: 5
+}
+confidence: 0.5
+provenance {
+  model_id: "uuv_intent"
+  model_version: "v1"
+  digest: "sha256:abc"
+}

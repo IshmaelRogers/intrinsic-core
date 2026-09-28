@@ -15,7 +15,9 @@ Source for ADR 0001:
 
 ADR 0001 records the decision and does not add packages. Issue #15 adds the
 stamped header, validity companion, and ENU/NED frame policy. Issue #16 adds
-the embodiment capability descriptor in that same package. Empty descriptors
-stay opt-in and leave the manipulator baseline unchanged.
+the embodiment capability descriptor in that same package. Issue #17 adds
+vehicle state and command protos under `intrinsic/vehicle/proto`. Empty
+messages stay opt-in and leave the manipulator baseline unchanged.
 
 - [Embodiment proto README](../../intrinsic_apis/intrinsic/embodiment/proto/README.md)
+- [Vehicle proto README](../../intrinsic_apis/intrinsic/vehicle/proto/README.md)

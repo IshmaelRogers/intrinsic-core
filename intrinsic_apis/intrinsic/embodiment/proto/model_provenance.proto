@@ -1,0 +1,40 @@
+// Copyright 2026 Intrinsic Innovation LLC
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     https://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
+syntax = "proto3";
+
+package intrinsic_proto.embodiment;
+
+option go_package = "intrinsic/embodiment/proto/model_provenance_go_proto";
+
+// Which model produced an intent. Common provenance from PDR §15.
+//
+// Unset on the parent is absent. A present message is a judgment that a
+// model produced the payload, even when `model_version` or `digest` is
+// empty. This message is not an inference envelope, not an actuator
+// command, and not a robot type.
+//
+// Append fields. Reserve removed tags and names. See README.md.
+message ModelProvenance {
+  // Stable model name. Host checks reject an empty id when this message
+  // is present. Not a frame and not an embodiment enum.
+  string model_id = 1;
+
+  // Producer version string. Empty means the producer did not supply one.
+  string model_version = 2;
+
+  // Content digest of the model artifact. Empty means not supplied.
+  // Absence of this message is not an empty digest.
+  string digest = 3;
+}
