@@ -1,0 +1,52 @@
+// Copyright 2026 Intrinsic Innovation LLC
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     https://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
+include "intrinsic/icon/flatbuffers/transform_types.fbs";
+
+namespace intrinsic_fbs;
+
+// Fixed-size real-time bounds on body twist, body acceleration, and body
+// wrench. One table, same role as JointLimits: the feature interface that
+// reads application and system limits is a later change and is not this
+// schema.
+//
+// Each has_* flag false means that limit is absent, not a zero bound. A
+// present Point of zeros with the flag true is a real zero bound. Components
+// are absolute per-axis maxima on REP-103 axes. Linear speed is m/s, angular
+// speed is rad/s, linear acceleration is m/s^2, angular acceleration is
+// rad/s^2, force is newtons, and torque is newton-meters.
+//
+// Depth, altitude, geofence, collision, and energy are safety rules. They
+// are not fields of this table.
+//
+// Append fields with defaults. Do not renumber or reorder existing fields.
+table VehicleLimits {
+  has_linear_speed_limit:bool = false;
+  max_linear_speed_m_s:intrinsic_fbs.Point;
+
+  has_angular_speed_limit:bool = false;
+  max_angular_speed_rad_s:intrinsic_fbs.Point;
+
+  has_linear_acceleration_limit:bool = false;
+  max_linear_acceleration_m_s2:intrinsic_fbs.Point;
+
+  has_angular_acceleration_limit:bool = false;
+  max_angular_acceleration_rad_s2:intrinsic_fbs.Point;
+
+  has_force_limit:bool = false;
+  max_force_n:intrinsic_fbs.Point;
+
+  has_torque_limit:bool = false;
+  max_torque_n_m:intrinsic_fbs.Point;
+}

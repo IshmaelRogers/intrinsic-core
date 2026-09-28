@@ -1,0 +1,58 @@
+// Copyright 2026 Intrinsic Innovation LLC
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     https://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
+include "intrinsic/icon/flatbuffers/transform_types.fbs";
+include "intrinsic/icon/hal/interfaces/vehicle_hal_types.fbs";
+
+namespace intrinsic_fbs;
+
+// Fixed-size real-time body wrench. Not a thruster command and not an
+// actuator command.
+//
+// Force is newtons and torque is newton-meters, both at the body origin,
+// REP-103 axes (x forward, y left, z up). The shared Wrench struct is x, y,
+// z force and rx, ry, rz torque. The frame of this use is the body frame.
+// `frame_id` must be the explicit id "body" when `wrench` is present. The
+// frame is not inferred from this table, and builders do not fill it in.
+//
+// Stamp fields match BodyState and use the same rules. Invalid and absent
+// are distinct. A null `wrench` is not a command. A present wrench of zeros
+// is the neutral sample. Non-finite components are invalid. validity_state 1
+// does not repair them.
+//
+// Append fields with defaults. Do not renumber or reorder existing fields.
+table BodyWrench {
+  sequence:ulong = 0;
+
+  source_time_present:bool = false;
+  source_time_seconds:long = 0;
+  source_time_nanos:int = 0;
+
+  receive_time_present:bool = false;
+  receive_time_seconds:long = 0;
+  receive_time_nanos:int = 0;
+
+  source_id:FixedText256;
+
+  // Explicit frame id. "body" when wrench is present. Null means absent.
+  frame_id:FixedText256;
+
+  clock_domain:FixedText256;
+
+  validity_present:bool = false;
+  validity_state:int = 0;
+
+  // Null means no command. Present zeros are the neutral wrench.
+  wrench:intrinsic_fbs.Wrench;
+}

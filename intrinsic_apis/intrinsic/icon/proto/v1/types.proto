@@ -394,6 +394,11 @@ message OperationalStatus {
 
 // Keep in sync with
 // intrinsic/icon/control/parts/feature_interfaces.h
+//
+// FEATURE_INTERFACE_BODY_STATE, FEATURE_INTERFACE_BODY_WRENCH_COMMAND, and
+// FEATURE_INTERFACE_VEHICLE_LIMITS are stable ids for the vehicle HAL
+// FlatBuffers. Their C++ feature classes are not registered here.
+// Next ID: 31
 enum FeatureInterfaceTypes {
   FEATURE_INTERFACE_INVALID = 0;
   FEATURE_INTERFACE_JOINT_POSITION = 1;
@@ -423,6 +428,9 @@ enum FeatureInterfaceTypes {
   FEATURE_INTERFACE_PAYLOAD_STATE = 24;
   FEATURE_INTERFACE_CARTESIAN_POSITION_STATE = 25;
   FEATURE_INTERFACE_HOMING = 26;
+  FEATURE_INTERFACE_BODY_STATE = 28;
+  FEATURE_INTERFACE_BODY_WRENCH_COMMAND = 29;
+  FEATURE_INTERFACE_VEHICLE_LIMITS = 30;
 }
 
 // Behavior overrides as desigend in go/intrinsic-icon-safety-scanner-support.

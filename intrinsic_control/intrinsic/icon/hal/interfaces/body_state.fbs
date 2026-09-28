@@ -1,0 +1,105 @@
+// Copyright 2026 Intrinsic Innovation LLC
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     https://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
+include "intrinsic/icon/flatbuffers/transform_types.fbs";
+include "intrinsic/icon/hal/interfaces/vehicle_hal_types.fbs";
+
+namespace intrinsic_fbs;
+
+// Fixed-size real-time body state latched by ICON ReadStatus.
+//
+// Field semantics match the non-real-time VehicleState contract: pose of the
+// body origin, body twist, body acceleration, covariances, navigation mode,
+// and estimator epoch. This table does not parse protobuf. SI units. Body
+// axes are REP-103 (x forward, y left, z up). A frame is never inferred from
+// this table.
+//
+// `frame_id` is the frame of `pose_world_from_body` only. `body_twist` and
+// `body_acceleration` are body-frame vectors and are not converted with
+// `frame_id`. Orientation is a Hamilton quaternion stored x, y, z, w.
+// Identity is w = 1. This schema does not renormalize.
+//
+// Invalid and absent are distinct. A null struct field is absent. A present
+// struct of zeros is a real zero sample. `validity_present` false means no
+// judgment was supplied. That is not validity_state 2 (invalid) and not
+// validity_state 0 (unspecified). Non-finite components are invalid samples.
+// A validity_state of 1 does not make a non-finite component usable, and
+// builders do not rewrite the state.
+//
+// Repeated source health is not in this table. No fixed source bound is
+// specified, so that list stays on the non-real-time VehicleState. Actuator
+// health is a separate later contract.
+//
+// Append fields with defaults. Do not renumber or reorder existing fields.
+table BodyState {
+  // Producer sequence. Zero is the default and is not an advance.
+  sequence:ulong = 0;
+
+  // Source time is measurement or model time. The present flag false means
+  // no timestamp was supplied, which is not a supplied zero.
+  source_time_present:bool = false;
+  source_time_seconds:long = 0;
+  source_time_nanos:int = 0;
+
+  // Receive time is ingestion time. Same clock_domain as source time.
+  receive_time_present:bool = false;
+  receive_time_seconds:long = 0;
+  receive_time_nanos:int = 0;
+
+  // Stable producer id. Not a frame name. Null means absent.
+  source_id:FixedText256;
+
+  // Explicit frame of pose_world_from_body. Null means no frame was supplied.
+  // Well-known world ids are "world_enu" and "world_ned".
+  frame_id:FixedText256;
+
+  // Clock domain for both timestamps. "monotonic" is the domain an ICON age
+  // check may use. "utc" and every other value are stored and do not drive
+  // a watchdog. Null means no domain was supplied.
+  clock_domain:FixedText256;
+
+  // False means no validity judgment. Not an invalid sample by itself.
+  validity_present:bool = false;
+
+  // Raw Validity.State number. 0 unspecified, 1 valid, 2 invalid. Any other
+  // number is stored as-is and is not rewritten to 2.
+  validity_state:int = 0;
+
+  // Pose of the body origin in frame_id. Null means no pose.
+  pose_world_from_body:intrinsic_fbs.Transform;
+
+  // Velocity of the body origin, body frame. m/s and rad/s. Null means no
+  // twist. Not frame_id.
+  body_twist:intrinsic_fbs.Twist;
+
+  // Acceleration of the body origin, body frame. m/s^2 and rad/s^2. Null
+  // means no sample.
+  body_acceleration:intrinsic_fbs.Acceleration;
+
+  // Covariance of the pose, in frame_id. Order is x, y, z, then rotation
+  // about x, y, z. Null means unknown.
+  pose_covariance:Matrix6d;
+
+  // Covariance of body_twist, body frame, BodyTwist order. Null means
+  // unknown.
+  twist_covariance:Matrix6d;
+
+  // Raw vehicle NavigationMode number. 0 unspecified, 1 initializing,
+  // 2 dead reckoning, 3 aided, 4 faulted. Any other number is unknown and
+  // is stored as-is. This is not a robot-type enum.
+  navigation_mode:int = 0;
+
+  // Estimator epoch. Zero is the default. A later epoch is strictly greater.
+  estimator_epoch:ulong = 0;
+}

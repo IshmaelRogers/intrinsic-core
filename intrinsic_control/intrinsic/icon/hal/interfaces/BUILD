@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-load("//bazel:cc_macros.bzl", "cc_library")
+load("//bazel:cc_macros.bzl", "cc_library", "cc_test")
 load("//intrinsic/platform:flatbuffers.bzl", "cc_flatbuffers_library", "flatbuffers_library")
 
 package(default_visibility = ["//visibility:public"])
@@ -584,5 +584,139 @@ cc_library(
         "//intrinsic_control/intrinsic/icon/flatbuffers:transform_types_fbs_cc",
         "//intrinsic_sdk/intrinsic/math:pose3",
         "@com_github_google_flatbuffers//:runtime_cc",
+    ],
+)
+
+# Opt-in vehicle HAL buffers. Not part of the protected manipulator baseline.
+# Do not add these labels to .github/baseline/manipulator_targets.tsv.
+
+flatbuffers_library(
+    name = "vehicle_hal_types_fbs",
+    srcs = ["vehicle_hal_types.fbs"],
+)
+
+cc_flatbuffers_library(
+    name = "vehicle_hal_types_fbs_cc",
+    deps = [":vehicle_hal_types_fbs"],
+)
+
+cc_library(
+    name = "vehicle_hal_types_fbs_utils",
+    srcs = ["vehicle_hal_types_utils.cc"],
+    hdrs = ["vehicle_hal_types_utils.h"],
+    deps = [
+        ":vehicle_hal_types_fbs_cc",
+        "//intrinsic_control/intrinsic/icon/flatbuffers:fixed_string",
+        "//intrinsic_control/intrinsic/icon/utils:realtime_status",
+        "@abseil-cpp//absl/strings:string_view",
+        "@com_github_google_flatbuffers//:runtime_cc",
+    ],
+)
+
+flatbuffers_library(
+    name = "body_state_fbs",
+    srcs = ["body_state.fbs"],
+    deps = [
+        ":vehicle_hal_types_fbs",
+        "//intrinsic_control/intrinsic/icon/flatbuffers:transform_types_fbs",
+    ],
+)
+
+cc_flatbuffers_library(
+    name = "body_state_fbs_cc",
+    deps = [":body_state_fbs"],
+)
+
+cc_library(
+    name = "body_state_fbs_utils",
+    srcs = ["body_state_utils.cc"],
+    hdrs = ["body_state_utils.h"],
+    deps = [
+        ":body_state_fbs_cc",
+        "@com_github_google_flatbuffers//:runtime_cc",
+    ],
+)
+
+flatbuffers_library(
+    name = "body_wrench_fbs",
+    srcs = ["body_wrench.fbs"],
+    deps = [
+        ":vehicle_hal_types_fbs",
+        "//intrinsic_control/intrinsic/icon/flatbuffers:transform_types_fbs",
+    ],
+)
+
+cc_flatbuffers_library(
+    name = "body_wrench_fbs_cc",
+    deps = [":body_wrench_fbs"],
+)
+
+cc_library(
+    name = "body_wrench_fbs_utils",
+    srcs = ["body_wrench_utils.cc"],
+    hdrs = ["body_wrench_utils.h"],
+    deps = [
+        ":body_wrench_fbs_cc",
+        "@com_github_google_flatbuffers//:runtime_cc",
+    ],
+)
+
+flatbuffers_library(
+    name = "vehicle_limits_fbs",
+    srcs = ["vehicle_limits.fbs"],
+    deps = [
+        "//intrinsic_control/intrinsic/icon/flatbuffers:transform_types_fbs",
+    ],
+)
+
+cc_flatbuffers_library(
+    name = "vehicle_limits_fbs_cc",
+    deps = [":vehicle_limits_fbs"],
+)
+
+cc_library(
+    name = "vehicle_limits_fbs_utils",
+    srcs = ["vehicle_limits_utils.cc"],
+    hdrs = ["vehicle_limits_utils.h"],
+    deps = [
+        ":vehicle_limits_fbs_cc",
+        "@com_github_google_flatbuffers//:runtime_cc",
+    ],
+)
+
+cc_library(
+    name = "vehicle_hardware_interfaces",
+    hdrs = ["vehicle_hardware_interfaces.h"],
+    deps = [
+        ":body_state_fbs_cc",
+        ":body_state_fbs_utils",
+        ":body_wrench_fbs_cc",
+        ":body_wrench_fbs_utils",
+        ":vehicle_limits_fbs_cc",
+        ":vehicle_limits_fbs_utils",
+        "//intrinsic_control/intrinsic/icon/hal:hardware_interface_traits",
+    ],
+)
+
+cc_test(
+    name = "vehicle_hal_schema_test",
+    size = "small",
+    srcs = ["vehicle_hal_schema_test.cc"],
+    deps = [
+        ":body_state_fbs_cc",
+        ":body_state_fbs_utils",
+        ":body_wrench_fbs_cc",
+        ":body_wrench_fbs_utils",
+        ":vehicle_hal_types_fbs_cc",
+        ":vehicle_hal_types_fbs_utils",
+        ":vehicle_hardware_interfaces",
+        ":vehicle_limits_fbs_cc",
+        ":vehicle_limits_fbs_utils",
+        "//intrinsic_control/intrinsic/icon/flatbuffers:transform_types_fbs_cc",
+        "//intrinsic_control/intrinsic/icon/server:signature_utils",
+        "@abseil-cpp//absl/strings:string_view",
+        "@com_github_google_flatbuffers//:runtime_cc",
+        "@com_google_googletest//:gtest_main",
+        "@intrinsic_apis//intrinsic/icon/proto/v1:types_cc_proto",
     ],
 )

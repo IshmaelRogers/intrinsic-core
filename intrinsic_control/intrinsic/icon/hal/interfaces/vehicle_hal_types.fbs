@@ -1,0 +1,36 @@
+// Copyright 2026 Intrinsic Innovation LLC
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     https://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
+namespace intrinsic_fbs;
+
+// Fixed text for a real-time id. Capacity matches HardwareModuleState.message.
+//
+// A table field of this type is absent when the offset is null. A present
+// value whose bytes are all zero is an explicit empty id. Those two states
+// are distinct. A value that does not fit, including the trailing NUL, is
+// rejected rather than truncated into a different id.
+// LINT.IfChange(FixedText256)
+struct FixedText256 {
+  data:[uint8:256];
+}
+// LINT.ThenChange(//intrinsic_control/intrinsic/icon/hal/interfaces/vehicle_hal_types_utils.h:FixedText256)
+
+// Row-major 6x6 matrix. Element (row, col) is at index row * 6 + col.
+//
+// row and col are in [0, 5]. A present Matrix6d is specified data. Thirty-six
+// zeros are a specified zero matrix. Unknown covariance is a null table
+// field, not a zero Matrix6d.
+struct Matrix6d {
+  values:[double:36];
+}
