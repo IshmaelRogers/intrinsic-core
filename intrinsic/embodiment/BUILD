@@ -74,3 +74,46 @@ py_test(
         "@intrinsic_apis//intrinsic/embodiment/proto:stamped_header_py_pb2",
     ],
 )
+
+cc_library(
+    name = "capability_descriptor",
+    hdrs = ["capability_descriptor.h"],
+)
+
+cc_library(
+    name = "capability_descriptor_fixture",
+    hdrs = ["capability_descriptor_fixture.h"],
+    deps = [
+        ":capability_descriptor",
+        "@intrinsic_apis//intrinsic/embodiment/proto:capability_descriptor_cc_proto",
+    ],
+)
+
+cc_test(
+    name = "capability_descriptor_test",
+    size = "small",
+    srcs = ["capability_descriptor_test.cc"],
+    deps = [
+        ":capability_descriptor_fixture",
+        "@com_google_googletest//:gtest_main",
+    ],
+)
+
+py_library(
+    name = "capability_descriptor_py",
+    srcs = ["capability_descriptor.py"],
+    deps = [
+        "@intrinsic_apis//intrinsic/embodiment/proto:capability_descriptor_py_pb2",
+    ],
+)
+
+py_test(
+    name = "capability_descriptor_test_py",
+    size = "small",
+    srcs = ["capability_descriptor_test.py"],
+    main = "capability_descriptor_test.py",
+    deps = [
+        ":capability_descriptor_py",
+        "@intrinsic_apis//intrinsic/embodiment/proto:capability_descriptor_py_pb2",
+    ],
+)

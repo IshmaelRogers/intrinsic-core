@@ -1,0 +1,81 @@
+// Copyright 2026 Intrinsic Innovation LLC
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     https://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
+syntax = "proto3";
+
+package intrinsic_proto.embodiment;
+
+option go_package = "intrinsic/embodiment/proto/capability_descriptor_go_proto";
+
+// Stable category of one advertised capability.
+//
+// Numbers and names are stable. Append new values. Reserve a removed number
+// and name; do not reuse either. CAPABILITY_CATEGORY_UNSPECIFIED is not a
+// category. Any other unknown number is preserved and is not rewritten to
+// UNSPECIFIED.
+//
+// Stable string ids for 1-6 are state, command, sensor, actuator, planning,
+// and simulation. Those strings are category ids, not capability ids.
+// See README.md.
+//
+// Next ID: 7
+enum CapabilityCategory {
+  CAPABILITY_CATEGORY_UNSPECIFIED = 0;
+  CAPABILITY_CATEGORY_STATE = 1;
+  CAPABILITY_CATEGORY_COMMAND = 2;
+  CAPABILITY_CATEGORY_SENSOR = 3;
+  CAPABILITY_CATEGORY_ACTUATOR = 4;
+  CAPABILITY_CATEGORY_PLANNING = 5;
+  CAPABILITY_CATEGORY_SIMULATION = 6;
+}
+
+// One capability a resource advertises.
+//
+// `id` is the stable discovery key. Clients match ids they know and ignore
+// the rest. Unknown ids stay on the wire. There is no robot-type field.
+//
+// Next ID: 4
+message CapabilityDeclaration {
+  // Stable capability id. Empty is rejected by validation. Unknown non-empty
+  // ids are preserved. Not a category string id. See README.md.
+  string id = 1;
+
+  // Category of this capability. UNSPECIFIED is rejected. Unknown numbers
+  // are preserved. See README.md.
+  CapabilityCategory category = 2;
+
+  // Interface business logic requests, for example "JointPosition".
+  // Empty means the producer did not set a separate interface name.
+  // This is not a dispatch enum.
+  string interface_name = 3;
+}
+
+// What one resource provides.
+//
+// Callers select entries by capability id and interface_name. `resource_id`
+// names the resource or the fixture. It is not a robot-type enum and it is
+// not a switch. A missing capability is absence: old clients ignore unknown
+// ids, and vehicle ids that are not listed do not change manipulator bytes.
+//
+// Next ID: 3
+message EmbodimentDescriptor {
+  // Resource or fixture name. The manipulator fixture uses "manipulator".
+  // Helpers do not branch on this string.
+  string resource_id = 1;
+
+  // Advertised capabilities, in producer order. Each id appears once.
+  // Duplicate ids and conflicting declarations are rejected by the host
+  // validator. Rejection does not rewrite this message. See README.md.
+  repeated CapabilityDeclaration capabilities = 2;
+}
