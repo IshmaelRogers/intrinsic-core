@@ -423,6 +423,12 @@ enum FeatureInterfaceTypes {
   FEATURE_INTERFACE_PAYLOAD_STATE = 24;
   FEATURE_INTERFACE_CARTESIAN_POSITION_STATE = 25;
   FEATURE_INTERFACE_HOMING = 26;
+  // Vehicle feature interfaces. Stable ids, append only. HalArmPart does not
+  // register these. The C++ feature classes are a later leaf.
+  // Next ID: 31
+  FEATURE_INTERFACE_BODY_STATE = 28;
+  FEATURE_INTERFACE_BODY_WRENCH = 29;
+  FEATURE_INTERFACE_VEHICLE_LIMITS = 30;
 }
 
 // Behavior overrides as desigend in go/intrinsic-icon-safety-scanner-support.

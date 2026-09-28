@@ -1,0 +1,185 @@
+// Copyright 2026 Intrinsic Innovation LLC
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     https://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
+// Real-time ICON HAL contracts for a free-body vehicle.
+//
+// These tables are the fixed-size images of the non-real-time vehicle
+// protos (BodyTwist, BodyAcceleration, BodyWrench, VehicleState) plus the
+// VehicleLimits sample ICON actions read. They do not rename joint schemas.
+//
+// Layout:
+// * Little-endian, the FlatBuffers wire rule. Multi-byte scalars are stored
+//   least-significant byte first.
+// * Struct fields are packed in declaration order. Each field is aligned to
+//   its natural alignment. The struct size is rounded up to that alignment.
+//   There is no vtable inside a struct, so reordering a struct field changes
+//   its positional id.
+// * Table fields use the explicit vtable id. Append a new field with a fresh
+//   id. Do not renumber or reuse an id.
+// * A root is a table so flatbuffers::Verifier can check offsets and sizes.
+//   Struct payloads are inline in that table. Builders write every field,
+//   including defaults, so one builder has one buffer size.
+// * A frame is never inferred from the table type. Frame and source ids are
+//   FixedString64. Length 0 means absent. Bytes past length are zero.
+//   A string longer than 64 bytes is not stored.
+// * Absence and zero are different. has_* false means the proto field was
+//   unset. has_* true with zeros is a real zero sample. Unknown covariance
+//   is has_pose_covariance or has_twist_covariance false, including when the
+//   matrix bytes are zero. A present matrix of 36 zeros is a specified zero
+//   matrix.
+// * Non-finite values are stored as their IEEE-754 bits. This schema does
+//   not rewrite them.
+// * navigation_mode and validity_state store the raw proto numbers. A number
+//   outside the known set stays as that number.
+// * Repeated SourceHealth is not here. It is not fixed-size. Actuator health
+//   is a later HAL contract.
+// * VehicleLimits is one sample. Application limits and system limits are
+//   two samples of this table. has_* false means that limit is not
+//   configured. It is not a zero limit and it is not infinity.
+//
+// Component order matches the vehicle protos and Matrix6: linear x, y, z,
+// then angular x, y, z. Axes are REP-103 (x forward, y left, z up).
+// Matrix6d is row-major. Element (row, col) is at index row * 6 + col.
+
+namespace intrinsic_fbs;
+
+// UTF-8 bytes plus the used length. Size is 65. Alignment is 1.
+struct FixedString64 {
+  data:[uint8:64];
+  length:uint8;
+}
+
+// seconds then nanos. Size is 16 (4 bytes of tail padding after nanos).
+struct TimestampRt {
+  seconds:int64;
+  nanos:int32;
+}
+
+// Meters. Size is 24.
+struct Vector3d {
+  x:double;
+  y:double;
+  z:double;
+}
+
+// Hamilton quaternion, stored x, y, z, w. Identity is w = 1. Size is 32.
+struct BodyQuaternion {
+  x:double;
+  y:double;
+  z:double;
+  w:double;
+}
+
+// Pose of the body origin. Position is meters. Size is 56.
+// The frame of this pose is BodyState.pose_frame_id, not this struct.
+struct BodyPose {
+  position:Vector3d;
+  orientation:BodyQuaternion;
+}
+
+// Body-frame velocity. Linear m/s, then angular rad/s. Size is 48.
+struct BodyTwistRt {
+  linear_x_m_s:double;
+  linear_y_m_s:double;
+  linear_z_m_s:double;
+  angular_x_rad_s:double;
+  angular_y_rad_s:double;
+  angular_z_rad_s:double;
+}
+
+// Body-frame acceleration. Linear m/s^2, then angular rad/s^2. Size is 48.
+struct BodyAccelerationRt {
+  linear_x_m_s2:double;
+  linear_y_m_s2:double;
+  linear_z_m_s2:double;
+  angular_x_rad_s2:double;
+  angular_y_rad_s2:double;
+  angular_z_rad_s2:double;
+}
+
+// Row-major 6x6. Size is 288.
+struct Matrix6d {
+  values:[double:36];
+}
+
+// Latched body state. Vtable ids 0-21 are stable.
+table BodyState {
+  sequence:uint64 = 0 (id: 0);
+  has_source_time:bool = false (id: 1);
+  source_time:TimestampRt (id: 2);
+  has_receive_time:bool = false (id: 3);
+  receive_time:TimestampRt (id: 4);
+  source_id:FixedString64 (id: 5);
+  pose_frame_id:FixedString64 (id: 6);
+  clock_domain:FixedString64 (id: 7);
+  validity_present:bool = false (id: 8);
+  validity_state:uint32 = 0 (id: 9);
+  has_pose:bool = false (id: 10);
+  pose_world_from_body:BodyPose (id: 11);
+  has_body_twist:bool = false (id: 12);
+  body_twist:BodyTwistRt (id: 13);
+  has_body_acceleration:bool = false (id: 14);
+  body_acceleration:BodyAccelerationRt (id: 15);
+  has_pose_covariance:bool = false (id: 16);
+  pose_covariance:Matrix6d (id: 17);
+  has_twist_covariance:bool = false (id: 18);
+  twist_covariance:Matrix6d (id: 19);
+  navigation_mode:uint32 = 0 (id: 20);
+  estimator_epoch:uint64 = 0 (id: 21);
+}
+
+// Body-frame force (N) and torque (N*m) at the body origin.
+// Not a thruster command. Vtable ids 0-15 are stable.
+// All-zero components are the neutral sample when frame_id is "body".
+table BodyWrench {
+  sequence:uint64 = 0 (id: 0);
+  has_source_time:bool = false (id: 1);
+  source_time:TimestampRt (id: 2);
+  has_receive_time:bool = false (id: 3);
+  receive_time:TimestampRt (id: 4);
+  source_id:FixedString64 (id: 5);
+  frame_id:FixedString64 (id: 6);
+  clock_domain:FixedString64 (id: 7);
+  validity_present:bool = false (id: 8);
+  validity_state:uint32 = 0 (id: 9);
+  force_x_n:double = 0 (id: 10);
+  force_y_n:double = 0 (id: 11);
+  force_z_n:double = 0 (id: 12);
+  torque_x_n_m:double = 0 (id: 13);
+  torque_y_n_m:double = 0 (id: 14);
+  torque_z_n_m:double = 0 (id: 15);
+}
+
+// One vehicle-limit sample. Vtable ids 0-16 are stable.
+// Rotational velocity and acceleration limits are magnitudes, matching
+// CartesianLimits. Force and torque limits are per-axis symmetric maxima.
+table VehicleLimits {
+  has_translational_position_limits:bool = false (id: 0);
+  min_translational_position_m:Vector3d (id: 1);
+  max_translational_position_m:Vector3d (id: 2);
+  has_translational_velocity_limits:bool = false (id: 3);
+  min_translational_velocity_m_s:Vector3d (id: 4);
+  max_translational_velocity_m_s:Vector3d (id: 5);
+  has_translational_acceleration_limits:bool = false (id: 6);
+  min_translational_acceleration_m_s2:Vector3d (id: 7);
+  max_translational_acceleration_m_s2:Vector3d (id: 8);
+  has_rotational_velocity_limit:bool = false (id: 9);
+  max_rotational_velocity_rad_s:double = 0 (id: 10);
+  has_rotational_acceleration_limit:bool = false (id: 11);
+  max_rotational_acceleration_rad_s2:double = 0 (id: 12);
+  has_force_limits:bool = false (id: 13);
+  max_force_n:Vector3d (id: 14);
+  has_torque_limits:bool = false (id: 15);
+  max_torque_n_m:Vector3d (id: 16);
+}
