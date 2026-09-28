@@ -119,6 +119,15 @@ FeatureInterfaceRegistry::SupportedFeatureInterfaceTypes() const {
     interfaces.insert(
         FeatureInterfaceTypes::FEATURE_INTERFACE_CARTESIAN_POSITION_STATE);
   }
+  if (body_state_ != nullptr) {
+    interfaces.insert(FeatureInterfaceTypes::FEATURE_INTERFACE_BODY_STATE);
+  }
+  if (body_wrench_command_ != nullptr) {
+    interfaces.insert(FeatureInterfaceTypes::FEATURE_INTERFACE_BODY_WRENCH);
+  }
+  if (vehicle_limits_ != nullptr) {
+    interfaces.insert(FeatureInterfaceTypes::FEATURE_INTERFACE_VEHICLE_LIMITS);
+  }
   return interfaces;
 }
 
@@ -478,6 +487,46 @@ RealtimeStatus FeatureInterfaceRegistry::RegisterInterface(
 }
 
 template <>
+RealtimeStatus FeatureInterfaceRegistry::RegisterInterface(BodyState* v) {
+  if (v == nullptr) {
+    return InvalidArgumentError("Cannot register nullptr as BodyState.");
+  }
+  if (body_state_ != nullptr) {
+    return AlreadyExistsError("BodyState is already registered.");
+  }
+  body_state_ = v;
+  return OkStatus();
+}
+
+template <>
+RealtimeStatus FeatureInterfaceRegistry::RegisterInterface(
+    BodyWrenchCommand* v) {
+  if (v == nullptr) {
+    return InvalidArgumentError(
+        "Cannot register nullptr as BodyWrenchCommand.");
+  }
+  if (body_wrench_command_ != nullptr) {
+    return AlreadyExistsError("BodyWrenchCommand is already registered.");
+  }
+  body_wrench_command_ = v;
+  return OkStatus();
+}
+
+template <>
+RealtimeStatus FeatureInterfaceRegistry::RegisterInterface(
+    VehicleLimitsInterface* v) {
+  if (v == nullptr) {
+    return InvalidArgumentError(
+        "Cannot register nullptr as VehicleLimitsInterface.");
+  }
+  if (vehicle_limits_ != nullptr) {
+    return AlreadyExistsError("VehicleLimitsInterface is already registered.");
+  }
+  vehicle_limits_ = v;
+  return OkStatus();
+}
+
+template <>
 JointPosition* FeatureInterfaceRegistry::GetInterface() {
   return position_;
 }
@@ -610,6 +659,21 @@ PayloadState* FeatureInterfaceRegistry::GetInterface() {
 template <>
 CartesianPositionState* FeatureInterfaceRegistry::GetInterface() {
   return cartesian_position_state_;
+}
+
+template <>
+BodyState* FeatureInterfaceRegistry::GetInterface() {
+  return body_state_;
+}
+
+template <>
+BodyWrenchCommand* FeatureInterfaceRegistry::GetInterface() {
+  return body_wrench_command_;
+}
+
+template <>
+VehicleLimitsInterface* FeatureInterfaceRegistry::GetInterface() {
+  return vehicle_limits_;
 }
 
 template <>
@@ -748,6 +812,21 @@ const PayloadState* FeatureInterfaceRegistry::GetInterface() const {
 template <>
 const CartesianPositionState* FeatureInterfaceRegistry::GetInterface() const {
   return cartesian_position_state_;
+}
+
+template <>
+const BodyState* FeatureInterfaceRegistry::GetInterface() const {
+  return body_state_;
+}
+
+template <>
+const BodyWrenchCommand* FeatureInterfaceRegistry::GetInterface() const {
+  return body_wrench_command_;
+}
+
+template <>
+const VehicleLimitsInterface* FeatureInterfaceRegistry::GetInterface() const {
+  return vehicle_limits_;
 }
 
 }  // namespace intrinsic::icon

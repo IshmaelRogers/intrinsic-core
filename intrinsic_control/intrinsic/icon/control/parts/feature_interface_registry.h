@@ -142,6 +142,12 @@ class FeatureInterfaceRegistry {
   RealtimeStatus RegisterInterface(PayloadState* v);
   template <>
   RealtimeStatus RegisterInterface(CartesianPositionState* v);
+  template <>
+  RealtimeStatus RegisterInterface(BodyState* v);
+  template <>
+  RealtimeStatus RegisterInterface(BodyWrenchCommand* v);
+  template <>
+  RealtimeStatus RegisterInterface(VehicleLimitsInterface* v);
   // Returns a pointer to the given interface. Note that the return value
   // can be null if the requested interface has not been registered. As with
   // RegisterInterface, only the explicit specializations are valid.
@@ -210,6 +216,12 @@ class FeatureInterfaceRegistry {
   PayloadState* GetInterface();
   template <>
   CartesianPositionState* GetInterface();
+  template <>
+  BodyState* GetInterface();
+  template <>
+  BodyWrenchCommand* GetInterface();
+  template <>
+  VehicleLimitsInterface* GetInterface();
 
   template <class T>
   const T* GetInterface() const;
@@ -269,6 +281,12 @@ class FeatureInterfaceRegistry {
   const PayloadState* GetInterface() const;
   template <>
   const CartesianPositionState* GetInterface() const;
+  template <>
+  const BodyState* GetInterface() const;
+  template <>
+  const BodyWrenchCommand* GetInterface() const;
+  template <>
+  const VehicleLimitsInterface* GetInterface() const;
 
  private:
   template <class T, class... AllowedInterfaceTs>
@@ -333,6 +351,9 @@ class FeatureInterfaceRegistry {
   Payload* payload_ = nullptr;
   PayloadState* payload_state_ = nullptr;
   CartesianPositionState* cartesian_position_state_ = nullptr;
+  BodyState* body_state_ = nullptr;
+  BodyWrenchCommand* body_wrench_command_ = nullptr;
+  VehicleLimitsInterface* vehicle_limits_ = nullptr;
 };
 
 template <class T>
@@ -345,8 +366,8 @@ RealtimeStatus FeatureInterfaceRegistry::RegisterAsCompatibleInterfaces(
       ManipulatorKinematics, JointTorque, JointTorqueSensor, Dynamics,
       ForceTorqueSensor, StandaloneForceTorqueSensor, HandGuiding, Homing,
       ControlModeExporter, MoveOk, InertialMeasurementUnit,
-      ProcessWrenchAtEndeffector, Payload, PayloadState,
-      CartesianPositionState>(maybe_interface);
+      ProcessWrenchAtEndeffector, Payload, PayloadState, CartesianPositionState,
+      BodyState, BodyWrenchCommand, VehicleLimitsInterface>(maybe_interface);
 }
 
 template <class T>

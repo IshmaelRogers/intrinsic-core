@@ -16,8 +16,9 @@
 
 Existing FeatureInterfaceTypes numbers stay put. The three vehicle ids are
 appended. A number that is not in the table is not rewritten to
-FEATURE_INTERFACE_INVALID, and the manipulator factory still treats an
-unlisted id as an unknown feature. HalArmPart does not register the new ids.
+FEATURE_INTERFACE_INVALID, and the manipulator factory still treats these
+ids as an unknown feature. The feature-interface registry lists the C++
+interfaces. HalArmPart does not register them.
 """
 
 from __future__ import annotations
@@ -207,11 +208,15 @@ class VehicleHalUnknownFeatureTest(unittest.TestCase):
 
   def test_unknown_feature_stays_on_the_default_path(self) -> None:
     factory = _FACTORY.read_text(encoding="utf-8")
+    registry = _REGISTRY.read_text(encoding="utf-8")
     self.assertIn("Encountered unknown Feature Interface type.", factory)
     self.assertIn("default:", factory)
     for name in _VEHICLE_FEATURE_IDS:
+      # The manipulator factory has no generic-config case, so a claim of
+      # these ids still takes the default FailedPrecondition path.
       self.assertNotIn(name, factory)
-      self.assertNotIn(name, _REGISTRY.read_text(encoding="utf-8"))
+      # The C++ feature interfaces are registered for an opt-in part.
+      self.assertIn(name, registry)
     for name, number in _BASELINE_FEATURE_IDS.items():
       if name == "FEATURE_INTERFACE_INVALID":
         continue

@@ -175,6 +175,9 @@ PACKAGE_NAME_DENYLIST = {
                 "imu_state",
                 "laser_tracker_position_state",
                 "rangefinder_state",
+                "vehicle_body_features",
+                "vehicle_body_features_test",
+                "vehicle_body_features_test_malloc",
             }
         )
     ),

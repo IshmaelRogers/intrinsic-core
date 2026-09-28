@@ -537,6 +537,143 @@ class CartesianPositionState {
   virtual Pose3d GetSensedPose() const = 0;
 };
 
+// Fixed-size copies of the vehicle HAL tables. These are the values ICON
+// actions read. They are not protobuf and they do not rename joint types.
+// HalArmPart does not implement the interfaces below.
+
+// UTF-8 bytes plus the used length. Length 0 is absent. Bytes past length
+// stay zero.
+struct FixedId64 {
+  char data[64] = {};
+  uint8_t length = 0;
+};
+
+struct VehicleVector3 {
+  double x = 0.0;
+  double y = 0.0;
+  double z = 0.0;
+};
+
+// Latched body state. `latched` false means ReadStatus has not copied a
+// sample this lifetime. Absence of a sub-field (`has_*` false) is not a
+// zero sample. `latched_monotonic_ns` is the producer update time copied
+// from the hardware segment, not a wall clock.
+struct BodyStateSample {
+  bool latched = false;
+  int64_t latched_monotonic_ns = 0;
+  uint64_t sequence = 0;
+  bool has_source_time = false;
+  int64_t source_time_seconds = 0;
+  int32_t source_time_nanos = 0;
+  bool has_receive_time = false;
+  int64_t receive_time_seconds = 0;
+  int32_t receive_time_nanos = 0;
+  FixedId64 source_id;
+  FixedId64 pose_frame_id;
+  FixedId64 clock_domain;
+  bool validity_present = false;
+  uint32_t validity_state = 0;
+  bool has_pose = false;
+  VehicleVector3 position_m;
+  double orientation_x = 0.0;
+  double orientation_y = 0.0;
+  double orientation_z = 0.0;
+  double orientation_w = 1.0;
+  bool has_body_twist = false;
+  double linear_x_m_s = 0.0;
+  double linear_y_m_s = 0.0;
+  double linear_z_m_s = 0.0;
+  double angular_x_rad_s = 0.0;
+  double angular_y_rad_s = 0.0;
+  double angular_z_rad_s = 0.0;
+  bool has_body_acceleration = false;
+  double linear_x_m_s2 = 0.0;
+  double linear_y_m_s2 = 0.0;
+  double linear_z_m_s2 = 0.0;
+  double angular_x_rad_s2 = 0.0;
+  double angular_y_rad_s2 = 0.0;
+  double angular_z_rad_s2 = 0.0;
+  bool has_pose_covariance = false;
+  double pose_covariance[36] = {};
+  bool has_twist_covariance = false;
+  double twist_covariance[36] = {};
+  uint32_t navigation_mode = 0;
+  uint64_t estimator_epoch = 0;
+};
+
+// Body-frame force (N) and torque (N*m) at the body origin. Not a thruster
+// command. `frame_id` must be "body" when the sample is a command.
+// `applied` is set by the feature after a sample is written to the HAL.
+struct BodyWrenchSample {
+  bool applied = false;
+  uint64_t sequence = 0;
+  bool has_source_time = false;
+  int64_t source_time_seconds = 0;
+  int32_t source_time_nanos = 0;
+  bool has_receive_time = false;
+  int64_t receive_time_seconds = 0;
+  int32_t receive_time_nanos = 0;
+  FixedId64 source_id;
+  FixedId64 frame_id;
+  FixedId64 clock_domain;
+  bool validity_present = false;
+  uint32_t validity_state = 0;
+  double force_x_n = 0.0;
+  double force_y_n = 0.0;
+  double force_z_n = 0.0;
+  double torque_x_n_m = 0.0;
+  double torque_y_n_m = 0.0;
+  double torque_z_n_m = 0.0;
+};
+
+// One vehicle-limit sample. Application limits and system limits are two
+// samples of this type. `has_*` false means that limit is not configured.
+// It is not a zero limit and it is not infinity. Force and torque maxima
+// are per-axis and symmetric.
+struct VehicleLimitsSample {
+  bool has_translational_position_limits = false;
+  VehicleVector3 min_translational_position_m;
+  VehicleVector3 max_translational_position_m;
+  bool has_translational_velocity_limits = false;
+  VehicleVector3 min_translational_velocity_m_s;
+  VehicleVector3 max_translational_velocity_m_s;
+  bool has_translational_acceleration_limits = false;
+  VehicleVector3 min_translational_acceleration_m_s2;
+  VehicleVector3 max_translational_acceleration_m_s2;
+  bool has_rotational_velocity_limit = false;
+  double max_rotational_velocity_rad_s = 0.0;
+  bool has_rotational_acceleration_limit = false;
+  double max_rotational_acceleration_rad_s2 = 0.0;
+  bool has_force_limits = false;
+  VehicleVector3 max_force_n;
+  bool has_torque_limits = false;
+  VehicleVector3 max_torque_n_m;
+};
+
+// Latched body state for the current cycle. Opt-in. A part that does not
+// register this interface leaves GetInterface null.
+class BodyState {
+ public:
+  virtual ~BodyState() = default;
+  virtual const BodyStateSample& LatchedBodyState() const = 0;
+};
+
+// Body-frame wrench intent at the body origin. Opt-in.
+class BodyWrenchCommand {
+ public:
+  virtual ~BodyWrenchCommand() = default;
+  virtual RealtimeStatus SetBodyWrench(const BodyWrenchSample& command) = 0;
+  virtual const BodyWrenchSample& PreviousBodyWrench() const = 0;
+};
+
+// Application and system vehicle limits. Two samples, same role as
+// JointLimits application and system limits. Opt-in.
+class VehicleLimitsInterface {
+ public:
+  virtual ~VehicleLimitsInterface() = default;
+  virtual const VehicleLimitsSample& GetApplicationLimits() const = 0;
+  virtual const VehicleLimitsSample& GetSystemLimits() const = 0;
+};
 
 }  // namespace intrinsic::icon
 
