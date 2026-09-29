@@ -160,8 +160,9 @@ field path and `ModelErrorCode`.
 is a calm-water six-thruster UUV. Each thruster is in the body frame, with
 slew limits, ideal efficiency, and nominal health. The effectiveness
 matrix for this geometry is built in `allocation`. Unconstrained
-least-squares allocation of that matrix, and the hard clamp of that
-command onto the example thrust bounds, are in `allocation`.
+least-squares allocation of that matrix, the hard clamp of that
+command onto thrust bounds, and the health-to-bounds adapter are in
+`allocation`.
 
 ## Vehicle dynamics interface
 
@@ -393,7 +394,7 @@ Row order is surge, sway, heave, roll, pitch, yaw. Body axes are REP-103.
 `B[row, col] = columns[col][row]`. `enabled[i] == false` writes a zero
 column and leaves column `i` aligned with thruster `i`. The mask is the
 only exclusion input. Health, derate, efficiency, slew, and thrust bounds
-are not read and do not scale `B`.
+are not read and do not scale `B`. Health scaling is the adapter below.
 
 `frame_id` must be `body`. `world_enu`, `world_ned`, an empty id, and any
 other id are rejected. This function does not convert a world-frame pose
@@ -443,7 +444,8 @@ wrench `τ`, and inclusive per-actuator command bounds. It computes the
 unconstrained command with `AllocateUnconstrainedLeastSquares`, then
 clamps each command into `[min_thrust_n, max_thrust_n]`. The clamp does
 not move surplus wrench onto unsaturated actuators. Slew, efficiency,
-health, and health derate are not inputs.
+health, and health derate are not inputs. Apply health with
+`ApplyThrusterHealthToAllocationInputs` before this call.
 
 `ThrustCommandBoundsFromGeometry` reads only
 `max_reverse_thrust_n` and `max_forward_thrust_n`. The command interval
@@ -477,9 +479,39 @@ checks the interior match, single- and multi-actuator saturation, an
 exactly-at-bound command, residual identity, bit-stable repeats, bound
 compliance, rank-deficient fail-closed behavior, and rejected inputs.
 
+## Thruster health adapter
+
+`ApplyThrusterHealthToAllocationInputs` reads thruster health and
+`health_derate`. It writes an enabled mask, thrust-command bounds, and,
+when a column span is provided, health-scaled effectiveness columns.
+The caller passes those inputs to `AllocateBoundedLeastSquares`. This
+function does not solve, clamp, or factor `B Bᵀ`. It does not read
+efficiency or slew. It does not discover faults or command hardware.
+
+`kNominal` (`health_derate` 1) leaves the column bit-identical to the
+unscaled matrix and writes the geometry command interval. Allocation
+then matches `AllocateBoundedLeastSquares` on those unscaled inputs.
+`kDerated` (`health_derate` in (0, 1)) multiplies both the geometry
+command interval and the effectiveness column by that same derate.
+`kDisabled`, `kStuckOff`, and `kFailed` (`health_derate` 0) clear the
+mask, write the neutral interval `[0, 0]`, and clear the column to
+`+0`. That is the column `BuildThrusterEffectivenessMatrix` writes for
+`enabled == false`. The neutral command is 0.
+
+An empty column span skips column writes. Storage is caller-owned. The
+function does not allocate. A bad size, an unknown health value, a
+`health_derate` that does not match health, or a non-finite derate,
+thrust limit, or column returns `kInvalidArgument` and finite-zero
+outputs. The first defect wins. The same inputs produce the same
+outputs. ICON does not call this function.
+
+`//intrinsic_vehicle/intrinsic/vehicle/allocation:thruster_health_adapter_test`
+checks the nominal bit match, neutral commands, consistent derating,
+a single-failure residual, determinism, and rejected inputs.
+
 ## Out of scope
 
-Slew limiting, health-to-command scaling, redistributing a saturated
-wrench onto unsaturated thrusters, mass-matrix acceleration, time
-integration, guidance laws, control laws, Gazebo plugins, and ICON
-feature wiring are later issues.
+Slew limiting, efficiency scaling, redistributing a saturated wrench
+onto unsaturated thrusters, mass-matrix acceleration, time integration,
+guidance laws, control laws, Gazebo plugins, and ICON feature wiring
+are later issues.
