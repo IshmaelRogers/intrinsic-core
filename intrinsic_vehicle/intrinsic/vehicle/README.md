@@ -13,8 +13,9 @@ matrix, the added-mass matrix, the rigid-body Coriolis matrix, the
 added-mass Coriolis matrix, the linear/quadratic damping wrench, the
 gravity/buoyancy restoring wrench, the water-current relative
 velocity, and marine-force composition. `allocation` builds the
-thruster effectiveness matrix. Least-squares allocation and guidance
-remain later work.
+thruster effectiveness matrix and solves unconstrained least squares
+for thrust. Bound projection, health scaling, and guidance remain
+later work.
 Marine model parameter schemas and validation are in `parameters`.
 
 Protobuf `VehicleState` and `DesiredMotion` stay in
@@ -28,7 +29,7 @@ commands.
 | Bazel package | Timing boundary | Scaffold |
 | --- | --- | --- |
 | `//intrinsic_vehicle/intrinsic/vehicle/state` | Real-time | Empty marker. Fixed-size state math lands here later. |
-| `//intrinsic_vehicle/intrinsic/vehicle/allocation` | Real-time | Thruster effectiveness matrix from body-frame geometry and an explicit mask. Least-squares allocation lands here later. |
+| `//intrinsic_vehicle/intrinsic/vehicle/allocation` | Real-time | Thruster effectiveness matrix from body-frame geometry and an explicit mask, and unconstrained least-squares thrust allocation. Bound projection and health scaling land here later. |
 | `//intrinsic_vehicle/intrinsic/vehicle/dynamics` | Soft-real-time | `VehicleDynamics` interface, zero-force test double, rigid-body mass matrix, added-mass matrix, rigid-body Coriolis matrix, added-mass Coriolis matrix, linear/quadratic damping wrench, gravity/buoyancy restoring wrench, water-current relative velocity, and marine-force composition. Outside ICON. |
 | `//intrinsic_vehicle/intrinsic/vehicle/parameters` | Soft-real-time | Marine model schemas and validation. Not loaded by ICON. |
 | `//intrinsic_vehicle/intrinsic/vehicle/guidance` | Soft-real-time | Empty marker. Guidance lands here later, outside ICON. |
@@ -52,7 +53,7 @@ ICON control and allocation run at 100 to 1000 Hz and never wait (PDR §11).
 | Package | Role on this boundary |
 | --- | --- |
 | `state` | Future fixed-size vehicle state values. Safe to read from a latched ICON cycle once those types exist. No protobuf in this package. |
-| `allocation` | `BuildThrusterEffectivenessMatrix` writes body-frame `B` (6×N) into caller storage. An explicit mask zeros disabled columns. No heap, no blocking, and no protobuf. Least-squares allocation and ICON `ApplyCommand` wiring are later. |
+| `allocation` | `BuildThrusterEffectivenessMatrix` writes body-frame `B` (6×N) into caller storage. An explicit mask zeros disabled columns. `AllocateUnconstrainedLeastSquares` solves minimum-norm unconstrained least squares into caller storage when `B` has full row rank. No heap, no blocking, and no protobuf. Bound projection, slew, health derating, and ICON `ApplyCommand` wiring are later. |
 
 `ReadStatus` and `ApplyCommand` stay in ICON. This scaffold does not link
 ICON and does not run on a real-time thread.
@@ -157,8 +158,8 @@ field path and `ModelErrorCode`.
 `//intrinsic_vehicle/intrinsic/vehicle/parameters:six_thruster_uuv_example`
 is a calm-water six-thruster UUV. Each thruster is in the body frame, with
 slew limits, ideal efficiency, and nominal health. The effectiveness
-matrix for this geometry is built in `allocation`. Least-squares
-allocation is a later issue.
+matrix for this geometry is built in `allocation`. Unconstrained
+least-squares allocation for this geometry is tested in `allocation`.
 
 ## Vehicle dynamics interface
 
@@ -400,16 +401,38 @@ An empty thruster list, a mask or column span whose length is not the
 thruster count, a non-finite position or direction, a zero axis, and a
 non-unit direction return `AllocationErrorCode::kInvalidArgument`. The
 output columns are finite zeros. The first defect wins. The function does
-not allocate. It does not solve for thrust, project bounds, or report a
-residual. ICON does not call it.
+not allocate. It does not solve for thrust. ICON does not call it.
 
 `//intrinsic_vehicle/intrinsic/vehicle/allocation:thruster_effectiveness_matrix_test`
 checks the hand-calculated columns, the six-thruster example, the mask,
 and rejected inputs.
 
+## Unconstrained least-squares allocation
+
+`AllocateUnconstrainedLeastSquares` solves `B u = τ` for thrust `u` when
+`B` has full row rank. `B` is the caller-provided effectiveness matrix.
+`τ` is the requested body wrench. `u[i]` is the thrust command for column
+`i`, in newtons.
+
+The solve is the minimum-Euclidean-norm solution from the left normal
+equations. `G = B B^T` is factored with unpivoted Cholesky. A pivot at or
+below `kAllocationRankRelativeTolerance` (1e-10) times the largest
+diagonal of `G` returns `AllocationErrorCode::kRankDeficient` and a zero
+thrust vector. The function does not return a minimum-residual command
+for a rank-deficient or underactuated map. Normal equations square the
+condition number of `B`. That choice is for senior controls review.
+
+The function does not read thrust bounds, slew, efficiency, or health.
+It does not allocate. A failed call writes finite zeros. Non-finite
+inputs return `kInvalidArgument`. The same inputs produce the same
+thrust. ICON does not call it.
+
+`//intrinsic_vehicle/intrinsic/vehicle/allocation:unconstrained_least_squares_test`
+checks full-rank reconstruction on the six-thruster example, rank-deficient
+and underactuated rejection, and deterministic output.
+
 ## Out of scope
 
-Least-squares thruster allocation, bound projection, residual diagnostics,
-health-to-command scaling, mass-matrix acceleration, time integration,
-guidance laws, control laws, Gazebo plugins, and ICON feature wiring are
-later issues.
+Bound projection, residual diagnostics, health-to-command scaling,
+mass-matrix acceleration, time integration, guidance laws, control laws,
+Gazebo plugins, and ICON feature wiring are later issues.

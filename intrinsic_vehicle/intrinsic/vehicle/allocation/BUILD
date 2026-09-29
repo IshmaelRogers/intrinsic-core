@@ -14,9 +14,10 @@
 
 load("//bazel:cc_macros.bzl", "cc_library", "cc_test")
 
-# Opt-in vehicle allocation. The thruster effectiveness matrix is the
-# first real-time helper. Least-squares allocation is later. Not part of
-# the protected manipulator baseline. Do not add this package to
+# Opt-in vehicle allocation. The thruster effectiveness matrix and the
+# unconstrained least-squares allocator are real-time helpers. Bound
+# projection and health derating are later. Not part of the protected
+# manipulator baseline. Do not add this package to
 # .github/baseline/manipulator_targets.tsv.
 
 package(default_visibility = ["//visibility:public"])
@@ -28,15 +29,21 @@ filegroup(
         "allocation.h",
         "thruster_effectiveness_matrix.cc",
         "thruster_effectiveness_matrix.h",
+        "unconstrained_least_squares.cc",
+        "unconstrained_least_squares.h",
     ],
 )
 
 cc_library(
     name = "allocation",
-    srcs = ["thruster_effectiveness_matrix.cc"],
+    srcs = [
+        "thruster_effectiveness_matrix.cc",
+        "unconstrained_least_squares.cc",
+    ],
     hdrs = [
         "allocation.h",
         "thruster_effectiveness_matrix.h",
+        "unconstrained_least_squares.h",
     ],
     deps = [
         "//intrinsic_vehicle/intrinsic/vehicle/parameters",
@@ -57,6 +64,17 @@ cc_test(
     name = "thruster_effectiveness_matrix_test",
     size = "small",
     srcs = ["thruster_effectiveness_matrix_test.cc"],
+    deps = [
+        ":allocation",
+        "//intrinsic_vehicle/intrinsic/vehicle/parameters:six_thruster_uuv_example",
+        "@com_google_googletest//:gtest_main",
+    ],
+)
+
+cc_test(
+    name = "unconstrained_least_squares_test",
+    size = "small",
+    srcs = ["unconstrained_least_squares_test.cc"],
     deps = [
         ":allocation",
         "//intrinsic_vehicle/intrinsic/vehicle/parameters:six_thruster_uuv_example",

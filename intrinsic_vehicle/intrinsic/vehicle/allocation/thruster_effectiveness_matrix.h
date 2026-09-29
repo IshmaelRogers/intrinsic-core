@@ -49,10 +49,13 @@
 
 namespace intrinsic::vehicle::allocation {
 
-// Status codes. kOk is the only success code.
+// Status codes. kOk is the only success code. kRankDeficient means the
+// effectiveness matrix does not have full row rank, so unconstrained
+// least squares refuses the solve.
 enum class AllocationErrorCode {
   kOk = 0,
   kInvalidArgument = 1,
+  kRankDeficient = 2,
 };
 
 struct AllocationStatus {
@@ -66,6 +69,11 @@ struct AllocationStatus {
   [[nodiscard]] static AllocationStatus InvalidArgument(
       std::string_view message) {
     return {AllocationErrorCode::kInvalidArgument, message};
+  }
+
+  [[nodiscard]] static AllocationStatus RankDeficient(
+      std::string_view message) {
+    return {AllocationErrorCode::kRankDeficient, message};
   }
 };
 
