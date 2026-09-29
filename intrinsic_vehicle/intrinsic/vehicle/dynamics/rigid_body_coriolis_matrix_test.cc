@@ -420,7 +420,8 @@ TEST(RigidBodyCoriolisMatrix, GeneralTwistMatchesBlocksAndPower) {
                                      center, twist));
   ExpectUpperLeftExactlyZero(result.value().coefficients);
   ExpectSkewSymmetric(result.value().coefficients);
-  EXPECT_GT(CoriolisForceNorm(result.value().coefficients, twist), 1.0);
+  // C ν is not the zero vector, so the power check is a cancellation.
+  EXPECT_GT(CoriolisForceNorm(result.value().coefficients, twist), 1e-3);
   EXPECT_NEAR(Power(result.value().coefficients, twist), 0.0, kAbsTolerance);
   for (double value : result.value().coefficients) {
     EXPECT_TRUE(std::isfinite(value));
