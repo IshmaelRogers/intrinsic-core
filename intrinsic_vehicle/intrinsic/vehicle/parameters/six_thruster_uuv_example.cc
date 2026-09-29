@@ -38,14 +38,24 @@ std::array<double, kSpatialDof * kSpatialDof> DiagonalSpatial(
   return matrix;
 }
 
+// Example slew is the matching thrust bound divided by 0.2 s, written as
+// a decimal so the stored value is exact. Not a measurement.
 ThrusterGeometry Thruster(const char* name, Vec3 position_m, Vec3 direction,
-                          double forward_n, double reverse_n) {
+                          double forward_n, double reverse_n,
+                          double forward_slew_n_per_s,
+                          double reverse_slew_n_per_s) {
   ThrusterGeometry thruster;
   thruster.name = name;
+  thruster.frame_id = std::string(kBodyFrameId);
   thruster.position_m = position_m;
   thruster.direction_body = direction;
   thruster.max_forward_thrust_n = forward_n;
   thruster.max_reverse_thrust_n = reverse_n;
+  thruster.max_forward_slew_n_per_s = forward_slew_n_per_s;
+  thruster.max_reverse_slew_n_per_s = reverse_slew_n_per_s;
+  thruster.efficiency = 1.0;
+  thruster.health = ThrusterHealthState::kNominal;
+  thruster.health_derate = 1.0;
   return thruster;
 }
 
@@ -81,12 +91,13 @@ MarineModel MakeSixThrusterUuvExample() {
   model.environment.current_frame_id = std::string(kWorldEnuFrameId);
 
   model.thrusters = {
-      Thruster("surge_port", {0.00, 0.18, 0.00}, {1, 0, 0}, 50, 35),
-      Thruster("surge_starboard", {0.00, -0.18, 0.10}, {1, 0, 0}, 50, 35),
-      Thruster("sway_fore", {0.40, 0.00, 0.00}, {0, 1, 0}, 30, 30),
-      Thruster("sway_aft", {-0.40, 0.00, -0.12}, {0, 1, 0}, 30, 30),
-      Thruster("heave_fore", {0.28, 0.16, 0.00}, {0, 0, 1}, 40, 25),
-      Thruster("heave_aft", {-0.28, 0.00, 0.00}, {0, 0, 1}, 40, 25),
+      Thruster("surge_port", {0.00, 0.18, 0.00}, {1, 0, 0}, 50, 35, 250, 175),
+      Thruster("surge_starboard", {0.00, -0.18, 0.10}, {1, 0, 0}, 50, 35, 250,
+               175),
+      Thruster("sway_fore", {0.40, 0.00, 0.00}, {0, 1, 0}, 30, 30, 150, 150),
+      Thruster("sway_aft", {-0.40, 0.00, -0.12}, {0, 1, 0}, 30, 30, 150, 150),
+      Thruster("heave_fore", {0.28, 0.16, 0.00}, {0, 0, 1}, 40, 25, 200, 125),
+      Thruster("heave_aft", {-0.28, 0.00, 0.00}, {0, 0, 1}, 40, 25, 200, 125),
   };
   return model;
 }

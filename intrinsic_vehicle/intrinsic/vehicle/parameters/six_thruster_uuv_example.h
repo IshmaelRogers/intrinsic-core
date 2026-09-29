@@ -24,8 +24,9 @@ namespace intrinsic::vehicle::parameters {
 // Calm-water inspection UUV used as a validated parameter example.
 // Six fixed thrusters: surge port/starboard, sway fore/aft, heave fore/aft.
 // Offsets are part of the example so the force axes span body wrenches.
-// This is not a system-identification result, a thruster allocator, or a
-// dynamics evaluation.
+// Each thruster is in the body frame. Slew, efficiency, and nominal health
+// are populated. This is not a system-identification result, a thruster
+// allocator, or a dynamics evaluation.
 inline constexpr std::string_view kSixThrusterUuvModelId =
     "example_six_thruster_uuv";
 inline constexpr int kSixThrusterUuvThrusterCount = 6;
