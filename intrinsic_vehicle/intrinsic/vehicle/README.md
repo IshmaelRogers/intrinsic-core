@@ -13,8 +13,9 @@ matrix, the added-mass matrix, the rigid-body Coriolis matrix, the
 added-mass Coriolis matrix, the linear/quadratic damping wrench, the
 gravity/buoyancy restoring wrench, the water-current relative
 velocity, and marine-force composition. `allocation` builds the
-thruster effectiveness matrix and solves unconstrained least-squares
-thrust allocation. Guidance remains later work.
+thruster effectiveness matrix, solves unconstrained least-squares
+thrust allocation, and clamps those commands to per-actuator thrust
+bounds. Guidance remains later work.
 Marine model parameter schemas and validation are in `parameters`.
 
 Protobuf `VehicleState` and `DesiredMotion` stay in
@@ -28,7 +29,7 @@ commands.
 | Bazel package | Timing boundary | Scaffold |
 | --- | --- | --- |
 | `//intrinsic_vehicle/intrinsic/vehicle/state` | Real-time | Empty marker. Fixed-size state math lands here later. |
-| `//intrinsic_vehicle/intrinsic/vehicle/allocation` | Real-time | Thruster effectiveness matrix from body-frame geometry and an explicit mask. Unconstrained least-squares allocation from that matrix. |
+| `//intrinsic_vehicle/intrinsic/vehicle/allocation` | Real-time | Thruster effectiveness matrix from body-frame geometry and an explicit mask. Unconstrained least-squares allocation from that matrix, then a hard clamp onto per-actuator thrust bounds. |
 | `//intrinsic_vehicle/intrinsic/vehicle/dynamics` | Soft-real-time | `VehicleDynamics` interface, zero-force test double, rigid-body mass matrix, added-mass matrix, rigid-body Coriolis matrix, added-mass Coriolis matrix, linear/quadratic damping wrench, gravity/buoyancy restoring wrench, water-current relative velocity, and marine-force composition. Outside ICON. |
 | `//intrinsic_vehicle/intrinsic/vehicle/parameters` | Soft-real-time | Marine model schemas and validation. Not loaded by ICON. |
 | `//intrinsic_vehicle/intrinsic/vehicle/guidance` | Soft-real-time | Empty marker. Guidance lands here later, outside ICON. |
@@ -52,7 +53,7 @@ ICON control and allocation run at 100 to 1000 Hz and never wait (PDR §11).
 | Package | Role on this boundary |
 | --- | --- |
 | `state` | Future fixed-size vehicle state values. Safe to read from a latched ICON cycle once those types exist. No protobuf in this package. |
-| `allocation` | `BuildThrusterEffectivenessMatrix` writes body-frame `B` (6×N) into caller storage. An explicit mask zeros disabled columns. `AllocateUnconstrainedLeastSquares` maps a requested body wrench through the minimum-norm right inverse of `B`. No heap, no blocking, and no protobuf. ICON `ApplyCommand` wiring is later. |
+| `allocation` | `BuildThrusterEffectivenessMatrix` writes body-frame `B` (6×N) into caller storage. An explicit mask zeros disabled columns. `AllocateUnconstrainedLeastSquares` maps a requested body wrench through the minimum-norm right inverse of `B`. `AllocateBoundedLeastSquares` clamps that command onto inclusive per-actuator thrust bounds and writes the achieved wrench, residual wrench, saturation flags, and residual L2 norm. No heap, no blocking, and no protobuf. ICON `ApplyCommand` wiring is later. |
 
 `ReadStatus` and `ApplyCommand` stay in ICON. This scaffold does not link
 ICON and does not run on a real-time thread.
@@ -85,8 +86,8 @@ to `parameters` for the rigid-body mass matrix, the added-mass matrix, the
 rigid-body Coriolis matrix, the added-mass Coriolis matrix, the
 linear/quadratic damping wrench, the gravity/buoyancy restoring wrench,
 the water-current relative velocity, and marine-force composition, and
-from `allocation` to `parameters` for the thruster effectiveness matrix
-and unconstrained least-squares allocation.
+from `allocation` to `parameters` for the thruster effectiveness matrix,
+unconstrained least-squares allocation, and bounded thrust allocation.
 That graph is acyclic.
 
 Allowed later, and not wired in this scaffold:
@@ -159,7 +160,8 @@ field path and `ModelErrorCode`.
 is a calm-water six-thruster UUV. Each thruster is in the body frame, with
 slew limits, ideal efficiency, and nominal health. The effectiveness
 matrix for this geometry is built in `allocation`. Unconstrained
-least-squares allocation of that matrix is in `allocation`.
+least-squares allocation of that matrix, and the hard clamp of that
+command onto the example thrust bounds, are in `allocation`.
 
 ## Vehicle dynamics interface
 
@@ -428,13 +430,56 @@ residual. Rank deficiency writes finite-zero commands and the residual of
 that zero command, which is `τ`. The first defect wins. The same inputs
 produce the same commands. Full row rank on the six-thruster example
 reconstructs `τ` within `1e-9`. ICON does not call this function.
+Per-actuator bounds are applied by `AllocateBoundedLeastSquares`.
 
 `//intrinsic_vehicle/intrinsic/vehicle/allocation:least_squares_allocator_test`
 checks that reconstruction, a rank-deficient matrix, rejected inputs, and
 bit-stable repeated calls.
 
+## Bounded thrust allocation
+
+`AllocateBoundedLeastSquares` reads columns of `B`, a requested body
+wrench `τ`, and inclusive per-actuator command bounds. It computes the
+unconstrained command with `AllocateUnconstrainedLeastSquares`, then
+clamps each command into `[min_thrust_n, max_thrust_n]`. The clamp does
+not move surplus wrench onto unsaturated actuators. Slew, efficiency,
+health, and health derate are not inputs.
+
+`ThrustCommandBoundsFromGeometry` reads only
+`max_reverse_thrust_n` and `max_forward_thrust_n`. The command interval
+is `[-max_reverse_thrust_n, max_forward_thrust_n]`.
+
+The call writes the bounded command, the achieved wrench `B u`, the
+residual `τ - B u`, one saturation flag per actuator, and the residual
+L2 norm. A flag is true when the stored command equals either bound,
+including a command that was already on the bound. Saturation is not an
+error. A successful clamp returns `kOk`.
+
+Storage is caller-owned. The function does not allocate. A bad size or
+a non-finite input returns `kInvalidArgument` and finite-zero outputs:
+commands, achieved wrench, residual wrench, clear saturation flags, and
+residual norm `+0`. The first defect wins. `kRankDeficient` is
+propagated from the unconstrained solver. On that status the commands
+stay the solver's finite zeros and are not clamped, so an interval that
+excludes 0 can contain none of them. The achieved wrench is zero, the
+residual is `τ`, the saturation flags are false, and the residual norm
+is `||τ||_2` when that norm is finite. A non-finite residual norm
+returns `kInvalidArgument` and finite zeros instead.
+
+When the unconstrained command already lies inside every bound, the
+bounded command matches it and achieved plus residual reconstructs `τ`
+within `1e-9`. After a clamp, no successful command leaves its interval,
+and the stored residual is `τ - B u` within `1e-9`. The same inputs
+produce the same outputs. ICON does not call this function.
+
+`//intrinsic_vehicle/intrinsic/vehicle/allocation:bounded_allocator_test`
+checks the interior match, single- and multi-actuator saturation, an
+exactly-at-bound command, residual identity, bit-stable repeats, bound
+compliance, rank-deficient fail-closed behavior, and rejected inputs.
+
 ## Out of scope
 
-Bound projection, slew limiting, health-to-command scaling, mass-matrix
-acceleration, time integration, guidance laws, control laws, Gazebo
-plugins, and ICON feature wiring are later issues.
+Slew limiting, health-to-command scaling, redistributing a saturated
+wrench onto unsaturated thrusters, mass-matrix acceleration, time
+integration, guidance laws, control laws, Gazebo plugins, and ICON
+feature wiring are later issues.

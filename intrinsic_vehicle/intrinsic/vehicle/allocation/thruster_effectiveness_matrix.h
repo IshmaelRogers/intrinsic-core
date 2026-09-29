@@ -53,6 +53,7 @@ namespace intrinsic::vehicle::allocation {
 // kInvalidArgument is a bad size or a non-finite input.
 // kRankDeficient is returned by AllocateUnconstrainedLeastSquares when
 // B B^T is singular or its unpivoted Cholesky factor is not safe.
+// AllocateBoundedLeastSquares propagates that status and does not clamp.
 enum class AllocationErrorCode {
   kOk = 0,
   kInvalidArgument = 1,

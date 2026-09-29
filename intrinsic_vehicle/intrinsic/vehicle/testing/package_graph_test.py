@@ -20,7 +20,8 @@ rigid-body Coriolis matrix, the added-mass Coriolis matrix, the
 linear/quadratic damping wrench, the gravity/buoyancy restoring wrench,
 the water-current relative velocity, and marine-force composition, and
 the allocation-to-parameters edge used by the thruster effectiveness
-matrix and unconstrained least-squares allocation. A later edge needs
+matrix, unconstrained least-squares allocation, and bounded thrust
+allocation. A later edge needs
 an update here and in README.md. Dynamics
 interface sources include only the C++ standard library and headers in
 that package. The mass-matrix, Coriolis, damping, restoring,
