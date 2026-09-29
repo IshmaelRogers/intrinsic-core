@@ -14,9 +14,10 @@
 
 load("//bazel:cc_macros.bzl", "cc_library", "cc_test")
 
-# Opt-in vehicle dynamics interface, zero-force test double, and rigid-body
-# mass matrix. Not part of the protected manipulator baseline. Do not add
-# this package to .github/baseline/manipulator_targets.tsv.
+# Opt-in vehicle dynamics interface, zero-force test double, rigid-body
+# mass matrix, and added-mass matrix. Not part of the protected manipulator
+# baseline. Do not add this package to
+# .github/baseline/manipulator_targets.tsv.
 
 package(default_visibility = ["//visibility:public"])
 
@@ -24,6 +25,8 @@ filegroup(
     name = "package_files",
     srcs = [
         "BUILD",
+        "added_mass_matrix.cc",
+        "added_mass_matrix.h",
         "dynamics.h",
         "rigid_body_mass_matrix.cc",
         "rigid_body_mass_matrix.h",
@@ -37,11 +40,13 @@ filegroup(
 cc_library(
     name = "dynamics",
     srcs = [
+        "added_mass_matrix.cc",
         "rigid_body_mass_matrix.cc",
         "vehicle_dynamics.cc",
         "zero_force_dynamics.cc",
     ],
     hdrs = [
+        "added_mass_matrix.h",
         "dynamics.h",
         "rigid_body_mass_matrix.h",
         "vehicle_dynamics.h",
@@ -49,6 +54,17 @@ cc_library(
     ],
     deps = [
         "//intrinsic_vehicle/intrinsic/vehicle/parameters",
+    ],
+)
+
+cc_test(
+    name = "added_mass_matrix_test",
+    size = "small",
+    srcs = ["added_mass_matrix_test.cc"],
+    deps = [
+        ":dynamics",
+        "//intrinsic_vehicle/intrinsic/vehicle/parameters:six_thruster_uuv_example",
+        "@com_google_googletest//:gtest_main",
     ],
 )
 
