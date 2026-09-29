@@ -18,11 +18,13 @@ The allowed graph is the scaffold graph plus the dynamics-to-parameters
 edge used by the rigid-body mass matrix, the added-mass matrix, the
 rigid-body Coriolis matrix, the added-mass Coriolis matrix, the
 linear/quadratic damping wrench, the gravity/buoyancy restoring wrench,
-the water-current relative velocity, and marine-force composition. A
-later edge needs an update here and in README.md. Dynamics interface
-sources include only the C++ standard library and headers in that
-package. The mass-matrix, Coriolis, damping, restoring, relative-velocity,
-and composition sources may include marine model parameter headers.
+the water-current relative velocity, and marine-force composition, and
+the allocation-to-parameters edge used by the thruster effectiveness
+matrix. A later edge needs an update here and in README.md. Dynamics
+interface sources include only the C++ standard library and headers in
+that package. The mass-matrix, Coriolis, damping, restoring,
+relative-velocity, and composition sources may include marine model
+parameter headers.
 """
 
 import os
@@ -42,6 +44,7 @@ _PACKAGES = (
 
 # Sibling packages each BUILD file may name. `vehicle` is the parent.
 _ALLOWED = {name: frozenset() for name in _PACKAGES}
+_ALLOWED["allocation"] = frozenset(("parameters",))
 _ALLOWED["dynamics"] = frozenset(("parameters",))
 _ALLOWED["testing"] = frozenset(
     (
