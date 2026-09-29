@@ -138,6 +138,19 @@ cc_test(
 )
 
 cc_test(
+    name = "marine_force_analytic_regression_test",
+    size = "small",
+    srcs = [
+        "marine_force_analytic_fixtures.h",
+        "marine_force_analytic_regression_test.cc",
+    ],
+    deps = [
+        ":dynamics",
+        "@com_google_googletest//:gtest_main",
+    ],
+)
+
+cc_test(
     name = "marine_force_dynamics_test",
     size = "small",
     srcs = ["marine_force_dynamics_test.cc"],
