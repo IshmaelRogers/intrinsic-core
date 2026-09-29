@@ -7,8 +7,9 @@ tree and `intrinsic_kinematics` have no Bazel dependency in either direction.
 [ADR 0001](../../../docs/adr/0001-multi-embodiment-capability-architecture.md)
 records the decision. PDR §4.1 and §15 place vehicle state math, dynamics,
 allocation, and guidance/control interfaces in this tree. Gazebo APIs, vendor
-SDKs, and mission behavior stay outside this tree. This scaffold does not
-implement dynamics equations, allocation, or guidance. Marine model
+SDKs, and mission behavior stay outside this tree. `dynamics` provides the
+`VehicleDynamics` interface and a zero-force test double. Marine force
+equations, allocation, and guidance remain later work. Marine model
 parameter schemas and validation are in `parameters`.
 
 Protobuf `VehicleState` and `DesiredMotion` stay in
@@ -23,7 +24,7 @@ commands.
 | --- | --- | --- |
 | `//intrinsic_vehicle/intrinsic/vehicle/state` | Real-time | Empty marker. Fixed-size state math lands here later. |
 | `//intrinsic_vehicle/intrinsic/vehicle/allocation` | Real-time | Empty marker. Bounded allocation lands here later. |
-| `//intrinsic_vehicle/intrinsic/vehicle/dynamics` | Soft-real-time | Empty marker. Dynamics land here later, outside ICON. |
+| `//intrinsic_vehicle/intrinsic/vehicle/dynamics` | Soft-real-time | `VehicleDynamics` interface and zero-force test double. Outside ICON. |
 | `//intrinsic_vehicle/intrinsic/vehicle/parameters` | Soft-real-time | Marine model schemas and validation. Not loaded by ICON. |
 | `//intrinsic_vehicle/intrinsic/vehicle/guidance` | Soft-real-time | Empty marker. Guidance lands here later, outside ICON. |
 | `//intrinsic_vehicle/intrinsic/vehicle/control` | Soft-real-time | Empty marker. Reference control lands here later, outside ICON. |
@@ -64,7 +65,7 @@ the ICON cycle. The `parameters` package is that configuration-time check.
 | `guidance` | Future DesiredMotion-to-reference step. Intent is not an actuator command. |
 | `control` | Future reference-to-body-wrench step. ICON remains the only writer of actuator commands. |
 | `parameters` | Marine mass, inertia, buoyancy, added mass, damping, centers, environment, and thruster geometry. Validated at configuration time. |
-| `dynamics` | Future `VehicleDynamics` evaluations outside ICON. No Gazebo API in this tree. |
+| `dynamics` | `VehicleDynamics::Evaluate` outside ICON. Fixed-size inputs and results. No Gazebo API and no thruster allocation. |
 
 ### Test-only
 
@@ -147,7 +148,71 @@ field path and `ModelErrorCode`.
 is a calm-water six-thruster UUV. Slew, efficiency, health, and allocation
 are later issues.
 
+## Vehicle dynamics interface
+
+`//intrinsic_vehicle/intrinsic/vehicle/dynamics:dynamics` defines
+`VehicleDynamics::Evaluate`. The call accepts a fixed-size state, a body
+wrench, an environment snapshot, and a time step. It returns a state
+derivative and diagnostics, or `DynamicsErrorCode::kInvalidArgument`.
+
+The derivative is the instantaneous rate of pose and body velocity. The
+time step is validated and reported. It is not an integration horizon.
+`Evaluate` does not advance the pose.
+
+The interface is opt-in. Nothing in this tree constructs a dynamics model
+unless the caller does. ICON does not load this package. Manipulator
+targets do not depend on it.
+
+`ZeroForceDynamics` is the deterministic test double. For a valid input it
+reports the rigid-body kinematic derivative of the pose from the body twist
+and a zero body acceleration. Gravity, fluid density, current, and the
+input wrench do not change that acceleration. The same inputs produce the
+same outputs. Invalid inputs return a status and a zero, finite derivative.
+
+### Allocation
+
+Thruster allocation stays in `allocation`. `Evaluate` does not map a wrench
+to actuator commands and does not read actuator health.
+`DynamicsDiagnostics::allocation_invoked` stays false for the
+implementations in this package.
+
+Returned values are fixed-size. `ValidateEvaluationInputs` and
+`ZeroForceDynamics` do not allocate heap memory. Status text is a static
+string view. `Evaluate` does not retain its arguments after it returns.
+
+### Thread safety
+
+`Evaluate` is const. Concurrent `Evaluate` calls on one instance are safe
+for an implementation with no unsynchronized mutable members.
+`ZeroForceDynamics` has no data members. `ValidateEvaluationInputs` reads
+only its arguments. This package takes no locks and is not called from the
+ICON cycle.
+
+### Input contract
+
+Body axes are REP-103. Twist order is surge, sway, heave, roll, pitch, yaw.
+Orientation is a Hamilton quaternion stored x, y, z, w. Pose frame is
+`world_enu` or `world_ned`. Wrench frame is `body`. Current frame is
+`world_enu`, `world_ned`, or `body`. This package does not convert frames.
+
+`ValidateEvaluationInputs` returns the first defect. A zero time step is
+valid. A negative or non-finite time step is not. Gravity and density may
+be zero and may not be negative. Non-finite values and a non-unit
+quaternion are invalid. Quaternion tolerance is an absolute `1e-9` on
+`|norm - 1|`. The check order is pose frame, state finiteness, unit
+quaternion, wrench frame, wrench finiteness, environment finiteness,
+gravity sign, density sign, current finiteness, current frame, then time
+step.
+
+### Dependencies
+
+The dynamics library links the C++ standard library only. It does not
+depend on Gazebo, a vendor SDK, ICON, protobuf, or `allocation`.
+
+`//intrinsic_vehicle/intrinsic/vehicle/dynamics:vehicle_dynamics_test`
+checks this contract and the zero-force double.
+
 ## Out of scope
 
-Dynamics equations, thruster allocation, guidance laws, control laws,
+Marine force equations, thruster allocation, guidance laws, control laws,
 Gazebo plugins, and ICON feature wiring are later issues.

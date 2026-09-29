@@ -19,10 +19,11 @@
 
 namespace intrinsic::vehicle::dynamics {
 
-// Soft-real-time package scaffold. Vehicle dynamics belong here,
-// outside the ICON cycle. This header defines no dynamics.
+// Soft-real-time package scaffold. VehicleDynamics lives in
+// vehicle_dynamics.h and is evaluated outside the ICON cycle.
+// This header is the package marker. It does not evaluate forces.
 // Marine model parameters are validated in the parameters package.
-// Timing and ownership: README.md in this tree.
+// Timing, allocation, and thread safety: README.md in this tree.
 inline constexpr std::string_view kPackageName =
     "intrinsic_vehicle/intrinsic/vehicle/dynamics";
 
