@@ -13,8 +13,8 @@ matrix, the added-mass matrix, the rigid-body Coriolis matrix, the
 added-mass Coriolis matrix, the linear/quadratic damping wrench, the
 gravity/buoyancy restoring wrench, the water-current relative
 velocity, and marine-force composition. `allocation` builds the
-thruster effectiveness matrix. Least-squares allocation and guidance
-remain later work.
+thruster effectiveness matrix and solves unconstrained least-squares
+thrust allocation. Guidance remains later work.
 Marine model parameter schemas and validation are in `parameters`.
 
 Protobuf `VehicleState` and `DesiredMotion` stay in
@@ -28,7 +28,7 @@ commands.
 | Bazel package | Timing boundary | Scaffold |
 | --- | --- | --- |
 | `//intrinsic_vehicle/intrinsic/vehicle/state` | Real-time | Empty marker. Fixed-size state math lands here later. |
-| `//intrinsic_vehicle/intrinsic/vehicle/allocation` | Real-time | Thruster effectiveness matrix from body-frame geometry and an explicit mask. Least-squares allocation lands here later. |
+| `//intrinsic_vehicle/intrinsic/vehicle/allocation` | Real-time | Thruster effectiveness matrix from body-frame geometry and an explicit mask. Unconstrained least-squares allocation from that matrix. |
 | `//intrinsic_vehicle/intrinsic/vehicle/dynamics` | Soft-real-time | `VehicleDynamics` interface, zero-force test double, rigid-body mass matrix, added-mass matrix, rigid-body Coriolis matrix, added-mass Coriolis matrix, linear/quadratic damping wrench, gravity/buoyancy restoring wrench, water-current relative velocity, and marine-force composition. Outside ICON. |
 | `//intrinsic_vehicle/intrinsic/vehicle/parameters` | Soft-real-time | Marine model schemas and validation. Not loaded by ICON. |
 | `//intrinsic_vehicle/intrinsic/vehicle/guidance` | Soft-real-time | Empty marker. Guidance lands here later, outside ICON. |
@@ -52,7 +52,7 @@ ICON control and allocation run at 100 to 1000 Hz and never wait (PDR §11).
 | Package | Role on this boundary |
 | --- | --- |
 | `state` | Future fixed-size vehicle state values. Safe to read from a latched ICON cycle once those types exist. No protobuf in this package. |
-| `allocation` | `BuildThrusterEffectivenessMatrix` writes body-frame `B` (6×N) into caller storage. An explicit mask zeros disabled columns. No heap, no blocking, and no protobuf. Least-squares allocation and ICON `ApplyCommand` wiring are later. |
+| `allocation` | `BuildThrusterEffectivenessMatrix` writes body-frame `B` (6×N) into caller storage. An explicit mask zeros disabled columns. `AllocateUnconstrainedLeastSquares` maps a requested body wrench through the minimum-norm right inverse of `B`. No heap, no blocking, and no protobuf. ICON `ApplyCommand` wiring is later. |
 
 `ReadStatus` and `ApplyCommand` stay in ICON. This scaffold does not link
 ICON and does not run on a real-time thread.
@@ -85,7 +85,8 @@ to `parameters` for the rigid-body mass matrix, the added-mass matrix, the
 rigid-body Coriolis matrix, the added-mass Coriolis matrix, the
 linear/quadratic damping wrench, the gravity/buoyancy restoring wrench,
 the water-current relative velocity, and marine-force composition, and
-from `allocation` to `parameters` for the thruster effectiveness matrix.
+from `allocation` to `parameters` for the thruster effectiveness matrix
+and unconstrained least-squares allocation.
 That graph is acyclic.
 
 Allowed later, and not wired in this scaffold:
@@ -157,8 +158,8 @@ field path and `ModelErrorCode`.
 `//intrinsic_vehicle/intrinsic/vehicle/parameters:six_thruster_uuv_example`
 is a calm-water six-thruster UUV. Each thruster is in the body frame, with
 slew limits, ideal efficiency, and nominal health. The effectiveness
-matrix for this geometry is built in `allocation`. Least-squares
-allocation is a later issue.
+matrix for this geometry is built in `allocation`. Unconstrained
+least-squares allocation of that matrix is in `allocation`.
 
 ## Vehicle dynamics interface
 
@@ -316,7 +317,7 @@ wins. The same inputs produce the same outputs.
 
 Thruster allocation stays in `allocation`. `Evaluate` does not map a wrench
 to actuator commands, does not read actuator health, and does not call
-`BuildThrusterEffectivenessMatrix`.
+`BuildThrusterEffectivenessMatrix` or `AllocateUnconstrainedLeastSquares`.
 `DynamicsDiagnostics::allocation_invoked` stays false for the
 implementations in this package.
 
@@ -407,9 +408,33 @@ residual. ICON does not call it.
 checks the hand-calculated columns, the six-thruster example, the mask,
 and rejected inputs.
 
+## Unconstrained least-squares allocation
+
+`AllocateUnconstrainedLeastSquares` reads columns of `B` and a requested
+body wrench `τ`. It does not read thrust bounds, slew, efficiency, health,
+or health derate. For full row rank it returns the minimum-norm solution
+
+`u = Bᵀ (B Bᵀ)⁻¹ τ`
+
+`B Bᵀ` is factored with unpivoted Cholesky. A pivot must exceed
+`kCholeskyPivotRelativeTolerance` (1e-12) times the largest diagonal
+entry of `B Bᵀ`. A pivot that does not exceed that floor, or a
+non-finite factor entry, returns `AllocationErrorCode::kRankDeficient`.
+No Tikhonov term is added. The
+thrust commands and the residual `τ - B u` are written into caller
+storage. The function does not allocate. A bad size or a non-finite input
+returns `kInvalidArgument`, finite-zero commands, and a finite-zero
+residual. Rank deficiency writes finite-zero commands and the residual of
+that zero command, which is `τ`. The first defect wins. The same inputs
+produce the same commands. Full row rank on the six-thruster example
+reconstructs `τ` within `1e-9`. ICON does not call this function.
+
+`//intrinsic_vehicle/intrinsic/vehicle/allocation:least_squares_allocator_test`
+checks that reconstruction, a rank-deficient matrix, rejected inputs, and
+bit-stable repeated calls.
+
 ## Out of scope
 
-Least-squares thruster allocation, bound projection, residual diagnostics,
-health-to-command scaling, mass-matrix acceleration, time integration,
-guidance laws, control laws, Gazebo plugins, and ICON feature wiring are
-later issues.
+Bound projection, slew limiting, health-to-command scaling, mass-matrix
+acceleration, time integration, guidance laws, control laws, Gazebo
+plugins, and ICON feature wiring are later issues.
