@@ -15,6 +15,7 @@
 #include "intrinsic/vehicle/dynamics/vehicle_dynamics.h"
 
 #include <array>
+#include <cmath>
 #include <limits>
 #include <string_view>
 #include <thread>
@@ -76,6 +77,13 @@ void ExpectRejectedZero(const DynamicsResult& result) {
   EXPECT_EQ(result.derivative.body_acceleration, kZero6);
   EXPECT_EQ(result.diagnostics.model_force_n, kZero3);
   EXPECT_EQ(result.diagnostics.model_torque_n_m, kZero3);
+  EXPECT_EQ(result.diagnostics.relative_twist, kZero6);
+  EXPECT_EQ(result.diagnostics.rigid_body_coriolis_wrench, kZero6);
+  EXPECT_EQ(result.diagnostics.added_mass_coriolis_wrench, kZero6);
+  EXPECT_EQ(result.diagnostics.damping_wrench, kZero6);
+  EXPECT_EQ(result.diagnostics.restoring_wrench, kZero6);
+  EXPECT_EQ(result.diagnostics.hydrodynamic_wrench, kZero6);
+  EXPECT_EQ(result.diagnostics.total_wrench, kZero6);
   EXPECT_EQ(result.diagnostics.dt_s, 0);
   EXPECT_EQ(result.diagnostics.model_id, kZeroForceModelId);
   EXPECT_FALSE(result.diagnostics.input_wrench_used);
@@ -163,6 +171,9 @@ TEST(VehicleDynamicsInterface, PolymorphicEvaluateReturnsDerivative) {
   EXPECT_EQ(result.value().diagnostics.dt_s, 0.25);
   EXPECT_EQ(result.value().diagnostics.model_force_n, kZero3);
   EXPECT_EQ(result.value().diagnostics.model_torque_n_m, kZero3);
+  EXPECT_EQ(result.value().diagnostics.relative_twist, kZero6);
+  EXPECT_EQ(result.value().diagnostics.hydrodynamic_wrench, kZero6);
+  EXPECT_EQ(result.value().diagnostics.total_wrench, kZero6);
   EXPECT_FALSE(result.value().diagnostics.input_wrench_used);
   EXPECT_FALSE(result.value().diagnostics.allocation_invoked);
 }

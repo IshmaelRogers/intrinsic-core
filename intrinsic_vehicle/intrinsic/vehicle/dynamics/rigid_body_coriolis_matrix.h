@@ -31,8 +31,9 @@
 //
 // This term is only the rigid-body Coriolis matrix. It does not compute
 // added-mass Coriolis, damping, buoyancy, actuator commands, or a state
-// derivative. VehicleDynamics::Evaluate does not call it: that contract
-// returns a derivative and has no Coriolis output.
+// derivative. MarineForceDynamics::Evaluate calls it on the body twist ν
+// while composing the hydrodynamic wrench. The matrix is not a
+// DynamicsResult field. The composed term is -C_RB(ν) ν.
 //
 // Mass, inertia, and the center of gravity are checked by
 // ComputeRigidBodyMassMatrix, in that function's order. A non-finite body

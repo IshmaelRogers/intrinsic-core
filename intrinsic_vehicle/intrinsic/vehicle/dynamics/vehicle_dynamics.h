@@ -135,6 +135,33 @@ struct DynamicsDiagnostics {
   bool input_wrench_used = false;
   // True when the implementation solved actuator commands.
   bool allocation_invoked = false;
+  // Marine-force terms. Append-only. Callers that do not compose them,
+  // including ZeroForceDynamics, leave them zero.
+  //
+  // relative_twist is ν_r. The next four arrays are body-frame
+  // generalized forces in surge, sway, heave, roll, pitch, yaw order.
+  // Their sum is hydrodynamic_wrench:
+  //
+  //   rigid_body_coriolis_wrench = -C_RB(ν) ν
+  //   added_mass_coriolis_wrench = -C_A(ν_r) ν_r
+  //   damping_wrench = τ_damp(ν_r) from the damping helper
+  //   restoring_wrench = τ_g from the restoring helper
+  //
+  // The damping and restoring helpers already return the force on the
+  // body (τ_damp = -(D_L + D_Q) ν_r, and τ_g is weight plus buoyancy).
+  // Substituting those helper signs gives
+  // -C_RB(ν) ν - C_A(ν_r) ν_r - D(ν_r) ν_r - g(η).
+  // hydrodynamic_wrench is copied into model_force_n and model_torque_n_m.
+  // total_wrench is the input wrench plus hydrodynamic_wrench. It is the
+  // derivative input passed through from BodyWrenchRt. This result has
+  // no mass-matrix field, so composition does not form M or ν̇.
+  std::array<double, kSpatialDof> relative_twist = {};
+  std::array<double, kSpatialDof> rigid_body_coriolis_wrench = {};
+  std::array<double, kSpatialDof> added_mass_coriolis_wrench = {};
+  std::array<double, kSpatialDof> damping_wrench = {};
+  std::array<double, kSpatialDof> restoring_wrench = {};
+  std::array<double, kSpatialDof> hydrodynamic_wrench = {};
+  std::array<double, kSpatialDof> total_wrench = {};
 };
 
 struct DynamicsResult {

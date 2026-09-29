@@ -39,9 +39,9 @@
 //
 // Gravity, density, mass, inertia, damping, added mass, and thrusters are
 // not read. The function does not compute a hydrodynamic force, a restoring
-// wrench, Coriolis, damping, or a state derivative. VehicleDynamics::Evaluate
-// does not call it: that contract returns a derivative and has no
-// relative-velocity output.
+// wrench, Coriolis, damping, or a state derivative.
+// MarineForceDynamics::Evaluate calls it and stores ν_r. Added-mass
+// Coriolis and damping then read that twist. Rigid-body Coriolis reads ν.
 //
 // Checks follow ValidateMarineModel for the current, then the pose, then
 // the twist. The first defect wins: current non-finite, current frame

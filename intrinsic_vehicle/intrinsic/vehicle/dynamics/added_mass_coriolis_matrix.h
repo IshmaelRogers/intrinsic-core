@@ -32,8 +32,9 @@
 //
 // Coefficients come only from M_A. This term does not add the rigid-body
 // Coriolis matrix, damping, buoyancy, actuator commands, or a state
-// derivative. VehicleDynamics::Evaluate does not call it: that contract
-// returns a derivative and has no Coriolis output.
+// derivative. MarineForceDynamics::Evaluate calls it on the relative
+// twist ν_r while composing the hydrodynamic wrench. The matrix is not a
+// DynamicsResult field. The composed term is -C_A(ν_r) ν_r.
 //
 // Added mass is checked by ComputeAddedMassMatrix, in that function's
 // order. A non-finite body twist is rejected after those checks. The

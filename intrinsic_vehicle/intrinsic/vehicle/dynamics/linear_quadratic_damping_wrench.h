@@ -34,8 +34,8 @@
 //
 // This term is only the linear and quadratic damping wrench. It does not
 // compute Coriolis, restoring, buoyancy, actuator commands, or a state
-// derivative. VehicleDynamics::Evaluate does not call it: that contract
-// returns a derivative and has no damping-wrench output.
+// derivative. MarineForceDynamics::Evaluate calls it on the relative
+// twist ν_r and stores that wrench as the damping contribution.
 //
 // Checks follow ValidateMarineModel for Damping, then the twist. Linear
 // entries must be finite, symmetric within 1e-9, and positive definite by

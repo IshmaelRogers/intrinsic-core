@@ -18,11 +18,11 @@ The allowed graph is the scaffold graph plus the dynamics-to-parameters
 edge used by the rigid-body mass matrix, the added-mass matrix, the
 rigid-body Coriolis matrix, the added-mass Coriolis matrix, the
 linear/quadratic damping wrench, the gravity/buoyancy restoring wrench,
-and the water-current relative velocity. A later edge needs an update
-here and in README.md. Dynamics interface sources include only the C++
-standard library and headers in that package. The mass-matrix, Coriolis,
-damping, restoring, and relative-velocity terms may include marine model
-parameter headers.
+the water-current relative velocity, and marine-force composition. A
+later edge needs an update here and in README.md. Dynamics interface
+sources include only the C++ standard library and headers in that
+package. The mass-matrix, Coriolis, damping, restoring, relative-velocity,
+and composition sources may include marine model parameter headers.
 """
 
 import os
@@ -83,6 +83,8 @@ _DYNAMICS_SOURCES = (
     "gravity_buoyancy_restoring_wrench.h",
     "linear_quadratic_damping_wrench.cc",
     "linear_quadratic_damping_wrench.h",
+    "marine_force_dynamics.cc",
+    "marine_force_dynamics.h",
     "rigid_body_coriolis_matrix.cc",
     "rigid_body_coriolis_matrix.h",
     "rigid_body_mass_matrix.cc",
@@ -95,8 +97,8 @@ _DYNAMICS_SOURCES = (
     "zero_force_dynamics.h",
 )
 
-# Mass-matrix, Coriolis, damping, restoring, and relative-velocity sources
-# read marine model parameters. Interface sources do not.
+# Mass-matrix, Coriolis, damping, restoring, relative-velocity, and
+# composition sources read marine model parameters. Interface sources do not.
 _MASS_MATRIX_SOURCES = frozenset(
     (
         "added_mass_coriolis_matrix.cc",
@@ -107,6 +109,8 @@ _MASS_MATRIX_SOURCES = frozenset(
         "gravity_buoyancy_restoring_wrench.h",
         "linear_quadratic_damping_wrench.cc",
         "linear_quadratic_damping_wrench.h",
+        "marine_force_dynamics.cc",
+        "marine_force_dynamics.h",
         "rigid_body_coriolis_matrix.cc",
         "rigid_body_coriolis_matrix.h",
         "rigid_body_mass_matrix.cc",

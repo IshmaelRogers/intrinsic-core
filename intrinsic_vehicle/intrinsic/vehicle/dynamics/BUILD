@@ -17,9 +17,9 @@ load("//bazel:cc_macros.bzl", "cc_library", "cc_test")
 # Opt-in vehicle dynamics interface, zero-force test double, rigid-body
 # mass matrix, added-mass matrix, rigid-body Coriolis matrix, added-mass
 # Coriolis matrix, linear/quadratic damping wrench, gravity/buoyancy
-# restoring wrench, and water-current relative velocity. Not part of the
-# protected manipulator baseline. Do not add this package to
-# .github/baseline/manipulator_targets.tsv.
+# restoring wrench, water-current relative velocity, and marine-force
+# composition. Not part of the protected manipulator baseline. Do not add
+# this package to .github/baseline/manipulator_targets.tsv.
 
 package(default_visibility = ["//visibility:public"])
 
@@ -36,6 +36,8 @@ filegroup(
         "gravity_buoyancy_restoring_wrench.h",
         "linear_quadratic_damping_wrench.cc",
         "linear_quadratic_damping_wrench.h",
+        "marine_force_dynamics.cc",
+        "marine_force_dynamics.h",
         "rigid_body_coriolis_matrix.cc",
         "rigid_body_coriolis_matrix.h",
         "rigid_body_mass_matrix.cc",
@@ -56,6 +58,7 @@ cc_library(
         "added_mass_matrix.cc",
         "gravity_buoyancy_restoring_wrench.cc",
         "linear_quadratic_damping_wrench.cc",
+        "marine_force_dynamics.cc",
         "rigid_body_coriolis_matrix.cc",
         "rigid_body_mass_matrix.cc",
         "vehicle_dynamics.cc",
@@ -68,6 +71,7 @@ cc_library(
         "dynamics.h",
         "gravity_buoyancy_restoring_wrench.h",
         "linear_quadratic_damping_wrench.h",
+        "marine_force_dynamics.h",
         "rigid_body_coriolis_matrix.h",
         "rigid_body_mass_matrix.h",
         "vehicle_dynamics.h",
@@ -129,6 +133,16 @@ cc_test(
     deps = [
         ":dynamics",
         "//intrinsic_vehicle/intrinsic/vehicle/parameters:six_thruster_uuv_example",
+        "@com_google_googletest//:gtest_main",
+    ],
+)
+
+cc_test(
+    name = "marine_force_dynamics_test",
+    size = "small",
+    srcs = ["marine_force_dynamics_test.cc"],
+    deps = [
+        ":dynamics",
         "@com_google_googletest//:gtest_main",
     ],
 )
