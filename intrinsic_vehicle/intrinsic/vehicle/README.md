@@ -9,9 +9,9 @@ records the decision. PDR §4.1 and §15 place vehicle state math, dynamics,
 allocation, and guidance/control interfaces in this tree. Gazebo APIs, vendor
 SDKs, and mission behavior stay outside this tree. `dynamics` provides the
 `VehicleDynamics` interface, a zero-force test double, the rigid-body mass
-matrix, the added-mass matrix, and the rigid-body Coriolis matrix.
-Added-mass Coriolis, damping, buoyancy, allocation, and guidance remain
-later work. Marine model parameter schemas and validation are in
+matrix, the added-mass matrix, the rigid-body Coriolis matrix, and the
+added-mass Coriolis matrix. Damping, buoyancy, allocation, and guidance
+remain later work. Marine model parameter schemas and validation are in
 `parameters`.
 
 Protobuf `VehicleState` and `DesiredMotion` stay in
@@ -26,7 +26,7 @@ commands.
 | --- | --- | --- |
 | `//intrinsic_vehicle/intrinsic/vehicle/state` | Real-time | Empty marker. Fixed-size state math lands here later. |
 | `//intrinsic_vehicle/intrinsic/vehicle/allocation` | Real-time | Empty marker. Bounded allocation lands here later. |
-| `//intrinsic_vehicle/intrinsic/vehicle/dynamics` | Soft-real-time | `VehicleDynamics` interface, zero-force test double, rigid-body mass matrix, added-mass matrix, and rigid-body Coriolis matrix. Outside ICON. |
+| `//intrinsic_vehicle/intrinsic/vehicle/dynamics` | Soft-real-time | `VehicleDynamics` interface, zero-force test double, rigid-body mass matrix, added-mass matrix, rigid-body Coriolis matrix, and added-mass Coriolis matrix. Outside ICON. |
 | `//intrinsic_vehicle/intrinsic/vehicle/parameters` | Soft-real-time | Marine model schemas and validation. Not loaded by ICON. |
 | `//intrinsic_vehicle/intrinsic/vehicle/guidance` | Soft-real-time | Empty marker. Guidance lands here later, outside ICON. |
 | `//intrinsic_vehicle/intrinsic/vehicle/control` | Soft-real-time | Empty marker. Reference control lands here later, outside ICON. |
@@ -78,8 +78,9 @@ a runtime loop.
 
 Present edges inside this tree are from `testing` to `state`, `dynamics`,
 `allocation`, `guidance`, `control`, and `parameters`, and from `dynamics`
-to `parameters` for the rigid-body mass matrix, the added-mass matrix, and
-the rigid-body Coriolis matrix. That graph is acyclic.
+to `parameters` for the rigid-body mass matrix, the added-mass matrix, the
+rigid-body Coriolis matrix, and the added-mass Coriolis matrix. That graph
+is acyclic.
 
 Allowed later, and not wired in this scaffold:
 
@@ -200,6 +201,17 @@ not call it. The same inputs produce the same matrix. Invalid mass,
 inertia, or center of gravity, or a non-finite twist, returns
 `kInvalidArgument` and a zero, finite matrix.
 
+`ComputeAddedMassCoriolisMatrix` is the added-mass Coriolis and centripetal
+matrix. It reads the added-mass coefficients validated by
+`ComputeAddedMassMatrix` and a body twist in surge, sway, heave, roll,
+pitch, yaw order. The result is the body-frame 6x6 matrix `C_A`. Momentum
+comes from that added-mass matrix only. The function does not add the
+rigid-body Coriolis matrix, does not derive added mass from geometry, and
+does not convert ENU and NED. Damping, buoyancy, and integration are not
+this function. `Evaluate` does not call it. The same inputs produce the
+same matrix. Invalid added mass, or a non-finite twist, returns
+`kInvalidArgument` and a zero, finite matrix.
+
 ### Allocation
 
 Thruster allocation stays in `allocation`. `Evaluate` does not map a wrench
@@ -248,8 +260,10 @@ checks the rigid-body mass matrix fixtures.
 checks the added-mass matrix fixtures.
 `//intrinsic_vehicle/intrinsic/vehicle/dynamics:rigid_body_coriolis_matrix_test`
 checks the rigid-body Coriolis fixtures.
+`//intrinsic_vehicle/intrinsic/vehicle/dynamics:added_mass_coriolis_matrix_test`
+checks the added-mass Coriolis fixtures.
 
 ## Out of scope
 
-Added-mass Coriolis, damping, buoyancy, thruster allocation, guidance laws,
-control laws, Gazebo plugins, and ICON feature wiring are later issues.
+Damping, buoyancy, thruster allocation, guidance laws, control laws, Gazebo
+plugins, and ICON feature wiring are later issues.
