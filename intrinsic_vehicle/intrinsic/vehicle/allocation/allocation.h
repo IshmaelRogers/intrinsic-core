@@ -22,7 +22,8 @@ namespace intrinsic::vehicle::allocation {
 // Real-time package scaffold. Thruster allocation belongs here.
 // BuildThrusterEffectivenessMatrix lives in
 // thruster_effectiveness_matrix.h. AllocateUnconstrainedLeastSquares
-// lives in least_squares_allocator.h. Bound projection is later.
+// lives in least_squares_allocator.h. AllocateBoundedLeastSquares
+// lives in bounded_allocator.h.
 // Timing and ownership: README.md in this tree.
 inline constexpr std::string_view kPackageName =
     "intrinsic_vehicle/intrinsic/vehicle/allocation";
