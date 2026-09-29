@@ -621,11 +621,14 @@ TEST(ThrusterHealthAdapter, SingleFailureRankDeficiencyReportsResidual) {
 }
 
 TEST(ThrusterHealthAdapter, DeterministicForTheSameHealthInputs) {
+  // Derate keeps the six-column map full rank. A neutral actuator would
+  // drop row rank and the bounded solver would fail closed. That path is
+  // covered by the rank-deficiency fixture.
   MarineModel model = MakeSixThrusterUuvExample();
   model.thrusters[1].health = ThrusterHealthState::kDerated;
   model.thrusters[1].health_derate = 0.4;
-  model.thrusters[4].health = ThrusterHealthState::kStuckOff;
-  model.thrusters[4].health_derate = 0.0;
+  model.thrusters[4].health = ThrusterHealthState::kDerated;
+  model.thrusters[4].health_derate = 0.25;
   const auto built = SixColumns(model);
   const Wrench wrench = {4.0, -2.0, 1.0, 0.2, -0.3, 0.4};
 

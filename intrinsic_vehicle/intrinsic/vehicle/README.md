@@ -14,8 +14,9 @@ added-mass Coriolis matrix, the linear/quadratic damping wrench, the
 gravity/buoyancy restoring wrench, the water-current relative
 velocity, and marine-force composition. `allocation` builds the
 thruster effectiveness matrix, solves unconstrained least-squares
-thrust allocation, and clamps those commands to per-actuator thrust
-bounds. Guidance remains later work.
+thrust allocation, clamps those commands to per-actuator thrust
+bounds, and applies thruster health to those columns and bounds.
+Guidance remains later work.
 Marine model parameter schemas and validation are in `parameters`.
 
 Protobuf `VehicleState` and `DesiredMotion` stay in
@@ -29,7 +30,7 @@ commands.
 | Bazel package | Timing boundary | Scaffold |
 | --- | --- | --- |
 | `//intrinsic_vehicle/intrinsic/vehicle/state` | Real-time | Empty marker. Fixed-size state math lands here later. |
-| `//intrinsic_vehicle/intrinsic/vehicle/allocation` | Real-time | Thruster effectiveness matrix from body-frame geometry and an explicit mask. Unconstrained least-squares allocation from that matrix, then a hard clamp onto per-actuator thrust bounds. |
+| `//intrinsic_vehicle/intrinsic/vehicle/allocation` | Real-time | Thruster effectiveness matrix from body-frame geometry and an explicit mask. Unconstrained least-squares allocation from that matrix, a hard clamp onto per-actuator thrust bounds, and a health adapter that scales those columns and bounds before the clamp. |
 | `//intrinsic_vehicle/intrinsic/vehicle/dynamics` | Soft-real-time | `VehicleDynamics` interface, zero-force test double, rigid-body mass matrix, added-mass matrix, rigid-body Coriolis matrix, added-mass Coriolis matrix, linear/quadratic damping wrench, gravity/buoyancy restoring wrench, water-current relative velocity, and marine-force composition. Outside ICON. |
 | `//intrinsic_vehicle/intrinsic/vehicle/parameters` | Soft-real-time | Marine model schemas and validation. Not loaded by ICON. |
 | `//intrinsic_vehicle/intrinsic/vehicle/guidance` | Soft-real-time | Empty marker. Guidance lands here later, outside ICON. |
@@ -87,7 +88,8 @@ rigid-body Coriolis matrix, the added-mass Coriolis matrix, the
 linear/quadratic damping wrench, the gravity/buoyancy restoring wrench,
 the water-current relative velocity, and marine-force composition, and
 from `allocation` to `parameters` for the thruster effectiveness matrix,
-unconstrained least-squares allocation, and bounded thrust allocation.
+unconstrained least-squares allocation, bounded thrust allocation, and
+the thruster-health input adapter.
 That graph is acyclic.
 
 Allowed later, and not wired in this scaffold:
