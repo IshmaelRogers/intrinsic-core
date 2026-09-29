@@ -12,8 +12,9 @@ SDKs, and mission behavior stay outside this tree. `dynamics` provides the
 matrix, the added-mass matrix, the rigid-body Coriolis matrix, the
 added-mass Coriolis matrix, the linear/quadratic damping wrench, the
 gravity/buoyancy restoring wrench, the water-current relative
-velocity, and marine-force composition. Allocation and guidance remain
-later work.
+velocity, and marine-force composition. `allocation` builds the
+thruster effectiveness matrix. Least-squares allocation and guidance
+remain later work.
 Marine model parameter schemas and validation are in `parameters`.
 
 Protobuf `VehicleState` and `DesiredMotion` stay in
@@ -27,7 +28,7 @@ commands.
 | Bazel package | Timing boundary | Scaffold |
 | --- | --- | --- |
 | `//intrinsic_vehicle/intrinsic/vehicle/state` | Real-time | Empty marker. Fixed-size state math lands here later. |
-| `//intrinsic_vehicle/intrinsic/vehicle/allocation` | Real-time | Empty marker. Bounded allocation lands here later. |
+| `//intrinsic_vehicle/intrinsic/vehicle/allocation` | Real-time | Thruster effectiveness matrix from body-frame geometry and an explicit mask. Least-squares allocation lands here later. |
 | `//intrinsic_vehicle/intrinsic/vehicle/dynamics` | Soft-real-time | `VehicleDynamics` interface, zero-force test double, rigid-body mass matrix, added-mass matrix, rigid-body Coriolis matrix, added-mass Coriolis matrix, linear/quadratic damping wrench, gravity/buoyancy restoring wrench, water-current relative velocity, and marine-force composition. Outside ICON. |
 | `//intrinsic_vehicle/intrinsic/vehicle/parameters` | Soft-real-time | Marine model schemas and validation. Not loaded by ICON. |
 | `//intrinsic_vehicle/intrinsic/vehicle/guidance` | Soft-real-time | Empty marker. Guidance lands here later, outside ICON. |
@@ -51,7 +52,7 @@ ICON control and allocation run at 100 to 1000 Hz and never wait (PDR §11).
 | Package | Role on this boundary |
 | --- | --- |
 | `state` | Future fixed-size vehicle state values. Safe to read from a latched ICON cycle once those types exist. No protobuf in this package. |
-| `allocation` | Future bounded allocator invoked from `ApplyCommand`. No heap, no blocking, and no protobuf on that path. |
+| `allocation` | `BuildThrusterEffectivenessMatrix` writes body-frame `B` (6×N) into caller storage. An explicit mask zeros disabled columns. No heap, no blocking, and no protobuf. Least-squares allocation and ICON `ApplyCommand` wiring are later. |
 
 `ReadStatus` and `ApplyCommand` stay in ICON. This scaffold does not link
 ICON and does not run on a real-time thread.
@@ -79,17 +80,18 @@ a runtime loop.
 ## Dependency rules
 
 Present edges inside this tree are from `testing` to `state`, `dynamics`,
-`allocation`, `guidance`, `control`, and `parameters`, and from `dynamics`
+`allocation`, `guidance`, `control`, and `parameters`, from `dynamics`
 to `parameters` for the rigid-body mass matrix, the added-mass matrix, the
 rigid-body Coriolis matrix, the added-mass Coriolis matrix, the
 linear/quadratic damping wrench, the gravity/buoyancy restoring wrench,
-the water-current relative velocity, and marine-force composition. That
-graph is acyclic.
+the water-current relative velocity, and marine-force composition, and
+from `allocation` to `parameters` for the thruster effectiveness matrix.
+That graph is acyclic.
 
 Allowed later, and not wired in this scaffold:
 
 - `dynamics` may depend on `state`.
-- `allocation` may depend on `parameters` and `state`.
+- `allocation` may depend on `state`.
 - `guidance` may depend on `state`.
 - `control` may depend on `guidance` and `state`.
 
@@ -150,12 +152,13 @@ field path and `ModelErrorCode`.
 | Added mass | 6x6 coefficients | Symmetric and positive definite. |
 | Damping | 6x6 linear coefficients; 6 quadratic coefficients | Linear symmetric and positive definite. Each quadratic coefficient >= 0. |
 | Environment | Gravity magnitude m/s², fluid density kg/m³, current m/s and frame id | Gravity and density > 0. Current finite. Frame id is `world_enu`, `world_ned`, or `body`. No conversion. |
-| Thruster parameters | Name; frame id `body`; position m from the body origin; unit axis; forward and reverse thrust bounds N; forward and reverse slew N/s; dimensionless efficiency in (0, 1]; health default and matching derate | Field checks only. Zero axis, invalid bounds, non-finite values, and invalid efficiency are rejected. No allocation. |
+| Thruster parameters | Name; frame id `body`; position m from the body origin; unit axis; forward and reverse thrust bounds N; forward and reverse slew N/s; dimensionless efficiency in (0, 1]; health default and matching derate | Field checks only. Zero axis, invalid bounds, non-finite values, and invalid efficiency are rejected. The effectiveness matrix is built in `allocation`. |
 
 `//intrinsic_vehicle/intrinsic/vehicle/parameters:six_thruster_uuv_example`
 is a calm-water six-thruster UUV. Each thruster is in the body frame, with
-slew limits, ideal efficiency, and nominal health. Allocation is a later
-issue.
+slew limits, ideal efficiency, and nominal health. The effectiveness
+matrix for this geometry is built in `allocation`. Least-squares
+allocation is a later issue.
 
 ## Vehicle dynamics interface
 
@@ -312,7 +315,8 @@ wins. The same inputs produce the same outputs.
 ### Allocation
 
 Thruster allocation stays in `allocation`. `Evaluate` does not map a wrench
-to actuator commands and does not read actuator health.
+to actuator commands, does not read actuator health, and does not call
+`BuildThrusterEffectivenessMatrix`.
 `DynamicsDiagnostics::allocation_invoked` stays false for the
 implementations in this package.
 
@@ -370,8 +374,42 @@ checks marine-force composition.
 `//intrinsic_vehicle/intrinsic/vehicle/dynamics:marine_force_analytic_regression_test`
 checks hand-calculated analytic fixtures for that composition.
 
+## Thruster effectiveness matrix
+
+`//intrinsic_vehicle/intrinsic/vehicle/allocation:allocation` defines
+`BuildThrusterEffectivenessMatrix`. The call reads body-frame thruster
+geometry and an explicit enable mask. It writes the 6×N matrix `B` into
+caller-provided columns. Column `i` is the body wrench, in newtons and
+newton-meters, produced by one newton of thrust along `direction_body`:
+
+`force = direction_body`
+
+`moment = position_m × direction_body`
+
+Row order is surge, sway, heave, roll, pitch, yaw. Body axes are REP-103.
+`B[row, col] = columns[col][row]`. `enabled[i] == false` writes a zero
+column and leaves column `i` aligned with thruster `i`. The mask is the
+only exclusion input. Health, derate, efficiency, slew, and thrust bounds
+are not read and do not scale `B`.
+
+`frame_id` must be `body`. `world_enu`, `world_ned`, an empty id, and any
+other id are rejected. This function does not convert a world-frame pose
+into the body frame.
+
+An empty thruster list, a mask or column span whose length is not the
+thruster count, a non-finite position or direction, a zero axis, and a
+non-unit direction return `AllocationErrorCode::kInvalidArgument`. The
+output columns are finite zeros. The first defect wins. The function does
+not allocate. It does not solve for thrust, project bounds, or report a
+residual. ICON does not call it.
+
+`//intrinsic_vehicle/intrinsic/vehicle/allocation:thruster_effectiveness_matrix_test`
+checks the hand-calculated columns, the six-thruster example, the mask,
+and rejected inputs.
+
 ## Out of scope
 
-Thruster allocation, mass-matrix acceleration, time integration, guidance
-laws, control laws, Gazebo plugins, and ICON feature wiring are later
-issues.
+Least-squares thruster allocation, bound projection, residual diagnostics,
+health-to-command scaling, mass-matrix acceleration, time integration,
+guidance laws, control laws, Gazebo plugins, and ICON feature wiring are
+later issues.
