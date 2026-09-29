@@ -15,9 +15,9 @@
 load("//bazel:cc_macros.bzl", "cc_library", "cc_test")
 
 # Opt-in vehicle dynamics interface, zero-force test double, rigid-body
-# mass matrix, added-mass matrix, rigid-body Coriolis matrix, and
-# added-mass Coriolis matrix. Not part of the protected manipulator
-# baseline. Do not add this package to
+# mass matrix, added-mass matrix, rigid-body Coriolis matrix, added-mass
+# Coriolis matrix, and linear/quadratic damping wrench. Not part of the
+# protected manipulator baseline. Do not add this package to
 # .github/baseline/manipulator_targets.tsv.
 
 package(default_visibility = ["//visibility:public"])
@@ -31,6 +31,8 @@ filegroup(
         "added_mass_matrix.cc",
         "added_mass_matrix.h",
         "dynamics.h",
+        "linear_quadratic_damping_wrench.cc",
+        "linear_quadratic_damping_wrench.h",
         "rigid_body_coriolis_matrix.cc",
         "rigid_body_coriolis_matrix.h",
         "rigid_body_mass_matrix.cc",
@@ -47,6 +49,7 @@ cc_library(
     srcs = [
         "added_mass_coriolis_matrix.cc",
         "added_mass_matrix.cc",
+        "linear_quadratic_damping_wrench.cc",
         "rigid_body_coriolis_matrix.cc",
         "rigid_body_mass_matrix.cc",
         "vehicle_dynamics.cc",
@@ -56,6 +59,7 @@ cc_library(
         "added_mass_coriolis_matrix.h",
         "added_mass_matrix.h",
         "dynamics.h",
+        "linear_quadratic_damping_wrench.h",
         "rigid_body_coriolis_matrix.h",
         "rigid_body_mass_matrix.h",
         "vehicle_dynamics.h",
@@ -94,6 +98,17 @@ cc_test(
     srcs = ["dynamics_test.cc"],
     deps = [
         ":dynamics",
+        "@com_google_googletest//:gtest_main",
+    ],
+)
+
+cc_test(
+    name = "linear_quadratic_damping_wrench_test",
+    size = "small",
+    srcs = ["linear_quadratic_damping_wrench_test.cc"],
+    deps = [
+        ":dynamics",
+        "//intrinsic_vehicle/intrinsic/vehicle/parameters:six_thruster_uuv_example",
         "@com_google_googletest//:gtest_main",
     ],
 )
