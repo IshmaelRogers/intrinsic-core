@@ -16,9 +16,10 @@ load("//bazel:cc_macros.bzl", "cc_library", "cc_test")
 
 # Opt-in vehicle dynamics interface, zero-force test double, rigid-body
 # mass matrix, added-mass matrix, rigid-body Coriolis matrix, added-mass
-# Coriolis matrix, linear/quadratic damping wrench, and gravity/buoyancy
-# restoring wrench. Not part of the protected manipulator baseline. Do not
-# add this package to .github/baseline/manipulator_targets.tsv.
+# Coriolis matrix, linear/quadratic damping wrench, gravity/buoyancy
+# restoring wrench, and water-current relative velocity. Not part of the
+# protected manipulator baseline. Do not add this package to
+# .github/baseline/manipulator_targets.tsv.
 
 package(default_visibility = ["//visibility:public"])
 
@@ -41,6 +42,8 @@ filegroup(
         "rigid_body_mass_matrix.h",
         "vehicle_dynamics.cc",
         "vehicle_dynamics.h",
+        "water_current_relative_velocity.cc",
+        "water_current_relative_velocity.h",
         "zero_force_dynamics.cc",
         "zero_force_dynamics.h",
     ],
@@ -56,6 +59,7 @@ cc_library(
         "rigid_body_coriolis_matrix.cc",
         "rigid_body_mass_matrix.cc",
         "vehicle_dynamics.cc",
+        "water_current_relative_velocity.cc",
         "zero_force_dynamics.cc",
     ],
     hdrs = [
@@ -67,6 +71,7 @@ cc_library(
         "rigid_body_coriolis_matrix.h",
         "rigid_body_mass_matrix.h",
         "vehicle_dynamics.h",
+        "water_current_relative_velocity.h",
         "zero_force_dynamics.h",
     ],
     deps = [
@@ -156,6 +161,17 @@ cc_test(
     srcs = ["vehicle_dynamics_test.cc"],
     deps = [
         ":dynamics",
+        "@com_google_googletest//:gtest_main",
+    ],
+)
+
+cc_test(
+    name = "water_current_relative_velocity_test",
+    size = "small",
+    srcs = ["water_current_relative_velocity_test.cc"],
+    deps = [
+        ":dynamics",
+        "//intrinsic_vehicle/intrinsic/vehicle/parameters:six_thruster_uuv_example",
         "@com_google_googletest//:gtest_main",
     ],
 )

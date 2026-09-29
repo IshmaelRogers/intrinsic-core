@@ -10,10 +10,10 @@ allocation, and guidance/control interfaces in this tree. Gazebo APIs, vendor
 SDKs, and mission behavior stay outside this tree. `dynamics` provides the
 `VehicleDynamics` interface, a zero-force test double, the rigid-body mass
 matrix, the added-mass matrix, the rigid-body Coriolis matrix, the
-added-mass Coriolis matrix, the linear/quadratic damping wrench, and the
-gravity/buoyancy restoring wrench. Current-relative velocity, term
-composition, allocation, and guidance remain later work. Marine model
-parameter schemas and validation are in `parameters`.
+added-mass Coriolis matrix, the linear/quadratic damping wrench, the
+gravity/buoyancy restoring wrench, and the water-current relative
+velocity. Term composition, allocation, and guidance remain later work.
+Marine model parameter schemas and validation are in `parameters`.
 
 Protobuf `VehicleState` and `DesiredMotion` stay in
 [`intrinsic_apis/intrinsic/vehicle/proto`](../../../intrinsic_apis/intrinsic/vehicle/proto/README.md).
@@ -27,7 +27,7 @@ commands.
 | --- | --- | --- |
 | `//intrinsic_vehicle/intrinsic/vehicle/state` | Real-time | Empty marker. Fixed-size state math lands here later. |
 | `//intrinsic_vehicle/intrinsic/vehicle/allocation` | Real-time | Empty marker. Bounded allocation lands here later. |
-| `//intrinsic_vehicle/intrinsic/vehicle/dynamics` | Soft-real-time | `VehicleDynamics` interface, zero-force test double, rigid-body mass matrix, added-mass matrix, rigid-body Coriolis matrix, added-mass Coriolis matrix, linear/quadratic damping wrench, and gravity/buoyancy restoring wrench. Outside ICON. |
+| `//intrinsic_vehicle/intrinsic/vehicle/dynamics` | Soft-real-time | `VehicleDynamics` interface, zero-force test double, rigid-body mass matrix, added-mass matrix, rigid-body Coriolis matrix, added-mass Coriolis matrix, linear/quadratic damping wrench, gravity/buoyancy restoring wrench, and water-current relative velocity. Outside ICON. |
 | `//intrinsic_vehicle/intrinsic/vehicle/parameters` | Soft-real-time | Marine model schemas and validation. Not loaded by ICON. |
 | `//intrinsic_vehicle/intrinsic/vehicle/guidance` | Soft-real-time | Empty marker. Guidance lands here later, outside ICON. |
 | `//intrinsic_vehicle/intrinsic/vehicle/control` | Soft-real-time | Empty marker. Reference control lands here later, outside ICON. |
@@ -81,8 +81,8 @@ Present edges inside this tree are from `testing` to `state`, `dynamics`,
 `allocation`, `guidance`, `control`, and `parameters`, and from `dynamics`
 to `parameters` for the rigid-body mass matrix, the added-mass matrix, the
 rigid-body Coriolis matrix, the added-mass Coriolis matrix, the
-linear/quadratic damping wrench, and the gravity/buoyancy restoring
-wrench. That graph is acyclic.
+linear/quadratic damping wrench, the gravity/buoyancy restoring wrench,
+and the water-current relative velocity. That graph is acyclic.
 
 Allowed later, and not wired in this scaffold:
 
@@ -249,6 +249,31 @@ is not `world_enu` or `world_ned`, a non-finite orientation, or a
 quaternion outside the `1e-9` unit tolerance returns `kInvalidArgument`
 and a zero, finite wrench. The first defect wins.
 
+`ComputeWaterCurrentRelativeVelocity` is the water-current relative-velocity
+helper. It reads `Environment::current_velocity_m_s` and
+`Environment::current_frame_id`, the navigation frame, the
+navigation-from-body Hamilton quaternion, and a body twist in surge, sway,
+heave, roll, pitch, yaw order. Linear current in the body frame is the
+supplied vector when the frame id is `body`, and `R^T` times that vector
+when the frame id is `world_enu` or `world_ned`. `R` is the
+body-to-navigation rotation of that quaternion, the same active map as the
+restoring wrench. The frame id selects the basis the current vector already
+uses. This function does not swap ENU and NED axes. Angular current is
+zero, so the relative twist is
+
+`ν_r = [ν1 − v_c^b; ν2]`
+
+in surge, sway, heave, roll, pitch, yaw order. A zero current leaves
+`ν_r = ν`. Gravity, density, mass, damping, added mass, and thrusters are
+not read. The result is a twist in meters/second and radians/second. It is
+not a wrench. Coriolis, damping, restoring, and integration are not this
+function. `Evaluate` does not call it. The same inputs produce the same
+twist. A non-finite current, an empty or unknown current frame, a pose
+frame that is not `world_enu` or `world_ned`, a non-finite orientation, a
+quaternion outside the `1e-9` unit tolerance, a non-finite twist, or a
+non-finite relative twist returns `kInvalidArgument` and a zero, finite
+relative twist. The first defect wins.
+
 ### Allocation
 
 Thruster allocation stays in `allocation`. `Evaluate` does not map a wrench
@@ -303,9 +328,10 @@ checks the added-mass Coriolis fixtures.
 checks the linear and quadratic damping fixtures.
 `//intrinsic_vehicle/intrinsic/vehicle/dynamics:gravity_buoyancy_restoring_wrench_test`
 checks the gravity and buoyancy restoring fixtures.
+`//intrinsic_vehicle/intrinsic/vehicle/dynamics:water_current_relative_velocity_test`
+checks the water-current relative-velocity fixtures.
 
 ## Out of scope
 
-Current-relative velocity, marine-term composition, thruster allocation,
-guidance laws, control laws, Gazebo plugins, and ICON feature wiring are
-later issues.
+Marine-term composition, thruster allocation, guidance laws, control laws,
+Gazebo plugins, and ICON feature wiring are later issues.
