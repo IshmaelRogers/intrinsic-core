@@ -16,11 +16,12 @@
 
 The allowed graph is the scaffold graph plus the dynamics-to-parameters
 edge used by the rigid-body mass matrix, the added-mass matrix, the
-rigid-body Coriolis matrix, the added-mass Coriolis matrix, and the
-linear/quadratic damping wrench. A later edge needs an update here and in
-README.md. Dynamics interface sources include only the C++ standard library
-and headers in that package. The mass-matrix, Coriolis, and damping terms
-may include marine model parameter headers.
+rigid-body Coriolis matrix, the added-mass Coriolis matrix, the
+linear/quadratic damping wrench, and the gravity/buoyancy restoring
+wrench. A later edge needs an update here and in README.md. Dynamics
+interface sources include only the C++ standard library and headers in
+that package. The mass-matrix, Coriolis, damping, and restoring terms may
+include marine model parameter headers.
 """
 
 import os
@@ -77,6 +78,8 @@ _DYNAMICS_SOURCES = (
     "added_mass_matrix.cc",
     "added_mass_matrix.h",
     "dynamics.h",
+    "gravity_buoyancy_restoring_wrench.cc",
+    "gravity_buoyancy_restoring_wrench.h",
     "linear_quadratic_damping_wrench.cc",
     "linear_quadratic_damping_wrench.h",
     "rigid_body_coriolis_matrix.cc",
@@ -89,14 +92,16 @@ _DYNAMICS_SOURCES = (
     "zero_force_dynamics.h",
 )
 
-# Mass-matrix, Coriolis, and damping sources read marine model parameters.
-# Interface sources do not.
+# Mass-matrix, Coriolis, damping, and restoring sources read marine model
+# parameters. Interface sources do not.
 _MASS_MATRIX_SOURCES = frozenset(
     (
         "added_mass_coriolis_matrix.cc",
         "added_mass_coriolis_matrix.h",
         "added_mass_matrix.cc",
         "added_mass_matrix.h",
+        "gravity_buoyancy_restoring_wrench.cc",
+        "gravity_buoyancy_restoring_wrench.h",
         "linear_quadratic_damping_wrench.cc",
         "linear_quadratic_damping_wrench.h",
         "rigid_body_coriolis_matrix.cc",
