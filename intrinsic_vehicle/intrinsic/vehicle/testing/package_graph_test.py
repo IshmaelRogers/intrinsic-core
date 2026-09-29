@@ -14,10 +14,11 @@
 
 """Dependency, visibility, and timing checks for the vehicle scaffold.
 
-The allowed graph is the scaffold graph. A later edge needs an update here
-and in README.md. Production packages stay independent of each other.
-Dynamics sources include only the C++ standard library and headers in that
-package.
+The allowed graph is the scaffold graph plus the dynamics-to-parameters
+edge used by the rigid-body mass matrix. A later edge needs an update here
+and in README.md. Dynamics interface sources include only the C++ standard
+library and headers in that package. The mass-matrix term may include
+marine model parameter headers.
 """
 
 import os
@@ -37,6 +38,7 @@ _PACKAGES = (
 
 # Sibling packages each BUILD file may name. `vehicle` is the parent.
 _ALLOWED = {name: frozenset() for name in _PACKAGES}
+_ALLOWED["dynamics"] = frozenset(("parameters",))
 _ALLOWED["testing"] = frozenset(
     (
         "allocation",
@@ -69,10 +71,21 @@ _HEADER_MARKERS = {
 _DYNAMICS_SOURCES = (
     "BUILD",
     "dynamics.h",
+    "rigid_body_mass_matrix.cc",
+    "rigid_body_mass_matrix.h",
     "vehicle_dynamics.cc",
     "vehicle_dynamics.h",
     "zero_force_dynamics.cc",
     "zero_force_dynamics.h",
+)
+
+# The mass-matrix term reads marine model parameters. Interface sources do
+# not.
+_MASS_MATRIX_SOURCES = frozenset(
+    (
+        "rigid_body_mass_matrix.cc",
+        "rigid_body_mass_matrix.h",
+    )
 )
 
 _FORBIDDEN_INCLUDE_TOKENS = (
@@ -247,7 +260,11 @@ class PackageGraphTest(unittest.TestCase):
             )
           self.assertTrue(
               "/" not in target
-              or target.startswith("intrinsic/vehicle/dynamics/"),
+              or target.startswith("intrinsic/vehicle/dynamics/")
+              or (
+                  filename in _MASS_MATRIX_SOURCES
+                  and target.startswith("intrinsic/vehicle/parameters/")
+              ),
               "%s includes %s" % (filename, target),
           )
 
