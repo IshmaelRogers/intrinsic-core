@@ -366,6 +366,8 @@ checks the gravity and buoyancy restoring fixtures.
 checks the water-current relative-velocity fixtures.
 `//intrinsic_vehicle/intrinsic/vehicle/dynamics:marine_force_dynamics_test`
 checks marine-force composition.
+`//intrinsic_vehicle/intrinsic/vehicle/dynamics:marine_force_analytic_regression_test`
+checks hand-calculated analytic fixtures for that composition.
 
 ## Out of scope
 
