@@ -68,7 +68,7 @@ the ICON cycle. The `parameters` package is that configuration-time check.
 | --- | --- |
 | `guidance` | Future DesiredMotion-to-reference step. Intent is not an actuator command. |
 | `control` | Future reference-to-body-wrench step. ICON remains the only writer of actuator commands. |
-| `parameters` | Marine mass, inertia, buoyancy, added mass, damping, centers, environment, and thruster geometry. Validated at configuration time. |
+| `parameters` | Marine mass, inertia, buoyancy, added mass, damping, centers, environment, and thruster parameters (pose, axis, bounds, slew, efficiency, and health defaults). Validated at configuration time. |
 | `dynamics` | `VehicleDynamics::Evaluate` outside ICON. Fixed-size inputs and results. No Gazebo API and no thruster allocation. |
 
 ### Test-only
@@ -150,11 +150,12 @@ field path and `ModelErrorCode`.
 | Added mass | 6x6 coefficients | Symmetric and positive definite. |
 | Damping | 6x6 linear coefficients; 6 quadratic coefficients | Linear symmetric and positive definite. Each quadratic coefficient >= 0. |
 | Environment | Gravity magnitude m/s², fluid density kg/m³, current m/s and frame id | Gravity and density > 0. Current finite. Frame id is `world_enu`, `world_ned`, or `body`. No conversion. |
-| Thruster geometry | Name, position m, unit direction, forward and reverse thrust bounds N | Field checks only. No allocation. |
+| Thruster parameters | Name; frame id `body`; position m from the body origin; unit axis; forward and reverse thrust bounds N; forward and reverse slew N/s; dimensionless efficiency in (0, 1]; health default and matching derate | Field checks only. Zero axis, invalid bounds, non-finite values, and invalid efficiency are rejected. No allocation. |
 
 `//intrinsic_vehicle/intrinsic/vehicle/parameters:six_thruster_uuv_example`
-is a calm-water six-thruster UUV. Slew, efficiency, health, and allocation
-are later issues.
+is a calm-water six-thruster UUV. Each thruster is in the body frame, with
+slew limits, ideal efficiency, and nominal health. Allocation is a later
+issue.
 
 ## Vehicle dynamics interface
 

@@ -112,16 +112,42 @@ struct Environment {
   std::string current_frame_id;
 };
 
-// Geometry and force limits for one fixed thruster. direction_body is a
-// unit vector in the body frame. Thrust bounds are newtons and are
-// non-negative magnitudes; at least one bound must be > 0.
-// Slew, efficiency, health, and allocation are not this struct.
+// Configuration-time health default for one fixed thruster. A later
+// allocator may read this value. This package does not command actuators,
+// scale an effectiveness matrix, or discover faults.
+enum class ThrusterHealthState {
+  // Full configured bounds and efficiency. health_derate is 1.
+  kNominal = 0,
+  // Later consumers command neutral thrust. health_derate is 0.
+  kDisabled = 1,
+  // Later consumers scale by health_derate in (0, 1).
+  kDerated = 2,
+  // Thrust stuck at zero. health_derate is 0.
+  kStuckOff = 3,
+  // Single-actuator failure. health_derate is 0.
+  kFailed = 4,
+};
+
+// Pose, axis, force bounds, slew, efficiency, and health default for one
+// fixed thruster. position_m is meters from the body origin.
+// direction_body is a unit axis. Both are expressed in frame_id, which
+// must be the body frame (REP-103: x forward, y left, z up). Thrust bounds
+// are newtons and are non-negative magnitudes; at least one bound must be
+// > 0. Slew limits are newtons per second and must be > 0. efficiency is
+// dimensionless in (0, 1]. health_derate is dimensionless and must match
+// health. Allocation is not this struct.
 struct ThrusterGeometry {
   std::string name;
+  std::string frame_id;
   Vec3 position_m;
   Vec3 direction_body;
   double max_forward_thrust_n = 0;
   double max_reverse_thrust_n = 0;
+  double max_forward_slew_n_per_s = 0;
+  double max_reverse_slew_n_per_s = 0;
+  double efficiency = 0;
+  ThrusterHealthState health = ThrusterHealthState::kNominal;
+  double health_derate = 1;
 };
 
 struct MarineModel {
@@ -148,17 +174,22 @@ enum class ModelErrorCode {
   kAsymmetric = 4,
   // A symmetric matrix failed the Cholesky positive-definite check.
   kNotPositiveDefinite = 5,
-  // Frame id is not world_enu, world_ned, or body.
+  // Frame id is not allowed for that field.
   kFrame = 6,
-  // A finite direction is not a unit vector.
+  // A finite non-zero direction is not a unit vector.
   kNotUnit = 7,
   // Thruster name repeats an earlier thruster.
   kDuplicate = 8,
+  // A finite direction has norm at or below the unit tolerance.
+  kZeroAxis = 9,
+  // A finite value is outside the allowed interval.
+  kOutOfRange = 10,
 };
 
 struct FieldError {
   // Dotted path. Matrix entries use [row,col]. Thrusters use thrusters[i].
   // Both thrust bounds zero uses thrusters[i].thrust_bounds.
+  // A zero axis uses thrusters[i].direction_body.
   std::string field;
   ModelErrorCode code = ModelErrorCode::kEmpty;
   std::string message;

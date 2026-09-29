@@ -165,6 +165,78 @@ bool AllowedCurrentFrame(std::string_view frame_id) {
          frame_id == kBodyFrameId;
 }
 
+bool KnownHealth(ThrusterHealthState health) {
+  switch (health) {
+    case ThrusterHealthState::kNominal:
+    case ThrusterHealthState::kDisabled:
+    case ThrusterHealthState::kDerated:
+    case ThrusterHealthState::kStuckOff:
+    case ThrusterHealthState::kFailed:
+      return true;
+  }
+  return false;
+}
+
+void AppendEfficiency(std::vector<FieldError>* errors, std::string field,
+                      double value) {
+  if (!std::isfinite(value)) {
+    errors->push_back(
+        Error(std::move(field), ModelErrorCode::kNonFinite, "must be finite"));
+  } else if (!(value > 0.0)) {
+    errors->push_back(Error(std::move(field), ModelErrorCode::kNotPositive,
+                            "must be greater than zero"));
+  } else if (value > 1.0) {
+    errors->push_back(Error(std::move(field), ModelErrorCode::kOutOfRange,
+                            "must be less than or equal to 1"));
+  }
+}
+
+void AppendHealth(std::vector<FieldError>* errors, int index,
+                  ThrusterHealthState health, double derate) {
+  const bool known = KnownHealth(health);
+  if (!known) {
+    errors->push_back(Error(ThrusterField(index, "health"),
+                            ModelErrorCode::kOutOfRange,
+                            "must be nominal, disabled, derated, stuck-off, "
+                            "or failed"));
+  }
+  const std::string field = ThrusterField(index, "health_derate");
+  if (!std::isfinite(derate)) {
+    errors->push_back(
+        Error(field, ModelErrorCode::kNonFinite, "must be finite"));
+    return;
+  }
+  if (!known) {
+    return;
+  }
+  switch (health) {
+    case ThrusterHealthState::kNominal:
+      if (derate != 1.0) {
+        errors->push_back(Error(field, ModelErrorCode::kOutOfRange,
+                                "nominal health requires derate 1"));
+      }
+      break;
+    case ThrusterHealthState::kDerated:
+      if (!(derate > 0.0)) {
+        errors->push_back(Error(field, ModelErrorCode::kNotPositive,
+                                "must be greater than zero"));
+      } else if (!(derate < 1.0)) {
+        errors->push_back(Error(field, ModelErrorCode::kOutOfRange,
+                                "derated health requires derate in (0, 1)"));
+      }
+      break;
+    case ThrusterHealthState::kDisabled:
+    case ThrusterHealthState::kStuckOff:
+    case ThrusterHealthState::kFailed:
+      if (derate != 0.0) {
+        errors->push_back(
+            Error(field, ModelErrorCode::kOutOfRange,
+                  "disabled, stuck-off, and failed health require derate 0"));
+      }
+      break;
+  }
+}
+
 void AppendThrusterErrors(std::vector<FieldError>* errors,
                           const MarineModel& model) {
   const int count = static_cast<int>(model.thrusters.size());
@@ -184,6 +256,14 @@ void AppendThrusterErrors(std::vector<FieldError>* errors,
       }
     }
 
+    if (thruster.frame_id.empty()) {
+      errors->push_back(Error(ThrusterField(i, "frame_id"),
+                              ModelErrorCode::kEmpty, "must be non-empty"));
+    } else if (thruster.frame_id != kBodyFrameId) {
+      errors->push_back(Error(ThrusterField(i, "frame_id"),
+                              ModelErrorCode::kFrame, "must be body"));
+    }
+
     AppendVec3Finite(errors, ThrusterField(i, "position_m"),
                      thruster.position_m);
     const bool direction_finite = AppendVec3Finite(
@@ -196,6 +276,10 @@ void AppendThrusterErrors(std::vector<FieldError>* errors,
       if (!std::isfinite(norm)) {
         errors->push_back(Error(ThrusterField(i, "direction_body"),
                                 ModelErrorCode::kNonFinite, "must be finite"));
+      } else if (norm <= kUnitVectorTolerance) {
+        errors->push_back(Error(ThrusterField(i, "direction_body"),
+                                ModelErrorCode::kZeroAxis,
+                                "must be a non-zero unit vector"));
       } else if (std::abs(norm - 1.0) > kUnitVectorTolerance) {
         errors->push_back(Error(ThrusterField(i, "direction_body"),
                                 ModelErrorCode::kNotUnit,
@@ -230,6 +314,14 @@ void AppendThrusterErrors(std::vector<FieldError>* errors,
           Error(ThrusterField(i, "thrust_bounds"), ModelErrorCode::kNotPositive,
                 "forward and reverse thrust bounds are both zero"));
     }
+
+    AppendStrictlyPositive(errors, ThrusterField(i, "max_forward_slew_n_per_s"),
+                           thruster.max_forward_slew_n_per_s);
+    AppendStrictlyPositive(errors, ThrusterField(i, "max_reverse_slew_n_per_s"),
+                           thruster.max_reverse_slew_n_per_s);
+    AppendEfficiency(errors, ThrusterField(i, "efficiency"),
+                     thruster.efficiency);
+    AppendHealth(errors, i, thruster.health, thruster.health_derate);
   }
 }
 

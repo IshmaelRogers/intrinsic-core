@@ -25,13 +25,16 @@
 namespace {
 
 using intrinsic::vehicle::parameters::FieldError;
+using intrinsic::vehicle::parameters::kBodyFrameId;
 using intrinsic::vehicle::parameters::kMatrixSymmetryTolerance;
 using intrinsic::vehicle::parameters::kSixThrusterUuvModelId;
 using intrinsic::vehicle::parameters::kSixThrusterUuvThrusterCount;
 using intrinsic::vehicle::parameters::kSpatialDof;
+using intrinsic::vehicle::parameters::kUnitVectorTolerance;
 using intrinsic::vehicle::parameters::MakeSixThrusterUuvExample;
 using intrinsic::vehicle::parameters::MarineModel;
 using intrinsic::vehicle::parameters::ModelErrorCode;
+using intrinsic::vehicle::parameters::ThrusterHealthState;
 using intrinsic::vehicle::parameters::ValidateMarineModel;
 using intrinsic::vehicle::parameters::ValidationResult;
 using intrinsic::vehicle::parameters::Vec3;
@@ -114,6 +117,18 @@ TEST(MarineModelValidation, SixThrusterExampleIsValid) {
   EXPECT_DOUBLE_EQ(model.buoyancy.displaced_volume_m3, (32.0 * 1.005) / 1025.0);
   EXPECT_EQ(model.environment.current_frame_id, "world_enu");
   EXPECT_DOUBLE_EQ(model.damping.quadratic_coefficients[3], 0.0);
+  const double forward_slew[] = {250.0, 250.0, 150.0, 150.0, 200.0, 200.0};
+  const double reverse_slew[] = {175.0, 175.0, 150.0, 150.0, 125.0, 125.0};
+  for (int i = 0; i < kSixThrusterUuvThrusterCount; ++i) {
+    EXPECT_EQ(model.thrusters[i].frame_id, kBodyFrameId);
+    EXPECT_DOUBLE_EQ(model.thrusters[i].max_forward_slew_n_per_s,
+                     forward_slew[i]);
+    EXPECT_DOUBLE_EQ(model.thrusters[i].max_reverse_slew_n_per_s,
+                     reverse_slew[i]);
+    EXPECT_DOUBLE_EQ(model.thrusters[i].efficiency, 1.0);
+    EXPECT_EQ(model.thrusters[i].health, ThrusterHealthState::kNominal);
+    EXPECT_DOUBLE_EQ(model.thrusters[i].health_derate, 1.0);
+  }
 }
 
 TEST(MarineModelValidation, ExampleThrustersSpanSixWrenchAxes) {
@@ -367,10 +382,219 @@ TEST(MarineModelValidation, MultipleInvalidFieldsAreAllReported) {
   EXPECT_TRUE(HasError(result, "centers.center_of_gravity_m.z",
                        ModelErrorCode::kNonFinite));
   EXPECT_TRUE(HasError(result, "thrusters[2].direction_body",
-                       ModelErrorCode::kNotUnit));
+                       ModelErrorCode::kZeroAxis));
+  EXPECT_FALSE(HasError(result, "thrusters[2].direction_body",
+                        ModelErrorCode::kNotUnit));
   EXPECT_FALSE(HasError(result, "added_mass.coefficients",
                         ModelErrorCode::kNotPositiveDefinite));
   EXPECT_GE(result.errors.size(), 8u);
+}
+
+TEST(MarineModelValidation, ZeroAxisIsDistinctFromNonUnit) {
+  MarineModel model = MakeSixThrusterUuvExample();
+  model.thrusters[2].direction_body = {0, 0, 0};
+  const ValidationResult zero = ValidateMarineModel(model);
+  EXPECT_TRUE(
+      HasError(zero, "thrusters[2].direction_body", ModelErrorCode::kZeroAxis));
+  EXPECT_FALSE(
+      HasError(zero, "thrusters[2].direction_body", ModelErrorCode::kNotUnit));
+  EXPECT_EQ(zero.errors.size(), 1u);
+
+  model = MakeSixThrusterUuvExample();
+  model.thrusters[2].direction_body = {kUnitVectorTolerance, 0, 0};
+  const ValidationResult near_zero = ValidateMarineModel(model);
+  EXPECT_TRUE(HasError(near_zero, "thrusters[2].direction_body",
+                       ModelErrorCode::kZeroAxis));
+
+  model = MakeSixThrusterUuvExample();
+  model.thrusters[2].direction_body = {2 * kUnitVectorTolerance, 0, 0};
+  const ValidationResult short_axis = ValidateMarineModel(model);
+  EXPECT_TRUE(HasError(short_axis, "thrusters[2].direction_body",
+                       ModelErrorCode::kNotUnit));
+  EXPECT_FALSE(HasError(short_axis, "thrusters[2].direction_body",
+                        ModelErrorCode::kZeroAxis));
+}
+
+TEST(MarineModelValidation, SlewMustBePositiveAndFinite) {
+  MarineModel model = MakeSixThrusterUuvExample();
+  model.thrusters[0].max_forward_slew_n_per_s = 0;
+  const ValidationResult zero = ValidateMarineModel(model);
+  EXPECT_TRUE(HasError(zero, "thrusters[0].max_forward_slew_n_per_s",
+                       ModelErrorCode::kNotPositive));
+  EXPECT_EQ(zero.errors.size(), 1u);
+
+  model = MakeSixThrusterUuvExample();
+  model.thrusters[1].max_reverse_slew_n_per_s = -5;
+  const ValidationResult negative = ValidateMarineModel(model);
+  EXPECT_TRUE(HasError(negative, "thrusters[1].max_reverse_slew_n_per_s",
+                       ModelErrorCode::kNotPositive));
+  EXPECT_FALSE(HasError(negative, "thrusters[1].max_reverse_slew_n_per_s",
+                        ModelErrorCode::kNegative));
+
+  model = MakeSixThrusterUuvExample();
+  model.thrusters[3].max_forward_slew_n_per_s =
+      std::numeric_limits<double>::infinity();
+  const ValidationResult infinite = ValidateMarineModel(model);
+  EXPECT_TRUE(HasError(infinite, "thrusters[3].max_forward_slew_n_per_s",
+                       ModelErrorCode::kNonFinite));
+  EXPECT_FALSE(HasError(infinite, "thrusters[3].max_forward_slew_n_per_s",
+                        ModelErrorCode::kNotPositive));
+
+  model = MakeSixThrusterUuvExample();
+  model.thrusters[4].max_forward_slew_n_per_s = 1.0e12;
+  model.thrusters[4].max_reverse_slew_n_per_s = 1.0e-12;
+  EXPECT_TRUE(ValidateMarineModel(model).ok());
+}
+
+TEST(MarineModelValidation, EfficiencyInterval) {
+  MarineModel model = MakeSixThrusterUuvExample();
+  model.thrusters[0].efficiency = 0;
+  const ValidationResult zero = ValidateMarineModel(model);
+  EXPECT_TRUE(
+      HasError(zero, "thrusters[0].efficiency", ModelErrorCode::kNotPositive));
+  EXPECT_FALSE(
+      HasError(zero, "thrusters[0].efficiency", ModelErrorCode::kOutOfRange));
+
+  model = MakeSixThrusterUuvExample();
+  model.thrusters[1].efficiency = -0.2;
+  const ValidationResult negative = ValidateMarineModel(model);
+  EXPECT_TRUE(HasError(negative, "thrusters[1].efficiency",
+                       ModelErrorCode::kNotPositive));
+
+  model = MakeSixThrusterUuvExample();
+  model.thrusters[2].efficiency = std::nextafter(1.0, 2.0);
+  const ValidationResult above = ValidateMarineModel(model);
+  EXPECT_TRUE(
+      HasError(above, "thrusters[2].efficiency", ModelErrorCode::kOutOfRange));
+
+  model = MakeSixThrusterUuvExample();
+  model.thrusters[3].efficiency = std::numeric_limits<double>::quiet_NaN();
+  const ValidationResult nan = ValidateMarineModel(model);
+  EXPECT_TRUE(
+      HasError(nan, "thrusters[3].efficiency", ModelErrorCode::kNonFinite));
+  EXPECT_FALSE(
+      HasError(nan, "thrusters[3].efficiency", ModelErrorCode::kNotPositive));
+
+  model = MakeSixThrusterUuvExample();
+  model.thrusters[5].efficiency = std::nextafter(0.0, 1.0);
+  EXPECT_TRUE(ValidateMarineModel(model).ok());
+  model.thrusters[5].efficiency = 1.0;
+  EXPECT_TRUE(ValidateMarineModel(model).ok());
+}
+
+TEST(MarineModelValidation, ThrusterFrameMustBeBody) {
+  MarineModel model = MakeSixThrusterUuvExample();
+  model.thrusters[0].frame_id.clear();
+  const ValidationResult empty = ValidateMarineModel(model);
+  EXPECT_TRUE(HasError(empty, "thrusters[0].frame_id", ModelErrorCode::kEmpty));
+  EXPECT_EQ(empty.errors.size(), 1u);
+
+  model = MakeSixThrusterUuvExample();
+  model.thrusters[1].frame_id = "world_enu";
+  const ValidationResult world = ValidateMarineModel(model);
+  EXPECT_TRUE(HasError(world, "thrusters[1].frame_id", ModelErrorCode::kFrame));
+  EXPECT_EQ(world.errors.size(), 1u);
+
+  model = MakeSixThrusterUuvExample();
+  model.thrusters[2].frame_id = "body";
+  EXPECT_TRUE(ValidateMarineModel(model).ok());
+}
+
+TEST(MarineModelValidation, HealthDerateMatchesState) {
+  MarineModel model = MakeSixThrusterUuvExample();
+  model.thrusters[0].health = ThrusterHealthState::kDerated;
+  model.thrusters[0].health_derate = 0.4;
+  model.thrusters[1].health = ThrusterHealthState::kDisabled;
+  model.thrusters[1].health_derate = 0.0;
+  model.thrusters[2].health = ThrusterHealthState::kStuckOff;
+  model.thrusters[2].health_derate = 0.0;
+  model.thrusters[3].health = ThrusterHealthState::kFailed;
+  model.thrusters[3].health_derate = 0.0;
+  EXPECT_TRUE(ValidateMarineModel(model).ok());
+
+  model = MakeSixThrusterUuvExample();
+  model.thrusters[0].health_derate = 0.5;
+  const ValidationResult nominal = ValidateMarineModel(model);
+  EXPECT_TRUE(HasError(nominal, "thrusters[0].health_derate",
+                       ModelErrorCode::kOutOfRange));
+  EXPECT_EQ(nominal.errors.size(), 1u);
+
+  model = MakeSixThrusterUuvExample();
+  model.thrusters[0].health = ThrusterHealthState::kDerated;
+  model.thrusters[0].health_derate = 0.0;
+  const ValidationResult zero_derate = ValidateMarineModel(model);
+  EXPECT_TRUE(HasError(zero_derate, "thrusters[0].health_derate",
+                       ModelErrorCode::kNotPositive));
+
+  model = MakeSixThrusterUuvExample();
+  model.thrusters[0].health = ThrusterHealthState::kDerated;
+  model.thrusters[0].health_derate = 1.0;
+  const ValidationResult full_derate = ValidateMarineModel(model);
+  EXPECT_TRUE(HasError(full_derate, "thrusters[0].health_derate",
+                       ModelErrorCode::kOutOfRange));
+
+  model = MakeSixThrusterUuvExample();
+  model.thrusters[0].health = ThrusterHealthState::kDisabled;
+  const ValidationResult disabled = ValidateMarineModel(model);
+  EXPECT_TRUE(HasError(disabled, "thrusters[0].health_derate",
+                       ModelErrorCode::kOutOfRange));
+
+  model = MakeSixThrusterUuvExample();
+  model.thrusters[0].health = static_cast<ThrusterHealthState>(99);
+  const ValidationResult unknown = ValidateMarineModel(model);
+  EXPECT_TRUE(
+      HasError(unknown, "thrusters[0].health", ModelErrorCode::kOutOfRange));
+  EXPECT_FALSE(HasError(unknown, "thrusters[0].health_derate",
+                        ModelErrorCode::kOutOfRange));
+  EXPECT_EQ(unknown.errors.size(), 1u);
+
+  model = MakeSixThrusterUuvExample();
+  model.thrusters[0].health = static_cast<ThrusterHealthState>(99);
+  model.thrusters[0].health_derate = std::numeric_limits<double>::quiet_NaN();
+  const ValidationResult unknown_nan = ValidateMarineModel(model);
+  EXPECT_TRUE(HasError(unknown_nan, "thrusters[0].health",
+                       ModelErrorCode::kOutOfRange));
+  EXPECT_TRUE(HasError(unknown_nan, "thrusters[0].health_derate",
+                       ModelErrorCode::kNonFinite));
+}
+
+TEST(MarineModelValidation, NonFiniteThrusterFields) {
+  MarineModel model = MakeSixThrusterUuvExample();
+  model.thrusters[0].position_m.z = std::numeric_limits<double>::quiet_NaN();
+  model.thrusters[0].direction_body.x =
+      std::numeric_limits<double>::quiet_NaN();
+  model.thrusters[0].max_forward_thrust_n =
+      std::numeric_limits<double>::infinity();
+  model.thrusters[0].max_reverse_thrust_n = -1;
+  model.thrusters[0].max_forward_slew_n_per_s = 0;
+  model.thrusters[0].efficiency = 2;
+  model.thrusters[0].frame_id = "world_ned";
+
+  const ValidationResult result = ValidateMarineModel(model);
+  EXPECT_TRUE(HasError(result, "thrusters[0].position_m.z",
+                       ModelErrorCode::kNonFinite));
+  EXPECT_FALSE(HasError(result, "thrusters[0].direction_body",
+                        ModelErrorCode::kZeroAxis));
+  EXPECT_TRUE(HasError(result, "thrusters[0].direction_body.x",
+                       ModelErrorCode::kNonFinite));
+  EXPECT_TRUE(HasError(result, "thrusters[0].max_forward_thrust_n",
+                       ModelErrorCode::kNonFinite));
+  EXPECT_TRUE(HasError(result, "thrusters[0].max_reverse_thrust_n",
+                       ModelErrorCode::kNegative));
+  EXPECT_FALSE(HasError(result, "thrusters[0].thrust_bounds",
+                        ModelErrorCode::kNotPositive));
+  EXPECT_TRUE(HasError(result, "thrusters[0].max_forward_slew_n_per_s",
+                       ModelErrorCode::kNotPositive));
+  EXPECT_TRUE(
+      HasError(result, "thrusters[0].efficiency", ModelErrorCode::kOutOfRange));
+  EXPECT_TRUE(
+      HasError(result, "thrusters[0].frame_id", ModelErrorCode::kFrame));
+}
+
+TEST(MarineModelValidation, UnidirectionalThrustRemainsValid) {
+  MarineModel model = MakeSixThrusterUuvExample();
+  model.thrusters[5].max_reverse_thrust_n = 0;
+  EXPECT_TRUE(ValidateMarineModel(model).ok());
 }
 
 }  // namespace
