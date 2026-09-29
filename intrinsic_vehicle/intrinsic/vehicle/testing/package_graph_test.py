@@ -15,11 +15,11 @@
 """Dependency, visibility, and timing checks for the vehicle scaffold.
 
 The allowed graph is the scaffold graph plus the dynamics-to-parameters
-edge used by the rigid-body mass matrix, the added-mass matrix, and the
-rigid-body Coriolis matrix. A later edge needs an update here and in
-README.md. Dynamics interface sources include only the C++ standard
-library and headers in that package. The mass-matrix and Coriolis terms
-may include marine model parameter headers.
+edge used by the rigid-body mass matrix, the added-mass matrix, the
+rigid-body Coriolis matrix, and the added-mass Coriolis matrix. A later
+edge needs an update here and in README.md. Dynamics interface sources
+include only the C++ standard library and headers in that package. The
+mass-matrix and Coriolis terms may include marine model parameter headers.
 """
 
 import os
@@ -71,6 +71,8 @@ _HEADER_MARKERS = {
 
 _DYNAMICS_SOURCES = (
     "BUILD",
+    "added_mass_coriolis_matrix.cc",
+    "added_mass_coriolis_matrix.h",
     "added_mass_matrix.cc",
     "added_mass_matrix.h",
     "dynamics.h",
@@ -84,10 +86,12 @@ _DYNAMICS_SOURCES = (
     "zero_force_dynamics.h",
 )
 
-# Mass-matrix and rigid-body Coriolis sources read marine model parameters.
+# Mass-matrix and Coriolis sources read marine model parameters.
 # Interface sources do not.
 _MASS_MATRIX_SOURCES = frozenset(
     (
+        "added_mass_coriolis_matrix.cc",
+        "added_mass_coriolis_matrix.h",
         "added_mass_matrix.cc",
         "added_mass_matrix.h",
         "rigid_body_coriolis_matrix.cc",

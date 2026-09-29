@@ -15,8 +15,9 @@
 load("//bazel:cc_macros.bzl", "cc_library", "cc_test")
 
 # Opt-in vehicle dynamics interface, zero-force test double, rigid-body
-# mass matrix, added-mass matrix, and rigid-body Coriolis matrix. Not part
-# of the protected manipulator baseline. Do not add this package to
+# mass matrix, added-mass matrix, rigid-body Coriolis matrix, and
+# added-mass Coriolis matrix. Not part of the protected manipulator
+# baseline. Do not add this package to
 # .github/baseline/manipulator_targets.tsv.
 
 package(default_visibility = ["//visibility:public"])
@@ -25,6 +26,8 @@ filegroup(
     name = "package_files",
     srcs = [
         "BUILD",
+        "added_mass_coriolis_matrix.cc",
+        "added_mass_coriolis_matrix.h",
         "added_mass_matrix.cc",
         "added_mass_matrix.h",
         "dynamics.h",
@@ -42,6 +45,7 @@ filegroup(
 cc_library(
     name = "dynamics",
     srcs = [
+        "added_mass_coriolis_matrix.cc",
         "added_mass_matrix.cc",
         "rigid_body_coriolis_matrix.cc",
         "rigid_body_mass_matrix.cc",
@@ -49,6 +53,7 @@ cc_library(
         "zero_force_dynamics.cc",
     ],
     hdrs = [
+        "added_mass_coriolis_matrix.h",
         "added_mass_matrix.h",
         "dynamics.h",
         "rigid_body_coriolis_matrix.h",
@@ -58,6 +63,17 @@ cc_library(
     ],
     deps = [
         "//intrinsic_vehicle/intrinsic/vehicle/parameters",
+    ],
+)
+
+cc_test(
+    name = "added_mass_coriolis_matrix_test",
+    size = "small",
+    srcs = ["added_mass_coriolis_matrix_test.cc"],
+    deps = [
+        ":dynamics",
+        "//intrinsic_vehicle/intrinsic/vehicle/parameters:six_thruster_uuv_example",
+        "@com_google_googletest//:gtest_main",
     ],
 )
 
