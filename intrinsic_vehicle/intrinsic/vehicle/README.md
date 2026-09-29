@@ -11,8 +11,9 @@ SDKs, and mission behavior stay outside this tree. `dynamics` provides the
 `VehicleDynamics` interface, a zero-force test double, the rigid-body mass
 matrix, the added-mass matrix, the rigid-body Coriolis matrix, the
 added-mass Coriolis matrix, the linear/quadratic damping wrench, the
-gravity/buoyancy restoring wrench, and the water-current relative
-velocity. Term composition, allocation, and guidance remain later work.
+gravity/buoyancy restoring wrench, the water-current relative
+velocity, and marine-force composition. Allocation and guidance remain
+later work.
 Marine model parameter schemas and validation are in `parameters`.
 
 Protobuf `VehicleState` and `DesiredMotion` stay in
@@ -27,7 +28,7 @@ commands.
 | --- | --- | --- |
 | `//intrinsic_vehicle/intrinsic/vehicle/state` | Real-time | Empty marker. Fixed-size state math lands here later. |
 | `//intrinsic_vehicle/intrinsic/vehicle/allocation` | Real-time | Empty marker. Bounded allocation lands here later. |
-| `//intrinsic_vehicle/intrinsic/vehicle/dynamics` | Soft-real-time | `VehicleDynamics` interface, zero-force test double, rigid-body mass matrix, added-mass matrix, rigid-body Coriolis matrix, added-mass Coriolis matrix, linear/quadratic damping wrench, gravity/buoyancy restoring wrench, and water-current relative velocity. Outside ICON. |
+| `//intrinsic_vehicle/intrinsic/vehicle/dynamics` | Soft-real-time | `VehicleDynamics` interface, zero-force test double, rigid-body mass matrix, added-mass matrix, rigid-body Coriolis matrix, added-mass Coriolis matrix, linear/quadratic damping wrench, gravity/buoyancy restoring wrench, water-current relative velocity, and marine-force composition. Outside ICON. |
 | `//intrinsic_vehicle/intrinsic/vehicle/parameters` | Soft-real-time | Marine model schemas and validation. Not loaded by ICON. |
 | `//intrinsic_vehicle/intrinsic/vehicle/guidance` | Soft-real-time | Empty marker. Guidance lands here later, outside ICON. |
 | `//intrinsic_vehicle/intrinsic/vehicle/control` | Soft-real-time | Empty marker. Reference control lands here later, outside ICON. |
@@ -82,7 +83,8 @@ Present edges inside this tree are from `testing` to `state`, `dynamics`,
 to `parameters` for the rigid-body mass matrix, the added-mass matrix, the
 rigid-body Coriolis matrix, the added-mass Coriolis matrix, the
 linear/quadratic damping wrench, the gravity/buoyancy restoring wrench,
-and the water-current relative velocity. That graph is acyclic.
+the water-current relative velocity, and marine-force composition. That
+graph is acyclic.
 
 Allowed later, and not wired in this scaffold:
 
@@ -198,8 +200,10 @@ inputs produce the same matrix. Non-finite entries, asymmetry beyond
 matrix. It reads mass, inertia about the center of gravity, the body-frame
 center of gravity, and a body twist in surge, sway, heave, roll, pitch, yaw
 order. The result is the body-frame 6x6 matrix `C_RB`. Added-mass Coriolis,
-damping, buoyancy, and integration are not this function. `Evaluate` does
-not call it. The same inputs produce the same matrix. Invalid mass,
+damping, buoyancy, and integration are not this function.
+`ZeroForceDynamics::Evaluate` does not call it.
+`MarineForceDynamics::Evaluate` calls it on the body twist. The same
+inputs produce the same matrix. Invalid mass,
 inertia, or center of gravity, or a non-finite twist, returns
 `kInvalidArgument` and a zero, finite matrix.
 
@@ -210,8 +214,9 @@ pitch, yaw order. The result is the body-frame 6x6 matrix `C_A`. Momentum
 comes from that added-mass matrix only. The function does not add the
 rigid-body Coriolis matrix, does not derive added mass from geometry, and
 does not convert ENU and NED. Damping, buoyancy, and integration are not
-this function. `Evaluate` does not call it. The same inputs produce the
-same matrix. Invalid added mass, or a non-finite twist, returns
+this function. `ZeroForceDynamics::Evaluate` does not call it.
+`MarineForceDynamics::Evaluate` calls it on the relative twist. The same
+inputs produce the same matrix. Invalid added mass, or a non-finite twist, returns
 `kInvalidArgument` and a zero, finite matrix.
 
 `ComputeLinearQuadraticDampingWrench` is the linear and quadratic damping
@@ -222,9 +227,10 @@ surge, sway, heave, roll, pitch, yaw order. The result is the body-frame
 wrench `τ_d = -(D_L + D_Q(|ν|)) ν`, where `D_Q(|ν|) = diag(d_q ∘ |ν|)`.
 The function uses that twist as given. It does not convert ENU and NED and
 does not subtract an environment current. Coriolis, restoring, buoyancy,
-and integration are not this function. `Evaluate` does not call it. The
-same inputs produce the same wrench. Non-finite coefficients, linear
-asymmetry beyond `1e-9`, a linear matrix that is not positive definite, a
+and integration are not this function. `ZeroForceDynamics::Evaluate` does
+not call it. `MarineForceDynamics::Evaluate` calls it on the relative
+twist. The same inputs produce the same wrench. Non-finite coefficients,
+linear asymmetry beyond `1e-9`, a linear matrix that is not positive definite, a
 negative quadratic coefficient, or a non-finite twist return
 `kInvalidArgument` and a zero, finite wrench.
 
@@ -243,7 +249,8 @@ derivative. The body wrench is
 with `f_W^b = R^T (W e_down)` and `f_B^b = R^T (-B e_down)`, in surge,
 sway, heave, roll, pitch, yaw order. Inertia, damping, added mass,
 current, and thrusters are not read. Coriolis, drag, and integration are
-not this function. `Evaluate` does not call it. The same inputs produce
+not this function. `ZeroForceDynamics::Evaluate` does not call it.
+`MarineForceDynamics::Evaluate` calls it. The same inputs produce
 the same wrench. A non-finite or non-positive parameter, a pose frame that
 is not `world_enu` or `world_ned`, a non-finite orientation, or a
 quaternion outside the `1e-9` unit tolerance returns `kInvalidArgument`
@@ -267,12 +274,39 @@ in surge, sway, heave, roll, pitch, yaw order. A zero current leaves
 `ν_r = ν`. Gravity, density, mass, damping, added mass, and thrusters are
 not read. The result is a twist in meters/second and radians/second. It is
 not a wrench. Coriolis, damping, restoring, and integration are not this
-function. `Evaluate` does not call it. The same inputs produce the same
+function. `ZeroForceDynamics::Evaluate` does not call it.
+`MarineForceDynamics::Evaluate` calls it. The same inputs produce the same
 twist. A non-finite current, an empty or unknown current frame, a pose
 frame that is not `world_enu` or `world_ned`, a non-finite orientation, a
 quaternion outside the `1e-9` unit tolerance, a non-finite twist, or a
 non-finite relative twist returns `kInvalidArgument` and a zero, finite
 relative twist. The first defect wins.
+
+`MarineForceDynamics` composes those helpers into `DynamicsResult`. It does
+not re-derive their equations. Rigid-body Coriolis uses the body twist `ν`.
+Added-mass Coriolis and damping use `ν_r`. Restoring uses the pose and the
+evaluation snapshot for gravity and density. Coefficient matrices, mass,
+centers, and displaced volume come from the stored model. The stored
+environment and the thruster list are not read.
+
+The damping and restoring helpers already return the force on the body.
+The hydrodynamic wrench, excluding the input wrench, is
+
+`τ_hydro = -C_RB(ν) ν - C_A(ν_r) ν_r + τ_damp(ν_r) + τ_g`
+
+which is `-C_RB(ν) ν - C_A(ν_r) ν_r - D(ν_r) ν_r - g(η)` after that
+substitution. `model_force_n` and `model_torque_n_m` copy `τ_hydro`. The
+input wrench is passed through as `total_wrench = τ_input + τ_hydro`.
+That total is the derivative input. `DynamicsResult` has no mass-matrix
+field, so this evaluation does not form `M = M_RB + M_A` and does not
+solve `M ν̇ = τ`. `body_acceleration` stays zero. The pose rate is the
+same kinematic map as `ZeroForceDynamics`. `dt` is reported and is not an
+integration step. `allocation_invoked` stays false.
+
+Diagnostics store `ν_r` and each signed force term. The four force terms
+sum to `hydrodynamic_wrench` and to the model wrench. A failed helper
+returns that status. Every failure writes finite zeros. The first defect
+wins. The same inputs produce the same outputs.
 
 ### Allocation
 
@@ -330,8 +364,11 @@ checks the linear and quadratic damping fixtures.
 checks the gravity and buoyancy restoring fixtures.
 `//intrinsic_vehicle/intrinsic/vehicle/dynamics:water_current_relative_velocity_test`
 checks the water-current relative-velocity fixtures.
+`//intrinsic_vehicle/intrinsic/vehicle/dynamics:marine_force_dynamics_test`
+checks marine-force composition.
 
 ## Out of scope
 
-Marine-term composition, thruster allocation, guidance laws, control laws,
-Gazebo plugins, and ICON feature wiring are later issues.
+Thruster allocation, mass-matrix acceleration, time integration, guidance
+laws, control laws, Gazebo plugins, and ICON feature wiring are later
+issues.

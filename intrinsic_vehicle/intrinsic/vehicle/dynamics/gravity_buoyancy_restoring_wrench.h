@@ -39,9 +39,9 @@
 //
 // This term is only gravity and buoyancy. It does not read inertia,
 // damping, added mass, current, thrusters, or a body twist. It does not
-// compute drag, Coriolis, or an actuator wrench. VehicleDynamics::Evaluate
-// does not call it: that contract returns a derivative and has no
-// restoring-wrench output.
+// compute drag, Coriolis, or an actuator wrench.
+// MarineForceDynamics::Evaluate calls it and stores that wrench as the
+// restoring contribution.
 //
 // Checks follow ValidateMarineModel for the fields this term reads, then
 // the pose. The first defect wins: mass non-finite, mass not strictly
