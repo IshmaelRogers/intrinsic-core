@@ -8,10 +8,10 @@ tree and `intrinsic_kinematics` have no Bazel dependency in either direction.
 records the decision. PDR §4.1 and §15 place vehicle state math, dynamics,
 allocation, and guidance/control interfaces in this tree. Gazebo APIs, vendor
 SDKs, and mission behavior stay outside this tree. `dynamics` provides the
-`VehicleDynamics` interface, a zero-force test double, and the rigid-body
-mass matrix term. Other marine force equations, allocation, and guidance
-remain later work. Marine model parameter schemas and validation are in
-`parameters`.
+`VehicleDynamics` interface, a zero-force test double, the rigid-body mass
+matrix, and the added-mass matrix. Coriolis, damping, buoyancy, allocation,
+and guidance remain later work. Marine model parameter schemas and
+validation are in `parameters`.
 
 Protobuf `VehicleState` and `DesiredMotion` stay in
 [`intrinsic_apis/intrinsic/vehicle/proto`](../../../intrinsic_apis/intrinsic/vehicle/proto/README.md).
@@ -25,7 +25,7 @@ commands.
 | --- | --- | --- |
 | `//intrinsic_vehicle/intrinsic/vehicle/state` | Real-time | Empty marker. Fixed-size state math lands here later. |
 | `//intrinsic_vehicle/intrinsic/vehicle/allocation` | Real-time | Empty marker. Bounded allocation lands here later. |
-| `//intrinsic_vehicle/intrinsic/vehicle/dynamics` | Soft-real-time | `VehicleDynamics` interface, zero-force test double, and rigid-body mass matrix. Outside ICON. |
+| `//intrinsic_vehicle/intrinsic/vehicle/dynamics` | Soft-real-time | `VehicleDynamics` interface, zero-force test double, rigid-body mass matrix, and added-mass matrix. Outside ICON. |
 | `//intrinsic_vehicle/intrinsic/vehicle/parameters` | Soft-real-time | Marine model schemas and validation. Not loaded by ICON. |
 | `//intrinsic_vehicle/intrinsic/vehicle/guidance` | Soft-real-time | Empty marker. Guidance lands here later, outside ICON. |
 | `//intrinsic_vehicle/intrinsic/vehicle/control` | Soft-real-time | Empty marker. Reference control lands here later, outside ICON. |
@@ -77,7 +77,8 @@ a runtime loop.
 
 Present edges inside this tree are from `testing` to `state`, `dynamics`,
 `allocation`, `guidance`, `control`, and `parameters`, and from `dynamics`
-to `parameters` for the rigid-body mass matrix. That graph is acyclic.
+to `parameters` for the rigid-body and added-mass matrices. That graph is
+acyclic.
 
 Allowed later, and not wired in this scaffold:
 
@@ -178,6 +179,17 @@ added mass, and integration are not this function. `Evaluate` does not call
 it. The same inputs produce the same matrix. Invalid mass, inertia, or
 center of gravity returns `kInvalidArgument` and a zero, finite matrix.
 
+`ComputeAddedMassMatrix` is the hydrodynamic added-mass matrix term. It
+reads the row-major 6x6 `AddedMass::coefficients` stored for
+`ValidateMarineModel`. The result is that matrix in the body frame, in
+surge, sway, heave, roll, pitch, yaw order. The function copies the stored
+coefficients. It does not derive them from geometry and does not convert
+ENU and NED. Coriolis, damping, buoyancy, the rigid-body mass matrix, and
+integration are not this function. `Evaluate` does not call it. The same
+inputs produce the same matrix. Non-finite entries, asymmetry beyond
+`1e-9`, or a matrix that is not positive definite return
+`kInvalidArgument` and a zero, finite matrix.
+
 ### Allocation
 
 Thruster allocation stays in `allocation`. `Evaluate` does not map a wrench
@@ -222,8 +234,10 @@ does not depend on Gazebo, a vendor SDK, ICON, protobuf, or `allocation`.
 checks this contract and the zero-force double.
 `//intrinsic_vehicle/intrinsic/vehicle/dynamics:rigid_body_mass_matrix_test`
 checks the rigid-body mass matrix fixtures.
+`//intrinsic_vehicle/intrinsic/vehicle/dynamics:added_mass_matrix_test`
+checks the added-mass matrix fixtures.
 
 ## Out of scope
 
-Marine force equations, thruster allocation, guidance laws, control laws,
-Gazebo plugins, and ICON feature wiring are later issues.
+Coriolis, damping, buoyancy, thruster allocation, guidance laws, control
+laws, Gazebo plugins, and ICON feature wiring are later issues.
