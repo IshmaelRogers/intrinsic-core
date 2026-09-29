@@ -50,9 +50,13 @@
 namespace intrinsic::vehicle::allocation {
 
 // Status codes. kOk is the only success code.
+// kInvalidArgument is a bad size or a non-finite input.
+// kRankDeficient is returned by AllocateUnconstrainedLeastSquares when
+// B B^T is singular or its unpivoted Cholesky factor is not safe.
 enum class AllocationErrorCode {
   kOk = 0,
   kInvalidArgument = 1,
+  kRankDeficient = 2,
 };
 
 struct AllocationStatus {
@@ -66,6 +70,11 @@ struct AllocationStatus {
   [[nodiscard]] static AllocationStatus InvalidArgument(
       std::string_view message) {
     return {AllocationErrorCode::kInvalidArgument, message};
+  }
+
+  [[nodiscard]] static AllocationStatus RankDeficient(
+      std::string_view message) {
+    return {AllocationErrorCode::kRankDeficient, message};
   }
 };
 
