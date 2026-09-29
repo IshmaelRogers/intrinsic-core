@@ -17,11 +17,12 @@
 The allowed graph is the scaffold graph plus the dynamics-to-parameters
 edge used by the rigid-body mass matrix, the added-mass matrix, the
 rigid-body Coriolis matrix, the added-mass Coriolis matrix, the
-linear/quadratic damping wrench, and the gravity/buoyancy restoring
-wrench. A later edge needs an update here and in README.md. Dynamics
-interface sources include only the C++ standard library and headers in
-that package. The mass-matrix, Coriolis, damping, and restoring terms may
-include marine model parameter headers.
+linear/quadratic damping wrench, the gravity/buoyancy restoring wrench,
+and the water-current relative velocity. A later edge needs an update
+here and in README.md. Dynamics interface sources include only the C++
+standard library and headers in that package. The mass-matrix, Coriolis,
+damping, restoring, and relative-velocity terms may include marine model
+parameter headers.
 """
 
 import os
@@ -88,12 +89,14 @@ _DYNAMICS_SOURCES = (
     "rigid_body_mass_matrix.h",
     "vehicle_dynamics.cc",
     "vehicle_dynamics.h",
+    "water_current_relative_velocity.cc",
+    "water_current_relative_velocity.h",
     "zero_force_dynamics.cc",
     "zero_force_dynamics.h",
 )
 
-# Mass-matrix, Coriolis, damping, and restoring sources read marine model
-# parameters. Interface sources do not.
+# Mass-matrix, Coriolis, damping, restoring, and relative-velocity sources
+# read marine model parameters. Interface sources do not.
 _MASS_MATRIX_SOURCES = frozenset(
     (
         "added_mass_coriolis_matrix.cc",
@@ -108,6 +111,8 @@ _MASS_MATRIX_SOURCES = frozenset(
         "rigid_body_coriolis_matrix.h",
         "rigid_body_mass_matrix.cc",
         "rigid_body_mass_matrix.h",
+        "water_current_relative_velocity.cc",
+        "water_current_relative_velocity.h",
     )
 )
 
