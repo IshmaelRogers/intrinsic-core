@@ -8,9 +8,10 @@ tree and `intrinsic_kinematics` have no Bazel dependency in either direction.
 records the decision. PDR §4.1 and §15 place vehicle state math, dynamics,
 allocation, and guidance/control interfaces in this tree. Gazebo APIs, vendor
 SDKs, and mission behavior stay outside this tree. `dynamics` provides the
-`VehicleDynamics` interface and a zero-force test double. Marine force
-equations, allocation, and guidance remain later work. Marine model
-parameter schemas and validation are in `parameters`.
+`VehicleDynamics` interface, a zero-force test double, and the rigid-body
+mass matrix term. Other marine force equations, allocation, and guidance
+remain later work. Marine model parameter schemas and validation are in
+`parameters`.
 
 Protobuf `VehicleState` and `DesiredMotion` stay in
 [`intrinsic_apis/intrinsic/vehicle/proto`](../../../intrinsic_apis/intrinsic/vehicle/proto/README.md).
@@ -24,7 +25,7 @@ commands.
 | --- | --- | --- |
 | `//intrinsic_vehicle/intrinsic/vehicle/state` | Real-time | Empty marker. Fixed-size state math lands here later. |
 | `//intrinsic_vehicle/intrinsic/vehicle/allocation` | Real-time | Empty marker. Bounded allocation lands here later. |
-| `//intrinsic_vehicle/intrinsic/vehicle/dynamics` | Soft-real-time | `VehicleDynamics` interface and zero-force test double. Outside ICON. |
+| `//intrinsic_vehicle/intrinsic/vehicle/dynamics` | Soft-real-time | `VehicleDynamics` interface, zero-force test double, and rigid-body mass matrix. Outside ICON. |
 | `//intrinsic_vehicle/intrinsic/vehicle/parameters` | Soft-real-time | Marine model schemas and validation. Not loaded by ICON. |
 | `//intrinsic_vehicle/intrinsic/vehicle/guidance` | Soft-real-time | Empty marker. Guidance lands here later, outside ICON. |
 | `//intrinsic_vehicle/intrinsic/vehicle/control` | Soft-real-time | Empty marker. Reference control lands here later, outside ICON. |
@@ -74,13 +75,13 @@ a runtime loop.
 
 ## Dependency rules
 
-The only present edge inside this tree is from `testing` to `state`,
-`dynamics`, `allocation`, `guidance`, `control`, and `parameters`. That
-graph is acyclic.
+Present edges inside this tree are from `testing` to `state`, `dynamics`,
+`allocation`, `guidance`, `control`, and `parameters`, and from `dynamics`
+to `parameters` for the rigid-body mass matrix. That graph is acyclic.
 
 Allowed later, and not wired in this scaffold:
 
-- `dynamics` may depend on `parameters` and `state`.
+- `dynamics` may depend on `state`.
 - `allocation` may depend on `parameters` and `state`.
 - `guidance` may depend on `state`.
 - `control` may depend on `guidance` and `state`.
@@ -169,6 +170,14 @@ and a zero body acceleration. Gravity, fluid density, current, and the
 input wrench do not change that acceleration. The same inputs produce the
 same outputs. Invalid inputs return a status and a zero, finite derivative.
 
+`ComputeRigidBodyMassMatrix` is the rigid-body mass matrix term. It reads
+mass, inertia about the center of gravity, and the body-frame center of
+gravity from `parameters`. The result is the body-frame 6x6 matrix in
+surge, sway, heave, roll, pitch, yaw order. Coriolis, damping, buoyancy,
+added mass, and integration are not this function. `Evaluate` does not call
+it. The same inputs produce the same matrix. Invalid mass, inertia, or
+center of gravity returns `kInvalidArgument` and a zero, finite matrix.
+
 ### Allocation
 
 Thruster allocation stays in `allocation`. `Evaluate` does not map a wrench
@@ -206,11 +215,13 @@ step.
 
 ### Dependencies
 
-The dynamics library links the C++ standard library only. It does not
-depend on Gazebo, a vendor SDK, ICON, protobuf, or `allocation`.
+The dynamics library links the C++ standard library and `parameters`. It
+does not depend on Gazebo, a vendor SDK, ICON, protobuf, or `allocation`.
 
 `//intrinsic_vehicle/intrinsic/vehicle/dynamics:vehicle_dynamics_test`
 checks this contract and the zero-force double.
+`//intrinsic_vehicle/intrinsic/vehicle/dynamics:rigid_body_mass_matrix_test`
+checks the rigid-body mass matrix fixtures.
 
 ## Out of scope
 
