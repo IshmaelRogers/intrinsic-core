@@ -184,3 +184,46 @@ py_test(
         ":eskf_state_py",
     ],
 )
+
+cc_library(
+    name = "eskf_cov_propagate",
+    srcs = ["eskf_cov_propagate.cc"],
+    hdrs = ["eskf_cov_propagate.h"],
+    deps = [
+        ":eskf_propagate",
+        ":eskf_state",
+    ],
+)
+
+cc_test(
+    name = "eskf_cov_propagate_test",
+    size = "small",
+    srcs = ["eskf_cov_propagate_test.cc"],
+    deps = [
+        ":eskf_cov_propagate",
+        ":eskf_propagate",
+        ":eskf_state",
+        "@com_google_googletest//:gtest_main",
+    ],
+)
+
+py_library(
+    name = "eskf_cov_propagate_py",
+    srcs = ["eskf_cov_propagate.py"],
+    deps = [
+        ":eskf_propagate_py",
+        ":eskf_state_py",
+    ],
+)
+
+py_test(
+    name = "eskf_cov_propagate_test_py",
+    size = "small",
+    srcs = ["eskf_cov_propagate_test.py"],
+    main = "eskf_cov_propagate_test.py",
+    deps = [
+        ":eskf_cov_propagate_py",
+        ":eskf_propagate_py",
+        ":eskf_state_py",
+    ],
+)
