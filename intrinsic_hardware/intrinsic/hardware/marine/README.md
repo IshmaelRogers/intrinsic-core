@@ -5,7 +5,8 @@ The message is `MeasurementHealth` in
 `intrinsic_proto.hardware.marine`. PDR §15 places sensor contracts in this
 package. Common stamped provenance stays on embodiment `StampedHeader`.
 Covariance and source health stay on the vehicle messages from #17.
-`DvlMeasurement` embeds this envelope and is specified below.
+`DvlMeasurement` and `PressureDepthMeasurement` embed this envelope.
+Both are specified below.
 
 This package does not add a robot-type enum, a platform-wide embodiment
 switch, ICON feature interfaces, FlatBuffers, Gazebo plugins, filters, or
@@ -64,9 +65,10 @@ the header stamp.
 
 ## Documented producer status
 
-The DVL payload below is the first sensor message on this envelope. Other
-sensor payloads are later contracts. This envelope records the status those
-producers already decided:
+The DVL payload below is the first sensor message on this envelope.
+Pressure and depth follow it in this package. Other sensor payloads are
+later contracts. This envelope records the status those producers already
+decided:
 
 | Situation | What the producer sets | Host result |
 | --- | --- | --- |
@@ -334,3 +336,161 @@ These targets stay off `.github/baseline/manipulator_targets.tsv`:
 - `//intrinsic_hardware/intrinsic/hardware/marine:dvl_serialization_test_py`
 - `//intrinsic_hardware/intrinsic/hardware/marine:fake_dvl_test`
 - `//intrinsic_hardware/intrinsic/hardware/marine:fake_dvl_test_py`
+
+## Pressure and depth measurement
+
+`PressureDepthMeasurement` is one pressure sample, one depth sample, or both.
+It embeds `MeasurementHealth` as `health`. The sample frame is
+`health.header.frame_id`. It is never inferred from
+`PressureDepthMeasurement`. Units are SI. Pressure is pascals. Depth is
+meters, positive deeper (down from the free surface). Fluid density is
+kilograms per cubic meter.
+
+Host checks live in `pressure_depth_policy.h` and
+`pressure_depth_policy.py`. They do not parse protobuf, do not convert
+frames, and do not integrate hydrostatic pressure. `FakePressureDepth` is a
+deterministic producer. There is no altitude field, estimator adapter, ICON
+FlatBuffer, Gazebo plugin, or real-hardware path.
+
+| Message | Role |
+| --- | --- |
+| `PressureDepthMeasurement` | One pressure and/or depth sample plus health. |
+| `PressureDepthMeasurement.DepthProvenance` | `DEPTH_PROVENANCE_UNSPECIFIED=0`, `DEPTH_PROVENANCE_DIRECT=1`, `DEPTH_PROVENANCE_FROM_PRESSURE=2`. |
+
+### Pressure and depth
+
+`pressure_pa` and `depth_m` are separate optional doubles. Either may appear
+alone. Both may appear together. Unset means absent. An engaged sample
+needs at least one of them.
+
+| Wire | Meaning |
+| --- | --- |
+| Pressure unset | Absent. Not a defect by itself. |
+| Pressure present and finite, including zero and negative | Supplied. No absolute-pressure floor. |
+| Pressure NaN or infinity | Rejected as non-finite. `health.state` is not rewritten. |
+| Depth unset | Absent. Not a defect by itself. |
+| Depth present and `0` | The free surface. |
+| Depth present and `> 0` | Deeper than the surface. |
+| Depth present and `< 0` | Out of range. Rejected. |
+| Depth NaN or infinity | Rejected as non-finite, before the sign check. |
+
+### Provenance and fluid density
+
+`depth_provenance` is `optional`. Unset and `DEPTH_PROVENANCE_UNSPECIFIED`
+are different wire values. Unknown numbers stay on the wire.
+
+`fluid_density_kg_m3` is `optional`. Unset means absent. A present value
+must be finite and `> 0`.
+
+| Combination | Host result |
+| --- | --- |
+| Depth present, provenance absent, unspecified, or unrecognized | Rejected. Missing conversion provenance. |
+| Depth present, `DIRECT`, density absent | Accepted when the rest of the sample is sound. |
+| Depth present, `DIRECT`, density finite and `> 0` | Accepted when the rest of the sample is sound. |
+| Depth present, `FROM_PRESSURE`, finite pressure, density finite and `> 0` | Accepted when the rest of the sample is sound. |
+| `FROM_PRESSURE` without depth | Rejected. Inconsistent provenance. |
+| `FROM_PRESSURE` without pressure | Rejected. The derived pair is incomplete. |
+| `FROM_PRESSURE` without a finite density `> 0` | Rejected. |
+| Depth absent, provenance absent, unspecified, or unrecognized | Not a provenance defect. Pressure may still be accepted. |
+| Density present and non-finite, or `<= 0` | Rejected. Non-finite density is `kDensity`, not `kNonFinite`. |
+
+This contract stores provenance. It does not compute depth from pressure.
+
+### Covariance
+
+Covariance is `health.covariance` (`Matrix6`), not a new field. #17 shape,
+symmetry, and finiteness rules apply. When the matrix is present and well
+formed, every entry except the two sensor diagonals must be exactly `0.0`:
+
+| Slot | Row-major index | Unit |
+| --- | --- | --- |
+| pressure variance | 0 | Pa² |
+| depth variance | 7 | m² |
+
+The other 34 entries, including the remaining diagonals, are exactly zero.
+Unset covariance is unknown. Thirty-six zeros are a specified zero matrix,
+and both allowed slots are zero.
+
+### Check order
+
+The first defect wins:
+
+1. Health missing on an engaged sample.
+2. Empty frame id.
+3. Frame id different from a caller-supplied expected id.
+4. Receive time strictly before source time, when both timestamps are present.
+5. Non-finite quality, when quality is present.
+6. Quality outside `[0, 1]`, when quality is present.
+7. Covariance shape, when covariance is present.
+8. Empty `source_id` on a present source entry.
+9. A covariance entry other than indices 0 and 7 is not exactly zero, when covariance is present and well formed.
+10. Neither pressure nor depth present.
+11. Pressure non-finite, when pressure is present.
+12. Depth non-finite, when depth is present.
+13. Depth negative, when depth is present.
+14. Depth present with provenance absent, unspecified, or unrecognized.
+15. `FROM_PRESSURE` without depth.
+16. `FROM_PRESSURE` without pressure.
+17. `FROM_PRESSURE` without a present finite density `> 0`.
+18. Present density non-finite.
+19. Present density `<= 0`.
+
+An unengaged message (no health engagement, pressure, depth, provenance, or
+density) is not a sample. `accepted` requires health state `VALID` and no
+structural defect. `DEGRADED` is not rewritten to `INVALID`.
+
+### Fake
+
+`FakePressureDepth` is a pure function of its config and truth. The same
+seed, bias, delay, dropout, and out-of-range flags produce the same bytes.
+`seed` is written to `health.header.sequence`. The fake does not draw noise
+and it does not integrate hydrostatic pressure.
+
+Default config and truth are the nominal from-pressure fixture: sequence
+42, frame `sensor`, source time `1700000000.250000000`, delay `1s` plus
+`-250000000` ns so receive time is `1700000001.0`, pressure `200000` Pa,
+depth `10` m, provenance `FROM_PRESSURE`, density `1025` kg/m³, quality
+`0.75`, and a specified covariance with pressure variance `1.0` at index 0
+and depth variance `0.25` at index 7. Header validity stays `STATE_VALID`.
+Sources are `primary` (valid) and `aiding` (unset validity).
+
+| Fault | What the fake emits |
+| --- | --- |
+| Dropout | No message. Checked before out-of-range. Absent, not an error. |
+| Delay | `receive_time = source_time + delay`. A reversal is emitted and not repaired. |
+| Bias | Each non-zero bias is added to the matching present truth field. Any non-zero bias sets health state `DEGRADED` unless out-of-range applies. |
+| Out of range | Canonical fixture: `depth_m = -1`, health state `INVALID`. Pressure bias still applies when pressure is present. Depth bias is not applied. |
+
+A large positive delay is not a structural defect. This contract has no
+maximum age. A bias that drives depth below zero is emitted as that value
+with `DEGRADED`. The host rejects the negative depth and does not rewrite
+`health.state`.
+
+### Evolution
+
+Append fields and enum values. Reserve removed tags and names. Preserve
+unknown fields and unknown provenance numbers. Golden bytes for the nominal
+from-pressure fixture are fixed in the C++ and Python serialization tests.
+Clearing `fluid_density_kg_m3` leaves a prefix of that golden. Field 100 is
+preserved.
+
+Text format example:
+[`examples/pressure_depth_from_pressure.textproto`](examples/pressure_depth_from_pressure.textproto).
+
+### Pressure and depth targets
+
+These targets stay off `.github/baseline/manipulator_targets.tsv`:
+
+- `//intrinsic_hardware/intrinsic/hardware/marine:pressure_depth_proto`
+- `//intrinsic_hardware/intrinsic/hardware/marine:pressure_depth_cc_proto`
+- `//intrinsic_hardware/intrinsic/hardware/marine:pressure_depth_py_pb2`
+- `//intrinsic_hardware/intrinsic/hardware/marine:pressure_depth_policy`
+- `//intrinsic_hardware/intrinsic/hardware/marine:pressure_depth_policy_py`
+- `//intrinsic_hardware/intrinsic/hardware/marine:fake_pressure_depth`
+- `//intrinsic_hardware/intrinsic/hardware/marine:fake_pressure_depth_py`
+- `//intrinsic_hardware/intrinsic/hardware/marine:pressure_depth_policy_test`
+- `//intrinsic_hardware/intrinsic/hardware/marine:pressure_depth_policy_test_py`
+- `//intrinsic_hardware/intrinsic/hardware/marine:pressure_depth_serialization_test`
+- `//intrinsic_hardware/intrinsic/hardware/marine:pressure_depth_serialization_test_py`
+- `//intrinsic_hardware/intrinsic/hardware/marine:fake_pressure_depth_test`
+- `//intrinsic_hardware/intrinsic/hardware/marine:fake_pressure_depth_test_py`

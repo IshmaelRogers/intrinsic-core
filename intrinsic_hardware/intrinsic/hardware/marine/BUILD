@@ -262,11 +262,159 @@ py_test(
     ],
 )
 
+proto_library(
+    name = "pressure_depth_proto",
+    srcs = ["pressure_depth.proto"],
+    deps = [":measurement_health_proto"],
+)
+
+cc_proto_library(
+    name = "pressure_depth_cc_proto",
+    deps = [":pressure_depth_proto"],
+)
+
+py_proto_library(
+    name = "pressure_depth_py_pb2",
+    deps = [":pressure_depth_proto"],
+)
+
+cc_library(
+    name = "pressure_depth_policy",
+    hdrs = ["pressure_depth_policy.h"],
+    deps = [
+        ":measurement_health_policy",
+        "//intrinsic/vehicle:vehicle_contract_policy",
+    ],
+)
+
+cc_library(
+    name = "fake_pressure_depth",
+    srcs = ["fake_pressure_depth.cc"],
+    hdrs = ["fake_pressure_depth.h"],
+    deps = [
+        ":measurement_health_cc_proto",
+        ":pressure_depth_cc_proto",
+        "//intrinsic/embodiment:frame_policy",
+        "//intrinsic/vehicle:vehicle_contract_policy",
+        "@intrinsic_apis//intrinsic/embodiment/proto:stamped_header_cc_proto",
+        "@intrinsic_apis//intrinsic/vehicle/proto:vehicle_state_cc_proto",
+    ],
+)
+
+cc_test(
+    name = "pressure_depth_policy_test",
+    size = "small",
+    srcs = ["pressure_depth_policy_test.cc"],
+    deps = [
+        ":pressure_depth_policy",
+        "//intrinsic/embodiment:frame_policy",
+        "//intrinsic/vehicle:vehicle_contract_policy",
+        "@com_google_googletest//:gtest_main",
+    ],
+)
+
+cc_test(
+    name = "pressure_depth_serialization_test",
+    size = "small",
+    srcs = ["pressure_depth_serialization_test.cc"],
+    data = [":examples"],
+    deps = [
+        ":fake_pressure_depth",
+        ":pressure_depth_cc_proto",
+        ":pressure_depth_policy",
+        "//intrinsic/embodiment:frame_policy",
+        "//intrinsic/vehicle:vehicle_contract_policy",
+        "@com_google_googletest//:gtest_main",
+        "@intrinsic_apis//intrinsic/embodiment/proto:stamped_header_cc_proto",
+    ],
+)
+
+cc_test(
+    name = "fake_pressure_depth_test",
+    size = "small",
+    srcs = ["fake_pressure_depth_test.cc"],
+    deps = [
+        ":fake_pressure_depth",
+        ":measurement_health_cc_proto",
+        ":pressure_depth_cc_proto",
+        ":pressure_depth_policy",
+        "//intrinsic/embodiment:frame_policy",
+        "@com_google_googletest//:gtest_main",
+    ],
+)
+
+py_library(
+    name = "pressure_depth_policy_py",
+    srcs = ["pressure_depth_policy.py"],
+    deps = [
+        ":measurement_health_policy_py",
+        "//intrinsic/embodiment:frame_policy_py",
+        "//intrinsic/vehicle:vehicle_contract_policy_py",
+    ],
+)
+
+py_library(
+    name = "fake_pressure_depth_py",
+    srcs = ["fake_pressure_depth.py"],
+    deps = [
+        ":measurement_health_py_pb2",
+        ":pressure_depth_py_pb2",
+        "//intrinsic/embodiment:frame_policy_py",
+        "//intrinsic/vehicle:vehicle_contract_policy_py",
+        "@intrinsic_apis//intrinsic/embodiment/proto:stamped_header_py_pb2",
+    ],
+)
+
+py_test(
+    name = "pressure_depth_policy_test_py",
+    size = "small",
+    srcs = ["pressure_depth_policy_test.py"],
+    main = "pressure_depth_policy_test.py",
+    deps = [
+        ":measurement_health_policy_py",
+        ":pressure_depth_policy_py",
+        "//intrinsic/embodiment:frame_policy_py",
+        "//intrinsic/vehicle:vehicle_contract_policy_py",
+    ],
+)
+
+py_test(
+    name = "pressure_depth_serialization_test_py",
+    size = "small",
+    srcs = ["pressure_depth_serialization_test.py"],
+    data = [":examples"],
+    main = "pressure_depth_serialization_test.py",
+    deps = [
+        ":fake_pressure_depth_py",
+        ":measurement_health_policy_py",
+        ":measurement_health_py_pb2",
+        ":pressure_depth_policy_py",
+        ":pressure_depth_py_pb2",
+        "//intrinsic/vehicle:vehicle_contract_policy_py",
+        "@intrinsic_apis//intrinsic/embodiment/proto:stamped_header_py_pb2",
+    ],
+)
+
+py_test(
+    name = "fake_pressure_depth_test_py",
+    size = "small",
+    srcs = ["fake_pressure_depth_test.py"],
+    main = "fake_pressure_depth_test.py",
+    deps = [
+        ":fake_pressure_depth_py",
+        ":measurement_health_policy_py",
+        ":measurement_health_py_pb2",
+        ":pressure_depth_policy_py",
+        ":pressure_depth_py_pb2",
+    ],
+)
+
 filegroup(
     name = "examples",
     srcs = [
         "examples/dvl_bottom_track.textproto",
         "examples/measurement_health.textproto",
         "examples/measurement_health_unknown_covariance.textproto",
+        "examples/pressure_depth_from_pressure.textproto",
     ],
 )
