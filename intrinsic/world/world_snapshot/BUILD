@@ -76,6 +76,42 @@ cc_test(
     ],
 )
 
+cc_library(
+    name = "world_snapshot_skew_policy",
+    hdrs = ["world_snapshot_skew_policy.h"],
+    deps = [
+        ":world_snapshot_policy",
+        "//intrinsic/world/marine_component_validity:marine_component_validity_policy",
+    ],
+)
+
+cc_library(
+    name = "world_snapshot_skew_assessor",
+    srcs = ["world_snapshot_skew_assessor.cc"],
+    hdrs = ["world_snapshot_skew_assessor.h"],
+    deps = [
+        ":world_snapshot_builder",
+        ":world_snapshot_skew_policy",
+        "//intrinsic/world/marine_component_validity:marine_component_validity_policy",
+        "@intrinsic_apis//intrinsic/world/proto:world_snapshot_descriptor_cc_proto",
+    ],
+)
+
+cc_test(
+    name = "world_snapshot_skew_policy_test",
+    size = "small",
+    srcs = ["world_snapshot_skew_policy_test.cc"],
+    deps = [
+        ":world_snapshot_builder",
+        ":world_snapshot_policy",
+        ":world_snapshot_skew_assessor",
+        ":world_snapshot_skew_policy",
+        "//intrinsic/world/marine_component_validity:marine_component_validity_policy",
+        "@com_google_googletest//:gtest_main",
+        "@intrinsic_apis//intrinsic/world/proto:world_snapshot_descriptor_cc_proto",
+    ],
+)
+
 py_library(
     name = "world_snapshot_policy_py",
     srcs = ["world_snapshot_policy.py"],
@@ -117,6 +153,39 @@ py_test(
     deps = [
         ":world_snapshot_builder_py",
         ":world_snapshot_policy_py",
+        "@intrinsic_apis//intrinsic/world/proto:world_snapshot_descriptor_py_pb2",
+    ],
+)
+
+py_library(
+    name = "world_snapshot_skew_policy_py",
+    srcs = ["world_snapshot_skew_policy.py"],
+    deps = [
+        ":world_snapshot_policy_py",
+        "//intrinsic/world/marine_component_validity:marine_component_validity_policy_py",
+    ],
+)
+
+py_library(
+    name = "world_snapshot_skew_assessor_py",
+    srcs = ["world_snapshot_skew_assessor.py"],
+    deps = [
+        ":world_snapshot_builder_py",
+        ":world_snapshot_skew_policy_py",
+        "@intrinsic_apis//intrinsic/world/proto:world_snapshot_descriptor_py_pb2",
+    ],
+)
+
+py_test(
+    name = "world_snapshot_skew_policy_test_py",
+    size = "small",
+    srcs = ["world_snapshot_skew_policy_test.py"],
+    main = "world_snapshot_skew_policy_test.py",
+    deps = [
+        ":world_snapshot_builder_py",
+        ":world_snapshot_policy_py",
+        ":world_snapshot_skew_assessor_py",
+        ":world_snapshot_skew_policy_py",
         "@intrinsic_apis//intrinsic/world/proto:world_snapshot_descriptor_py_pb2",
     ],
 )
