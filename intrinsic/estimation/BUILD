@@ -391,3 +391,46 @@ py_test(
         ":eskf_state_py",
     ],
 )
+
+cc_library(
+    name = "altitude_update",
+    srcs = ["altitude_update.cc"],
+    hdrs = ["altitude_update.h"],
+    deps = [
+        ":eskf_propagate",
+        ":eskf_state",
+        ":innovation_gate",
+    ],
+)
+
+cc_test(
+    name = "altitude_update_test",
+    size = "small",
+    srcs = ["altitude_update_test.cc"],
+    deps = [
+        ":altitude_update",
+        ":eskf_state",
+        "@com_google_googletest//:gtest_main",
+    ],
+)
+
+py_library(
+    name = "altitude_update_py",
+    srcs = ["altitude_update.py"],
+    deps = [
+        ":eskf_propagate_py",
+        ":eskf_state_py",
+        ":innovation_gate_py",
+    ],
+)
+
+py_test(
+    name = "altitude_update_test_py",
+    size = "small",
+    srcs = ["altitude_update_test.py"],
+    main = "altitude_update_test.py",
+    deps = [
+        ":altitude_update_py",
+        ":eskf_state_py",
+    ],
+)
