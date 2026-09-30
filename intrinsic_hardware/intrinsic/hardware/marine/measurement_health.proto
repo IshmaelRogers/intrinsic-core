@@ -1,0 +1,72 @@
+// Copyright 2026 Intrinsic Innovation LLC
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     https://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
+syntax = "proto3";
+
+package intrinsic_proto.hardware.marine;
+
+import "intrinsic/embodiment/proto/stamped_header.proto";
+import "intrinsic/vehicle/proto/vehicle_state.proto";
+
+option go_package = "intrinsic/hardware/marine/measurement_health_go_proto";
+
+// Sensor-agnostic health envelope for one marine measurement sample.
+//
+// This message is the shared contract reused by later sensor protos. It has
+// no DVL, IMU, depth, altitude, or other sensor payload fields.
+//
+// `state` is a measurement-local judgment. It is not
+// `intrinsic_proto.embodiment.Validity`, and this file does not add a value
+// to that enum. Unset `state` means the producer supplied no judgment.
+// `UNKNOWN` is that judgment once it has been set. The two are distinct.
+//
+// `header` is the #15 StampedHeader. Timestamp, frame, and clock live there.
+// `header.validity` stays the optional #15 companion and is not `state`.
+//
+// `quality` is optional and dimensionless. Unset means absent. A present
+// value must be finite and in the closed interval [0, 1].
+//
+// `covariance` reuses #17 Matrix6. Unset means unknown covariance. A present
+// matrix of 36 zeros is a specified zero matrix. See README.md.
+//
+// `sources` reuses #17 SourceHealth. An empty `source_id` is rejected when
+// an entry is present. Unset SourceHealth.validity is not STATE_INVALID.
+//
+// A default message serializes to zero bytes. Append fields. Reserve removed
+// tags and names. See README.md.
+message MeasurementHealth {
+  enum State {
+    // Judgment present and unclassified. Not an unset `state` field.
+    UNKNOWN = 0;
+    VALID = 1;
+    DEGRADED = 2;
+    INVALID = 3;
+  }
+
+  // Provenance for this sample. Frame is never inferred from this type.
+  intrinsic_proto.embodiment.StampedHeader header = 1;
+
+  // Unset means absent. UNKNOWN is an explicit unclassified judgment.
+  optional State state = 2;
+
+  // Dimensionless quality in [0, 1]. Unset means absent. Present 0 is supplied.
+  optional float quality = 3;
+
+  // Covariance of this sample. Unset means unknown. Present data is specified.
+  // Component order belongs to the consumer. Shape rules are Matrix6.
+  intrinsic_proto.vehicle.Matrix6 covariance = 4;
+
+  // Producer health in producer order. Duplicate ids are not rewritten.
+  repeated intrinsic_proto.vehicle.SourceHealth sources = 5;
+}
