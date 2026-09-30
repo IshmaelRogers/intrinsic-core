@@ -1,0 +1,72 @@
+// Copyright 2026 Intrinsic Innovation LLC
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     https://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
+syntax = "proto3";
+
+package intrinsic_proto.world;
+
+import "google/protobuf/timestamp.proto";
+
+option go_package = "intrinsic/world/proto/world_snapshot_descriptor_go_proto";
+
+// Revision of one World component kind in the source store at snapshot time.
+//
+// This message carries identity only. It never embeds the component payload.
+//
+// Known kinds: `bathymetry_reference`, `current_field`,
+// `occupancy_reference`, `semantic_contacts`. Other non-empty kinds are
+// allowed and are treated the same way for sorting and hashing.
+//
+// Host checks live in intrinsic/world/world_snapshot. See README.md there.
+//
+// Next tag: 3
+message WorldComponentRevision {
+  // Non-empty kind key. Empty is rejected. A repeated kind in one descriptor
+  // is rejected.
+  string component_kind = 1;
+
+  // Monotonic revision of this kind in the source store. Zero is a valid
+  // revision. A kind that is absent from the snapshot is omitted from
+  // `components`; it is not encoded as revision zero.
+  uint64 revision = 2;
+}
+
+// Immutable identity of one World snapshot: a content digest, the creation
+// time, the state epoch, and the revisions of the components it covers.
+//
+// This message has no skew, age, freshness, or partial-status fields.
+//
+// An empty message serializes to zero bytes. Callers that never set this
+// message keep the previous World wire image.
+//
+// Next tag: 5
+message WorldSnapshotDescriptor {
+  // Lowercase hex SHA-256 content digest (64 characters) of
+  // `state_epoch` and `components`. `creation_time` is not part of the
+  // digest. Empty is rejected when the descriptor is present for validation.
+  // The digest is specified in intrinsic/world/world_snapshot/README.md.
+  string snapshot_id = 1;
+
+  // When the builder formed this snapshot. Required when the descriptor is
+  // present. Nanos must be in [0, 1e9). Not part of `snapshot_id`.
+  google.protobuf.Timestamp creation_time = 2;
+
+  // Canonical vehicle-state epoch (VehicleState.estimator_epoch). Zero is
+  // allowed and is part of the digest.
+  uint64 state_epoch = 3;
+
+  // Zero or more component revisions, sorted by `component_kind` ascending
+  // (byte-wise). An empty list is an epoch-only snapshot.
+  repeated WorldComponentRevision components = 4;
+}
