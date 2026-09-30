@@ -20,28 +20,27 @@
 // negative heave. Surge and every torque stay zero. Heading and
 // forward speed are not controlled.
 //
+// Contract revision 1:
+//
 //   e = depth_cmd_m - depth_meas_m
 //   v_depth = -v_z_world
-//   u_unsat = -k_p * e + S + k_d * v_depth
+//   u_unsat = -k_p * e - k_i * I + k_d * v_depth
 //   u = clamp(u_unsat, -50, 50)
 //
 // v_z_world is the ENU up component of the body linear twist, using the
-// state orientation. k_p is 15 N/m, k_i is 2 N/(m*s), and k_d is
-// 10 N/(m/s). The derivative term opposes positive-down rate, so a
-// descent produces positive heave.
+// state orientation. k_p is 20 N/m, k_i is 0.2 N/(m*s), and k_d is
+// 45 N/(m/s). The derivative term opposes positive-down rate, so a
+// descent produces positive heave. A positive depth error produces
+// negative heave.
 //
-// S is the integral force in newtons, clamped to [-40, 40]. This object
-// owns S. Away from the clamp and from saturation,
-// S = -k_i * ∫ e dt, and the unsaturated command is
+// I is the integrated depth error, owned by this controller and clamped
+// to [-40, 40]. Reset() sets I to 0. I is advanced by
+// IntegrateBackCalculation with integrator input e. The helper adds its
+// gain times (u_sat - u_unsat). The command subtracts k_i*I, so that
+// gain is -k_aw/k_i with k_aw = 0.2. A rejected Evaluate does not
+// write I.
 //
-//   u_unsat = -k_p * e - k_i * I + k_d * v_depth
-//
-// with I = ∫ e dt. S is advanced by IntegrateBackCalculation. The
-// integrator input is -k_i * e and k_aw is 0.2, the gain on
-// (u_sat - u_unsat). Reset() sets S to 0. A rejected Evaluate does not
-// write S.
-//
-// Evaluate stays const. S is a mutable member. One instance is not safe
+// Evaluate stays const. I is a mutable member. One instance is not safe
 // for concurrent Evaluate or Reset calls. The caller owns the
 // reference, the state, and the result. Evaluate does not retain them
 // and does not allocate. Status text is a static string view.
@@ -65,10 +64,10 @@ class ReferenceDepthController final : public ReferenceController {
  public:
   ReferenceDepthController();
 
-  // Sets the integral force to 0.
+  // Sets the integrated depth error to 0.
   void Reset();
 
-  // Integral force in newtons, inside [-40, 40].
+  // Integrated depth error, inside [-40, 40].
   [[nodiscard]] double integrator_state() const;
 
   [[nodiscard]] StatusOr<BodyWrenchRt> Evaluate(

@@ -21,9 +21,10 @@
 namespace intrinsic::vehicle::control {
 namespace {
 
-constexpr double kProportionalGain = 15.0;
-constexpr double kIntegralGain = 2.0;
-constexpr double kDerivativeGain = 10.0;
+// Contract revision 1.
+constexpr double kProportionalGain = 20.0;
+constexpr double kIntegralGain = 0.2;
+constexpr double kDerivativeGain = 45.0;
 constexpr double kAntiWindupGain = 0.2;
 constexpr double kHeaveMinN = -50.0;
 constexpr double kHeaveMaxN = 50.0;
@@ -114,16 +115,20 @@ StatusOr<BodyWrenchRt> ReferenceDepthController::Evaluate(
   }
 
   const double error = depth_cmd - depth_meas;
-  const double integral_force = integrator_.state();
-  const double u_unsat =
-      -kProportionalGain * error + integral_force + kDerivativeGain * v_depth;
+  const double integrated_error = integrator_.state();
+  const double u_unsat = -kProportionalGain * error -
+                         kIntegralGain * integrated_error +
+                         kDerivativeGain * v_depth;
   if (!std::isfinite(u_unsat)) {
     return Reject(ControlStatus::InvalidArgument(kHeaveMessage));
   }
   const double u_sat = Clamp(u_unsat, kHeaveMinN, kHeaveMaxN);
-  const ControlMathResult<double> stepped =
-      IntegrateBackCalculation(integrator_, -kIntegralGain * error, u_unsat,
-                               u_sat, kAntiWindupGain, update_period.seconds);
+  // The heave command subtracts k_i*I. The helper adds
+  // gain*(u_sat - u_unsat) to the integrator input, so the gain that
+  // applies k_aw to that command is -k_aw/k_i.
+  const ControlMathResult<double> stepped = IntegrateBackCalculation(
+      integrator_, error, u_unsat, u_sat, -kAntiWindupGain / kIntegralGain,
+      update_period.seconds);
   if (!stepped.ok()) {
     return Reject(ControlStatus::InvalidArgument(stepped.status().message));
   }

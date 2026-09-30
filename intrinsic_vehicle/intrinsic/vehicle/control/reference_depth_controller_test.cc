@@ -89,20 +89,20 @@ TEST(ReferenceDepthController, DeepenAtRestCommandsNegativeHeave) {
   const StatusOr<BodyWrenchRt> result =
       controller.Evaluate(DepthCommand(12.0), StateAt(10.0), Period());
   ASSERT_TRUE(result.ok());
-  ExpectHeaveOnly(result.value(), -30.0);
-  EXPECT_NEAR(controller.integrator_state(), -0.4, 1e-12);
+  ExpectHeaveOnly(result.value(), -40.0);
+  EXPECT_NEAR(controller.integrator_state(), 0.2, 1e-12);
 }
 
-TEST(ReferenceDepthController, IntegralForceChangesTheNextCommand) {
+TEST(ReferenceDepthController, IntegratedErrorChangesTheNextCommand) {
   ReferenceDepthController controller;
   ASSERT_TRUE(
       controller.Evaluate(DepthCommand(12.0), StateAt(10.0), Period()).ok());
-  const double integral_force = controller.integrator_state();
+  const double integrated_error = controller.integrator_state();
   const StatusOr<BodyWrenchRt> second =
       controller.Evaluate(DepthCommand(12.0), StateAt(10.0), Period());
   ASSERT_TRUE(second.ok());
-  ExpectHeaveOnly(second.value(), -30.0 + integral_force);
-  EXPECT_NEAR(controller.integrator_state(), integral_force - 0.4, 1e-12);
+  ExpectHeaveOnly(second.value(), -40.0 - 0.2 * integrated_error);
+  EXPECT_NEAR(controller.integrator_state(), integrated_error + 0.2, 1e-12);
 }
 
 TEST(ReferenceDepthController, DerivativeOpposesPositiveDownRate) {
@@ -112,7 +112,7 @@ TEST(ReferenceDepthController, DerivativeOpposesPositiveDownRate) {
   const StatusOr<BodyWrenchRt> result =
       controller.Evaluate(DepthCommand(10.0), state, Period());
   ASSERT_TRUE(result.ok());
-  ExpectHeaveOnly(result.value(), 10.0);
+  ExpectHeaveOnly(result.value(), 45.0);
   EXPECT_DOUBLE_EQ(controller.integrator_state(), 0.0);
 }
 
@@ -129,20 +129,23 @@ TEST(ReferenceDepthController, RolledBodyHeaveChangesTheDepthRate) {
       rolled.Evaluate(DepthCommand(10.0), inverted, Period());
   ASSERT_TRUE(up.ok());
   ASSERT_TRUE(down.ok());
-  ExpectHeaveOnly(up.value(), -10.0);
-  ExpectHeaveOnly(down.value(), 10.0);
+  ExpectHeaveOnly(up.value(), -45.0);
+  ExpectHeaveOnly(down.value(), 45.0);
 }
 
 TEST(ReferenceDepthController, AntiWindupFeedsTheIntegrator) {
   ReferenceDepthController controller;
+  // Proportional action alone is -60 N, past the -50 N heave rail.
   const StatusOr<BodyWrenchRt> result =
-      controller.Evaluate(DepthCommand(100.0), StateAt(0.0), Period());
+      controller.Evaluate(DepthCommand(3.0), StateAt(0.0), Period());
   ASSERT_TRUE(result.ok());
   ExpectHeaveOnly(result.value(), -50.0);
-  const double pure_integral = -2.0 * 100.0 * kDt;
-  EXPECT_NEAR(controller.integrator_state(), 9.0, 1e-9);
-  EXPECT_LT(pure_integral, controller.integrator_state());
-  EXPECT_LT(std::abs(controller.integrator_state()), std::abs(pure_integral));
+  const double pure_integral = 3.0 * kDt;
+  const double u_unsat = -20.0 * 3.0;
+  const double tracking = (-0.2 / 0.2) * (-50.0 - u_unsat);
+  const double expected = (3.0 + tracking) * kDt;
+  EXPECT_NEAR(controller.integrator_state(), expected, 1e-9);
+  EXPECT_LT(controller.integrator_state(), pure_integral);
 }
 
 TEST(ReferenceDepthController, SaturatedHoldStaysInsideTheClamp) {
@@ -156,7 +159,7 @@ TEST(ReferenceDepthController, SaturatedHoldStaysInsideTheClamp) {
     EXPECT_LE(controller.integrator_state(), 40.0);
     EXPECT_GE(controller.integrator_state(), -40.0);
   }
-  EXPECT_DOUBLE_EQ(controller.integrator_state(), 40.0);
+  EXPECT_DOUBLE_EQ(controller.integrator_state(), -40.0);
 }
 
 TEST(ReferenceDepthController, RejectedInputDoesNotWriteTheIntegrator) {
@@ -274,7 +277,7 @@ TEST(ReferenceDepthController, ZeroTimeStepDoesNotIntegrate) {
   const StatusOr<BodyWrenchRt> first =
       controller.Evaluate(DepthCommand(12.0), StateAt(10.0), Duration{0});
   ASSERT_TRUE(first.ok());
-  ExpectHeaveOnly(first.value(), -30.0);
+  ExpectHeaveOnly(first.value(), -40.0);
   EXPECT_DOUBLE_EQ(controller.integrator_state(), 0.0);
   const StatusOr<BodyWrenchRt> second =
       controller.Evaluate(DepthCommand(12.0), StateAt(10.0), Duration{0});
@@ -307,7 +310,7 @@ TEST(ReferenceDepthController, SurgeYawAndHorizontalPositionAreUnused) {
   EXPECT_EQ(
       std::memcmp(&heave_only.value(), &other.value(), sizeof(other.value())),
       0);
-  ExpectHeaveOnly(other.value(), -30.0);
+  ExpectHeaveOnly(other.value(), -40.0);
 }
 
 TEST(ReferenceDepthController, StepResponseMeetsApprovedBounds) {

@@ -484,7 +484,8 @@ reference is `kMissingObjective`. A `world_ned` pose is `kInvalid`.
 `Evaluate` is const. `EchoGuidance`, `NullGuidance`, and
 `ZeroWrenchController` have no data members. Concurrent `Evaluate` calls
 on one of those instances do not share mutable state.
-`ReferenceDepthController` owns its integral force in a mutable member.
+`ReferenceDepthController` owns its integrated depth error in a mutable
+member.
 Concurrent `Evaluate` or `Reset` calls on that instance are not safe.
 The functions do not allocate, do not retain arguments, and do not take
 locks. Status text is a static string view. `TrajectoryId::view()` is
@@ -545,24 +546,24 @@ body linear twist, negated. The state orientation is the
 body-to-navigation map. This package does not convert NED and does not
 depend on `dynamics`.
 
-Gains are `k_p = 15` N/m, `k_i = 2` N/(m·s), and `k_d = 10` N/(m/s).
-Heave is clamped to [-50, 50] N. The controller owns the integral force
-`S` in newtons, clamped to [-40, 40]. `Reset()` sets `S` to 0.
+Contract revision 1 sets `k_p = 20` N/m, `k_i = 0.2` N/(m·s), and
+`k_d = 45` N/(m/s). Heave is clamped to [-50, 50] N. The controller
+owns the integrated depth error `I`, clamped to [-40, 40]. `Reset()`
+sets `I` to 0.
 
 ```
 e = depth_cmd_m - depth_meas_m
 v_depth = -v_z_world
-u_unsat = -k_p * e + S + k_d * v_depth
+u_unsat = -k_p * e - k_i * I + k_d * v_depth
 ```
 
-Away from the clamp and from saturation, `S = -k_i * ∫ e dt`, so the
-unsaturated command is `-k_p * e - k_i * I + k_d * v_depth` with
-`I = ∫ e dt`. The derivative opposes positive-down rate. A positive
-depth error still produces negative heave. Surge and every torque stay
-0. `S` is advanced with `IntegrateBackCalculation`. The integrator
-input is `-k_i * e` and `k_aw` is 0.2.
+The derivative opposes positive-down rate. A positive depth error
+produces negative heave. Surge and every torque stay 0. `I` is
+advanced with `IntegrateBackCalculation`. The integrator input is `e`.
+`k_aw` is 0.2. The helper gain is `-k_aw/k_i` because the command
+subtracts `k_i*I`.
 
-A rejected call leaves `S` unchanged and returns finite zeros. That
+A rejected call leaves `I` unchanged and returns finite zeros. That
 zero wrench is not a command. `ValidateControlInputs` runs first. A
 missing pose is `kMissingObjective`. A non-ENU world frame is
 `kInvalid`. Non-finite depth, rate, or heave is `kInvalidArgument`.
@@ -572,10 +573,8 @@ A snapshot mismatch is `kStale`.
 checks the heave sign, the derivative, anti-windup against pure
 integration, the integrator clamp, rejected inputs, and the 2 m
 step on a point-mass heave plant (`m = 60` kg, `b = 3` N·s/m,
-`dt = 0.1` s, semi-implicit Euler). The approved fixture bounds are
-overshoot at most 15% of the step and settling within 30 s into
-±0.05 m. With these gains that plant overshoots by about 83% and
-settles in about 91 s. The test asserts the 15% and 30 s bounds.
+`dt = 0.1` s, semi-implicit Euler). The fixture bounds are overshoot
+at most 15% of the step and settling within 30 s into ±0.05 m.
 
 ## Thruster effectiveness matrix
 
@@ -715,5 +714,5 @@ onto unsaturated thrusters, mass-matrix acceleration, body-state time
 integration, guidance laws, heading and surge control, trajectory
 sampling, Gazebo plugins, and ICON feature wiring are later issues.
 The guidance interface above is not a guidance law. The scalar
-integrator in `control` clamps the integral force owned by the depth
-controller. It does not integrate a body state.
+integrator in `control` clamps the integrated depth error owned by
+the depth controller. It does not integrate a body state.
