@@ -1,0 +1,74 @@
+// Copyright 2026 Intrinsic Innovation LLC
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     https://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
+syntax = "proto3";
+
+package intrinsic_proto.safety;
+
+option go_package = "intrinsic/safety/proto/authority_mode_go_proto";
+
+// Authority a safety layer holds over actuation.
+//
+// Numbers are locked. Unknown numbers are kept on the wire and are never
+// rewritten. Host classifiers map them to "unknown", which is never a live
+// mode and never a successful transition target. See README.md.
+enum AuthorityMode {
+  // Invalid. Not a live mode.
+  AUTHORITY_MODE_UNSPECIFIED = 0;
+
+  // Observe only. Non-authoritative. The mode after a restart.
+  AUTHORITY_MODE_SHADOW = 1;
+
+  // May recommend. Still no unconstrained actuation.
+  AUTHORITY_MODE_RECOMMEND = 2;
+
+  // Limited authority. Filtered intents only.
+  AUTHORITY_MODE_CONSTRAINED = 3;
+
+  // Authority withdrawn.
+  AUTHORITY_MODE_REVOKED = 4;
+
+  // Marine fail-closed. Surface or abort posture.
+  AUTHORITY_MODE_EMERGENCY = 5;
+}
+
+// Event that may move an `AuthorityMode` to another mode.
+//
+// Numbers are locked. Unknown numbers are kept on the wire and fail closed:
+// they never cause a transition. See README.md.
+enum AuthorityEvent {
+  // Invalid.
+  AUTHORITY_EVENT_UNSPECIFIED = 0;
+
+  // Operator arms recommend from shadow.
+  AUTHORITY_EVENT_ARM_RECOMMEND = 1;
+
+  // Operator enables constrained from recommend.
+  AUTHORITY_EVENT_ENABLE_CONSTRAINED = 2;
+
+  // Operator or policy revokes authority.
+  AUTHORITY_EVENT_REVOKE = 3;
+
+  // Critical condition, lost lock, or operator emergency.
+  AUTHORITY_EVENT_ENTER_EMERGENCY = 4;
+
+  // Operator clears emergency after the vehicle is safe.
+  AUTHORITY_EVENT_CLEAR_EMERGENCY = 5;
+
+  // Explicit reset to non-authoritative shadow.
+  AUTHORITY_EVENT_RESET_TO_SHADOW = 6;
+
+  // Health or fault path that is not an emergency.
+  AUTHORITY_EVENT_FAULT = 7;
+}

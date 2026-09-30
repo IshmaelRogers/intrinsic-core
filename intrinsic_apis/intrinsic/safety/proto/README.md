@@ -1,4 +1,4 @@
-# Safety decision contract
+# Safety decision and authority mode contracts
 
 Opt-in non-real-time protobuf contract for the committed output of a safety
 filter: one `SafetyDecision` with zero or more `SafetyFinding` entries. It is
@@ -6,8 +6,9 @@ the first leaf of the Phase 3 safety representation in
 [ADR 0001](../../../../docs/adr/0001-multi-embodiment-capability-architecture.md).
 
 This package records what a filter decided. It does not evaluate any safety
-rule, does not define an authority or mode state machine, and does not call
-ICON, a HAL, Gazebo, or perception. It is not the ICON `safety_status`
+rule and does not call ICON, a HAL, Gazebo, or perception. The second leaf adds
+the authority mode enums and a pure transition table, described in
+[Authority modes](#authority-modes). It is not the ICON `safety_status`
 message: ICON industrial safety stays separate and is not touched here.
 
 Manipulator joint, Cartesian, kinematics, motion-planning, World, and Gazebo
@@ -152,12 +153,108 @@ well formed, not that any motion is allowed. No rule is evaluated here.
 
 ## Out of scope
 
-- Authority, shadow, recommend, constrained, revoked, and emergency modes,
-  and their transition table.
 - Concrete safety rules and filters.
 - ICON `safety_status`, HAL, actuators, Gazebo, perception, and World
   entities.
 - Embedding World component payloads or a full `WorldSnapshotDescriptor`.
+
+## Authority modes
+
+`authority_mode.proto` defines two enums and no message. The transition table
+lives in `intrinsic/safety/authority_transition_policy.{h,py}` and works on
+plain values. It does not parse protobuf, evaluate any `SafetyRule`, call
+`AssessSafetyDecision`, call ICON or a HAL, or read or write World. It is not
+ICON industrial `safety_status` or `ModeOfSafeOperation`.
+
+### `AuthorityMode` (numbers are locked)
+
+| Value | Number | Meaning |
+| --- | --- | --- |
+| `AUTHORITY_MODE_UNSPECIFIED` | 0 | Invalid. Not a live mode. |
+| `AUTHORITY_MODE_SHADOW` | 1 | Observe only. Non-authoritative. The restart default. |
+| `AUTHORITY_MODE_RECOMMEND` | 2 | May recommend. Still no unconstrained actuation. |
+| `AUTHORITY_MODE_CONSTRAINED` | 3 | Limited authority. Filtered intents only. |
+| `AUTHORITY_MODE_REVOKED` | 4 | Authority withdrawn. |
+| `AUTHORITY_MODE_EMERGENCY` | 5 | Marine fail-closed. Surface or abort posture. |
+
+### `AuthorityEvent` (numbers are locked)
+
+| Value | Number | Meaning |
+| --- | --- | --- |
+| `AUTHORITY_EVENT_UNSPECIFIED` | 0 | Invalid. |
+| `AUTHORITY_EVENT_ARM_RECOMMEND` | 1 | Operator arms recommend from shadow. |
+| `AUTHORITY_EVENT_ENABLE_CONSTRAINED` | 2 | Operator enables constrained from recommend. |
+| `AUTHORITY_EVENT_REVOKE` | 3 | Operator or policy revokes authority. |
+| `AUTHORITY_EVENT_ENTER_EMERGENCY` | 4 | Critical condition, lost lock, or operator emergency. |
+| `AUTHORITY_EVENT_CLEAR_EMERGENCY` | 5 | Operator clears emergency after the vehicle is safe. |
+| `AUTHORITY_EVENT_RESET_TO_SHADOW` | 6 | Explicit reset to non-authoritative shadow. |
+| `AUTHORITY_EVENT_FAULT` | 7 | Health or fault path that is not an emergency. |
+
+Unknown mode numbers classify as `kUnknown` (`UNKNOWN` in Python) and are
+never rewritten. An unknown mode is never a successful transition target.
+Unknown event numbers fail closed and never cause a transition.
+
+### Restart
+
+`InitialAuthorityMode()` (`initial_authority_mode()`) is `SHADOW`. A cold start
+never resumes an authoritative mode.
+
+### Transition table (locked)
+
+Each cell is the next mode. `x` means forbidden. Every pair not listed as a
+target fails closed.
+
+| From \ Event | ARM_RECOMMEND | ENABLE_CONSTRAINED | REVOKE | ENTER_EMERGENCY | CLEAR_EMERGENCY | RESET_TO_SHADOW | FAULT |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| **SHADOW** | RECOMMEND | x | x | EMERGENCY | x | x | REVOKED |
+| **RECOMMEND** | x | CONSTRAINED | REVOKED | EMERGENCY | x | SHADOW | REVOKED |
+| **CONSTRAINED** | x | x | REVOKED | EMERGENCY | x | SHADOW | REVOKED |
+| **REVOKED** | x | x | x | EMERGENCY | x | SHADOW | x |
+| **EMERGENCY** | x | x | x | x | REVOKED | x | x |
+| **UNSPECIFIED / unknown** | x | x | x | x | x | x | x |
+
+- There are 35 live cells: 15 allowed and 20 forbidden.
+- Emergency clears only to `REVOKED`, never straight to `RECOMMEND` or
+  `CONSTRAINED`.
+- `REVOKED` returns to authority only through `RESET_TO_SHADOW`, then re-arm.
+- `RESET_TO_SHADOW` from `SHADOW` is forbidden. It is not a successful no-op.
+
+### Fail closed
+
+`ApplyAuthorityTransition(current, event)` returns
+`{ok, next_mode, error}`. It never reports a silent no-op success.
+
+| Case | `ok` | `next_mode` | `error` |
+| --- | --- | --- | --- |
+| Allowed cell | true | the table target | `kNone` |
+| `current` is UNSPECIFIED or unknown | false | `UNSPECIFIED` | `kInvalidMode` |
+| `event` is UNSPECIFIED or unknown | false | `current` | `kInvalidEvent` |
+| Live pair not in the table | false | `current` | `kForbidden` |
+
+`kInvalidMode` is checked before `kInvalidEvent`.
+
+### Decision kinds allowed under a mode
+
+`DecisionAllowedUnderAuthority(mode, kind)`
+(`decision_allowed_under_authority`) is a pure table of which committed
+`SafetyDecisionKind` values may be emitted under a mode. No rule is evaluated.
+An unspecified or unknown mode or kind returns false.
+
+| Mode | ACCEPT | PROJECT | REJECT | ABORT | SURFACE |
+| --- | --- | --- | --- | --- | --- |
+| SHADOW | no | no | yes | yes | no |
+| RECOMMEND | no | no | yes | yes | no |
+| CONSTRAINED | yes | yes | yes | yes | yes |
+| REVOKED | no | no | yes | yes | yes |
+| EMERGENCY | no | no | yes | yes | yes |
+
+### Wrappers
+
+`authority_transition_assessor.{h,cc,py}` map the wire enums onto the policy.
+`AssessAuthorityTransition` and `AssessDecisionKindUnderAuthority` (C++) and
+`assess_authority_transition` and `assess_decision_kind_under_authority`
+(Python) pass unknown numbers through as raw ints, so they fail closed and are
+not rewritten.
 
 ## Evolution
 
@@ -177,6 +274,17 @@ Text format examples:
 - [`examples/abort.textproto`](examples/abort.textproto)
 - [`examples/surface.textproto`](examples/surface.textproto)
 
+Authority mode examples. The Python assessor test checks each file against the
+policy:
+
+- [`examples/authority_transition_table.csv`](examples/authority_transition_table.csv):
+  all 35 live from-mode and event cells.
+- [`examples/authority_decision_matrix.csv`](examples/authority_decision_matrix.csv):
+  all 25 mode and decision kind cells.
+- [`examples/authority_recovery_path.txt`](examples/authority_recovery_path.txt):
+  `EMERGENCY` to `CONSTRAINED` through `CLEAR_EMERGENCY`, `RESET_TO_SHADOW`,
+  `ARM_RECOMMEND`, and `ENABLE_CONSTRAINED`.
+
 ## Targets
 
 These targets are separate from the protected manipulator baseline:
@@ -185,6 +293,10 @@ These targets are separate from the protected manipulator baseline:
 - `@intrinsic_apis//intrinsic/safety/proto:safety_decision_cc_proto`
 - `@intrinsic_apis//intrinsic/safety/proto:safety_decision_py_pb2`
 - `@intrinsic_apis//intrinsic/safety/proto:safety_decision_go_proto`
+- `@intrinsic_apis//intrinsic/safety/proto:authority_mode_proto`
+- `@intrinsic_apis//intrinsic/safety/proto:authority_mode_cc_proto`
+- `@intrinsic_apis//intrinsic/safety/proto:authority_mode_py_pb2`
+- `@intrinsic_apis//intrinsic/safety/proto:authority_mode_go_proto`
 - `@intrinsic_apis//intrinsic/safety/proto:examples`
 - `//intrinsic/safety:safety_decision_policy`
 - `//intrinsic/safety:safety_decision_policy_py`
@@ -196,3 +308,11 @@ These targets are separate from the protected manipulator baseline:
 - `//intrinsic/safety:safety_decision_assessor_test_py`
 - `//intrinsic/safety:safety_decision_serialization_test`
 - `//intrinsic/safety:safety_decision_serialization_test_py`
+- `//intrinsic/safety:authority_transition_policy`
+- `//intrinsic/safety:authority_transition_policy_py`
+- `//intrinsic/safety:authority_transition_assessor`
+- `//intrinsic/safety:authority_transition_assessor_py`
+- `//intrinsic/safety:authority_transition_policy_test`
+- `//intrinsic/safety:authority_transition_policy_test_py`
+- `//intrinsic/safety:authority_transition_assessor_test`
+- `//intrinsic/safety:authority_transition_assessor_test_py`

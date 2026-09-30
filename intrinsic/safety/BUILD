@@ -15,7 +15,7 @@
 load("//bazel:cc_macros.bzl", "cc_library", "cc_test")
 load("//bazel:python.bzl", "py_library", "py_test")
 
-# Opt-in safety decision helpers. Not part of the protected manipulator
+# Opt-in safety decision and authority transition helpers. Not part of the protected manipulator
 # baseline. Do not add these labels to
 # .github/baseline/manipulator_targets.tsv.
 
@@ -147,5 +147,87 @@ py_test(
         "@intrinsic_apis//intrinsic/embodiment/proto:stamped_header_py_pb2",
         "@intrinsic_apis//intrinsic/safety/proto:safety_decision_py_pb2",
         "@intrinsic_apis//intrinsic/vehicle/proto:vehicle_command_py_pb2",
+    ],
+)
+
+cc_library(
+    name = "authority_transition_policy",
+    hdrs = ["authority_transition_policy.h"],
+    deps = [":safety_decision_policy"],
+)
+
+cc_library(
+    name = "authority_transition_assessor",
+    srcs = ["authority_transition_assessor.cc"],
+    hdrs = ["authority_transition_assessor.h"],
+    deps = [
+        ":authority_transition_policy",
+        ":safety_decision_policy",
+        "@intrinsic_apis//intrinsic/safety/proto:authority_mode_cc_proto",
+        "@intrinsic_apis//intrinsic/safety/proto:safety_decision_cc_proto",
+    ],
+)
+
+cc_test(
+    name = "authority_transition_policy_test",
+    size = "small",
+    srcs = ["authority_transition_policy_test.cc"],
+    deps = [
+        ":authority_transition_policy",
+        ":safety_decision_policy",
+        "@com_google_googletest//:gtest_main",
+    ],
+)
+
+cc_test(
+    name = "authority_transition_assessor_test",
+    size = "small",
+    srcs = ["authority_transition_assessor_test.cc"],
+    deps = [
+        ":authority_transition_assessor",
+        ":authority_transition_policy",
+        "@com_google_googletest//:gtest_main",
+        "@intrinsic_apis//intrinsic/safety/proto:authority_mode_cc_proto",
+        "@intrinsic_apis//intrinsic/safety/proto:safety_decision_cc_proto",
+    ],
+)
+
+py_library(
+    name = "authority_transition_policy_py",
+    srcs = ["authority_transition_policy.py"],
+    deps = [":safety_decision_policy_py"],
+)
+
+py_library(
+    name = "authority_transition_assessor_py",
+    srcs = ["authority_transition_assessor.py"],
+    deps = [
+        ":authority_transition_policy_py",
+        ":safety_decision_policy_py",
+    ],
+)
+
+py_test(
+    name = "authority_transition_policy_test_py",
+    size = "small",
+    srcs = ["authority_transition_policy_test.py"],
+    main = "authority_transition_policy_test.py",
+    deps = [
+        ":authority_transition_policy_py",
+        ":safety_decision_policy_py",
+    ],
+)
+
+py_test(
+    name = "authority_transition_assessor_test_py",
+    size = "small",
+    srcs = ["authority_transition_assessor_test.py"],
+    data = ["@intrinsic_apis//intrinsic/safety/proto:examples"],
+    main = "authority_transition_assessor_test.py",
+    deps = [
+        ":authority_transition_assessor_py",
+        ":authority_transition_policy_py",
+        "@intrinsic_apis//intrinsic/safety/proto:authority_mode_py_pb2",
+        "@intrinsic_apis//intrinsic/safety/proto:safety_decision_py_pb2",
     ],
 )

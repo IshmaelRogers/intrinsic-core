@@ -17,10 +17,31 @@ load("@com_google_protobuf//bazel:proto_library.bzl", "proto_library")
 load("@com_google_protobuf//bazel:py_proto_library.bzl", "py_proto_library")
 load("@io_bazel_rules_go//proto:def.bzl", "go_proto_library")
 
-# Opt-in safety decision contract. Not part of the protected manipulator
-# baseline.
+# Opt-in safety decision and authority mode contracts. Not part of the
+# protected manipulator baseline.
 
 package(default_visibility = ["//visibility:public"])
+
+proto_library(
+    name = "authority_mode_proto",
+    srcs = ["authority_mode.proto"],
+)
+
+cc_proto_library(
+    name = "authority_mode_cc_proto",
+    deps = [":authority_mode_proto"],
+)
+
+py_proto_library(
+    name = "authority_mode_py_pb2",
+    deps = [":authority_mode_proto"],
+)
+
+go_proto_library(
+    name = "authority_mode_go_proto",
+    importpath = "intrinsic/safety/proto/authority_mode_go_proto",
+    protos = [":authority_mode_proto"],
+)
 
 proto_library(
     name = "safety_decision_proto",
@@ -56,6 +77,9 @@ filegroup(
     srcs = [
         "examples/abort.textproto",
         "examples/accept.textproto",
+        "examples/authority_decision_matrix.csv",
+        "examples/authority_recovery_path.txt",
+        "examples/authority_transition_table.csv",
         "examples/project.textproto",
         "examples/reject.textproto",
         "examples/surface.textproto",
