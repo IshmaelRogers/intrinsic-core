@@ -3,7 +3,7 @@
 Opt-in persistent estimation service contract (#29, ADR 0001 Phase 3).
 `EstimatorService` publishes the authoritative #17
 `intrinsic_proto.vehicle.VehicleState`. This package adds no state message, no filter
-equations (#81 adds ESKF layout only, see `ESKF_LAYOUT.md`; #82 adds nominal propagation only, see `ESKF_PROPAGATE.md`; #83 adds covariance propagation only, see `ESKF_COV_PROPAGATE.md`), no ICON wiring,
+equations (#81 adds ESKF layout only, see `ESKF_LAYOUT.md`; #82 adds nominal propagation only, see `ESKF_PROPAGATE.md`; #83 adds covariance propagation only, see `ESKF_COV_PROPAGATE.md`; #84 adds a reusable innovation gate only, see `INNOVATION_GATE.md`), no ICON wiring,
 and no safety authority (#31 and #32). Manipulator contracts are unchanged, and these targets
 are not listed in `.github/baseline/manipulator_targets.tsv`.
 
@@ -21,6 +21,9 @@ are not listed in `.github/baseline/manipulator_targets.tsv`.
 | `eskf_propagate_test.{cc,py}` | Paired propagation tests: stationary, constant rate, rejects, determinism. |
 | `eskf_cov_propagate.{h,cc,py}` | `PropagateCovariance`: `Phi = I + F dt`, `Qd`, symmetrized `P` (#83). See `ESKF_COV_PROPAGATE.md`. |
 | `eskf_cov_propagate_test.{cc,py}` | Paired tests: zero noise, hover, symmetry, PSD floor, rejects, golden. |
+| `innovation_gate.{h,cc,py}` | `GateInnovation`: `S = H P Hᵀ + R`, Cholesky `d²`, accept iff `d² <= chi2` (#84). See `INNOVATION_GATE.md`. |
+| `innovation_gate_test.{cc,py}` | Paired tests: boundary, reject, singular, typed errors, golden. |
+| `INNOVATION_GATE.md` | Locked numerics, statuses, diagnostics, fixtures. |
 | `ESKF_COV_PROPAGATE.md` | Locked `F` blocks, `Qd`, statuses, fixtures. |
 | `ESKF_PROPAGATE.md` | Locked discretization order, statuses, helpers, fixtures. |
 | `ESKF_LAYOUT.md` | Index tables, defaults, and the #17 `VehicleState` mapping. |
