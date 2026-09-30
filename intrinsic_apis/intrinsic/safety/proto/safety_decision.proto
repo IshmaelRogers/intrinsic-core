@@ -1,0 +1,111 @@
+// Copyright 2026 Intrinsic Innovation LLC
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     https://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
+syntax = "proto3";
+
+package intrinsic_proto.safety;
+
+import "intrinsic/embodiment/proto/stamped_header.proto";
+import "intrinsic/vehicle/proto/vehicle_command.proto";
+
+option go_package = "intrinsic/safety/proto/safety_decision_go_proto";
+
+// Outcome a safety filter committed for one evaluated intent.
+//
+// Numbers are locked. Unknown numbers are kept on the wire and are never
+// rewritten to REJECT or ABORT. Host classifiers map them to "unknown",
+// which is not accepted for actuation. See README.md.
+enum SafetyDecisionKind {
+  // Not used on a committed decision.
+  SAFETY_DECISION_KIND_UNSPECIFIED = 0;
+
+  // Pass the original intent through unchanged. `applied_intent` is absent.
+  SAFETY_DECISION_KIND_ACCEPT = 1;
+
+  // Replace the intent with `applied_intent`.
+  SAFETY_DECISION_KIND_PROJECT = 2;
+
+  // Refuse the intent. No applied motion.
+  SAFETY_DECISION_KIND_REJECT = 3;
+
+  // Hard stop. Abandon the active intent.
+  SAFETY_DECISION_KIND_ABORT = 4;
+
+  // Marine fail-closed: command a surface or safe-ascent intent carried in
+  // `applied_intent`.
+  SAFETY_DECISION_KIND_SURFACE = 5;
+}
+
+// Severity of one finding. Numbers are locked. Unknown numbers are kept on
+// the wire and classified as unknown by host checks. They are not rewritten.
+enum SafetyFindingSeverity {
+  SAFETY_FINDING_SEVERITY_UNSPECIFIED = 0;
+  SAFETY_FINDING_SEVERITY_INFO = 1;
+  SAFETY_FINDING_SEVERITY_WARNING = 2;
+  SAFETY_FINDING_SEVERITY_ERROR = 3;
+  SAFETY_FINDING_SEVERITY_CRITICAL = 4;
+}
+
+// One observation recorded by a safety rule. This message identifies the rule
+// and carries text. It does not evaluate or define any rule.
+//
+// Tags are append-only.
+message SafetyFinding {
+  // Stable rule identifier. Must be non-empty when the finding is present
+  // in a decision that is validated.
+  string rule_id = 1;
+
+  SafetyFindingSeverity severity = 2;
+
+  // Human-readable. May be empty.
+  string summary = 3;
+
+  // Optional longer text.
+  optional string detail = 4;
+}
+
+// Committed output of a safety filter for one evaluated DesiredMotion.
+//
+// A default message serializes to zero bytes and is not an engaged decision.
+// This message is not an actuator command and not an ICON safety status.
+// Authority and mode transitions are out of scope. See README.md.
+//
+// Tags are append-only. Next tag: 8
+message SafetyDecision {
+  // Decision time and source. Required when the decision is engaged.
+  intrinsic_proto.embodiment.StampedHeader header = 1;
+
+  SafetyDecisionKind kind = 2;
+
+  // Lowercase hex SHA-256 (64 characters) of the canonical serialization of
+  // the original DesiredMotion the filter evaluated. Required when engaged.
+  string original_intent_digest = 3;
+
+  // Present when kind is PROJECT or SURFACE. Absent when kind is ACCEPT,
+  // REJECT, or ABORT: ACCEPT means the original is unchanged, so no copy is
+  // echoed. When present it must pass the DesiredMotion host assessment.
+  intrinsic_proto.vehicle.DesiredMotion applied_intent = 4;
+
+  // The snapshot_id of the WorldSnapshotDescriptor the filter read: 64
+  // lowercase hex characters. Required when engaged. The descriptor is not
+  // embedded.
+  string snapshot_id = 5;
+
+  // Zero or more findings in producer order. A repeated rule_id is allowed
+  // and is not rewritten.
+  repeated SafetyFinding findings = 6;
+
+  // Monotonic filter epoch. Unset is observed as 0.
+  optional uint64 decision_epoch = 7;
+}
