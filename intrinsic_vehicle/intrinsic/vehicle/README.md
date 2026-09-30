@@ -17,10 +17,12 @@ thruster effectiveness matrix, solves unconstrained least-squares
 thrust allocation, clamps those commands to per-actuator thrust
 bounds, and applies thruster health to those columns and bounds.
 `guidance` is the DesiredMotion-to-reference step. `control` is the
-reference-to-body-wrench step. Both are soft-real-time interfaces with
-deterministic fakes and no guidance or control law. `control` also
-holds scalar heading wrap, a bounded integrator, and back-calculation.
-Those helpers are not a control law.
+reference-to-body-wrench step. Guidance is a soft-real-time interface
+with deterministic fakes and no guidance law. `control` holds the
+reference depth controller, the neutral-wrench fake, scalar heading
+wrap, a bounded integrator, and back-calculation. The depth controller
+is heave only. The scalar helpers are not a control law. Heading and
+forward speed are not controlled here.
 Marine model parameter schemas and validation are in `parameters`.
 
 Protobuf `VehicleState` and `DesiredMotion` stay in
@@ -38,7 +40,7 @@ commands.
 | `//intrinsic_vehicle/intrinsic/vehicle/dynamics` | Soft-real-time | `VehicleDynamics` interface, zero-force test double, rigid-body mass matrix, added-mass matrix, rigid-body Coriolis matrix, added-mass Coriolis matrix, linear/quadratic damping wrench, gravity/buoyancy restoring wrench, water-current relative velocity, and marine-force composition. Outside ICON. |
 | `//intrinsic_vehicle/intrinsic/vehicle/parameters` | Soft-real-time | Marine model schemas and validation. Not loaded by ICON. |
 | `//intrinsic_vehicle/intrinsic/vehicle/guidance` | Soft-real-time | `GuidanceStep` maps `DesiredMotionRt` to `MotionReferenceRt` with typed status. `EchoGuidance` echoes a pose or twist. `NullGuidance` returns a missing-objective status and an empty reference. Outside ICON. 10 to 50 Hz. Fails closed on a stale snapshot or an expired horizon. |
-| `//intrinsic_vehicle/intrinsic/vehicle/control` | Soft-real-time | `ReferenceController` maps `MotionReferenceRt` and vehicle state to `BodyWrenchRt` with typed status. `ZeroWrenchController` validates inputs and returns a neutral zero body wrench. Scalar helpers wrap a heading error into (-pi, pi], clamp one integrator state, and add back-calculation. Outside ICON. ICON remains the only actuator writer. |
+| `//intrinsic_vehicle/intrinsic/vehicle/control` | Soft-real-time | `ReferenceController` maps `MotionReferenceRt` and vehicle state to `BodyWrenchRt` with typed status. `ZeroWrenchController` validates inputs and returns a neutral zero body wrench. `ReferenceDepthController` maps ENU depth error to a saturated heave force and leaves surge and torque at zero. Scalar helpers wrap a heading error into (-pi, pi], clamp one integrator state, and add back-calculation. Outside ICON. ICON remains the only actuator writer. |
 | `//intrinsic_vehicle/intrinsic/vehicle/testing` | Test-only | Test-only umbrella and the package-graph check. |
 
 Include paths strip the `intrinsic_vehicle` root, the same way the other
@@ -473,17 +475,21 @@ Control: update period; state pose frame, finiteness, and unit
 quaternion; reference update period; present pose; present twist;
 missing pose and twist; snapshot identity. A reference field that is
 not present is not read. Stored numbers with `has_pose` and `has_twist`
-both false are not a pose.
+both false are not a pose. The depth controller then requires a pose
+and a `world_enu` frame on the state and on that pose. A twist-only
+reference is `kMissingObjective`. A `world_ned` pose is `kInvalid`.
 
 ### Thread safety and ownership
 
 `Evaluate` is const. `EchoGuidance`, `NullGuidance`, and
 `ZeroWrenchController` have no data members. Concurrent `Evaluate` calls
-on one instance do not share mutable state. The functions do not
-allocate, do not retain arguments, and do not take locks. Status text
-is a static string view. `TrajectoryId::view()` is valid only while that
-object is alive. The caller owns the intent, the state, the reference,
-and the result.
+on one of those instances do not share mutable state.
+`ReferenceDepthController` owns its integral force in a mutable member.
+Concurrent `Evaluate` or `Reset` calls on that instance are not safe.
+The functions do not allocate, do not retain arguments, and do not take
+locks. Status text is a static string view. `TrajectoryId::view()` is
+valid only while that object is alive. The caller owns the intent, the
+state, the reference, and the result.
 
 ### Dependencies
 
@@ -529,6 +535,46 @@ or a closed-loop plant.
 `//intrinsic_vehicle/intrinsic/vehicle/control:control_math_test`
 checks the pi boundaries, saturation entry and exit, a zero time step,
 non-finite rejection, and integrator recovery after back-calculation.
+
+### Reference depth controller
+
+`ReferenceDepthController` maps one ENU depth objective to body heave.
+Depth is positive down: `depth_m = -z_world`. Heave is wrench index 2,
+newtons, +z up. The measured depth rate is the ENU up component of the
+body linear twist, negated. The state orientation is the
+body-to-navigation map. This package does not convert NED and does not
+depend on `dynamics`.
+
+Contract revision 1 sets `k_p = 20` N/m, `k_i = 0.2` N/(m·s), and
+`k_d = 45` N/(m/s). Heave is clamped to [-50, 50] N. The controller
+owns the integral force `S` in newtons, clamped to [-40, 40].
+`Reset()` sets `S` to 0.
+
+```
+e = depth_cmd_m - depth_meas_m
+v_depth = -v_z_world
+u_unsat = -k_p * e + S + k_d * v_depth
+```
+
+Away from the clamp and from saturation, `S = -k_i * ∫ e dt`, so the
+command is `-k_p * e - k_i * I + k_d * v_depth`. The derivative
+opposes positive-down rate. A positive depth error produces negative
+heave. Surge and every torque stay 0. `S` is advanced with
+`IntegrateBackCalculation`. The integrator input is `-k_i * e` and
+`k_aw` is 0.2.
+
+A rejected call leaves `S` unchanged and returns finite zeros. That
+zero wrench is not a command. `ValidateControlInputs` runs first. A
+missing pose is `kMissingObjective`. A non-ENU world frame is
+`kInvalid`. Non-finite depth, rate, or heave is `kInvalidArgument`.
+A snapshot mismatch is `kStale`.
+
+`//intrinsic_vehicle/intrinsic/vehicle/control:reference_depth_controller_test`
+checks the heave sign, the derivative, anti-windup against pure
+integration, the integrator clamp, rejected inputs, and the 2 m
+step on a point-mass heave plant (`m = 60` kg, `b = 3` N·s/m,
+`dt = 0.1` s, semi-implicit Euler). The fixture bounds are overshoot
+at most 15% of the step and settling within 30 s into ±0.05 m.
 
 ## Thruster effectiveness matrix
 
@@ -665,8 +711,8 @@ a single-failure residual, determinism, and rejected inputs.
 
 Slew limiting, efficiency scaling, redistributing a saturated wrench
 onto unsaturated thrusters, mass-matrix acceleration, body-state time
-integration, guidance laws, control laws, gains, trajectory sampling,
-Gazebo plugins, and ICON feature wiring are later issues. The guidance
-and control interfaces above are not those laws. The scalar integrator
-in `control` clamps one caller-owned state. It does not integrate a
-body state.
+integration, guidance laws, heading and surge control, trajectory
+sampling, Gazebo plugins, and ICON feature wiring are later issues.
+The guidance interface above is not a guidance law. The scalar
+integrator in `control` clamps the integral force owned by the depth
+controller. It does not integrate a body state.
