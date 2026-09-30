@@ -6,8 +6,8 @@ The message is `MeasurementHealth` in
 package. Common stamped provenance stays on embodiment `StampedHeader`.
 Covariance and source health stay on the vehicle messages from #17.
 `DvlMeasurement`, `PressureDepthMeasurement`, `AltimeterMeasurement`,
-`ImuMeasurement`, and `InsSolution` embed this envelope. Each is specified
-below.
+`ImuMeasurement`, `InsSolution`, and `SurfaceFix` embed this envelope. Each
+is specified below.
 
 This package does not add a robot-type enum, a platform-wide embodiment
 switch, ICON feature interfaces, FlatBuffers, Gazebo plugins, filters, or
@@ -68,7 +68,8 @@ the header stamp.
 
 The DVL payload below is the first sensor message on this envelope.
 Pressure and depth follow it. Altimeter range follows them. IMU and INS
-follow the altimeter as separate messages. There is no filter between
+follow the altimeter as separate messages. `SurfaceFix` is a lighter
+position fix and is not an INS solution. There is no filter between
 them, and this leaf does not apply a submerged-acceptance policy. Other
 sensor payloads are later contracts. This envelope records the status those
 producers already decided:
@@ -970,3 +971,157 @@ These targets stay off `.github/baseline/manipulator_targets.tsv`:
 - `//intrinsic_hardware/intrinsic/hardware/marine:ins_serialization_test_py`
 - `//intrinsic_hardware/intrinsic/hardware/marine:fake_ins_test`
 - `//intrinsic_hardware/intrinsic/hardware/marine:fake_ins_test_py`
+
+## Surface fix
+
+`SurfaceFix` is one GNSS, acoustic, or other surface position fix. It embeds
+`MeasurementHealth` as `health`. Position and velocity are in
+`health.header.frame_id`. The frame is never inferred from `SurfaceFix`. The
+host does not convert lat/lon, WGS84, ENU, or NED, and it does not decide
+whether the vehicle is submerged. This message is not `InsSolution`: it has
+no orientation and no angular velocity, and it does not reuse or extend the
+INS message.
+
+Host checks live in `surface_fix_policy.h` and `surface_fix_policy.py`. They
+do not parse protobuf, do not convert frames or geodetic coordinates, do not
+read INS solutions, and do not rewrite `health.state` or embodiment
+Validity. `FakeSurfaceFix` is a deterministic producer. There is no
+estimator, ICON FlatBuffer, Gazebo plugin, or real-hardware path.
+
+| Message | Role |
+| --- | --- |
+| `SurfaceFix` | One position fix, source, and optional counts, accuracy, and velocity plus health. |
+| `SurfaceFix.FixSource` | Measurement-local source: `FIX_SOURCE_UNSPECIFIED=0`, `FIX_SOURCE_GNSS=1`, `FIX_SOURCE_ACOUSTIC=2`, `FIX_SOURCE_OTHER=3`. |
+
+### Position, quality, and optional fields
+
+An engaged sample requires a finite position triple (`position_x_m`,
+`position_y_m`, `position_z_m`, meters). Each component is an optional
+double, so zero and negative positions are supplied values.
+
+`health.quality` in `[0, 1]` is the fix quality. There is no second quality
+field.
+
+`satellite_count` and `beacon_count` are optional `int32`. Unset is absent.
+A present value must be `>= 0`, and zero is a supplied count.
+
+`horizontal_accuracy_m` and `vertical_accuracy_m` are optional doubles.
+Unset is absent. A present value must be finite and `>= 0`. Zero is
+supplied.
+
+`velocity_x_m_s`, `velocity_y_m_s`, and `velocity_z_m_s` are an optional
+linear velocity triple. If any component is present, all three must be
+present and finite.
+
+### Source
+
+`source` is `optional`. Unset is absent and is not `FIX_SOURCE_UNSPECIFIED`.
+An engaged sample needs a set, known source.
+
+| Wire | Host classification |
+| --- | --- |
+| Field unset | Absent. Rejected when the sample is engaged. |
+| `FIX_SOURCE_UNSPECIFIED` (`0`) | Explicit non-source. Rejected when the sample is engaged. Not rewritten. |
+| `FIX_SOURCE_GNSS` (`1`) | Known GNSS fix. |
+| `FIX_SOURCE_ACOUSTIC` (`2`) | Known acoustic positioning fix. |
+| `FIX_SOURCE_OTHER` (`3`) | Known other source. |
+| Any other number | Kept on the wire. Not accepted. Not rewritten. |
+
+A producer `VALID` sample with a missing source is rejected by the host and
+its `health.state` stays `VALID`.
+
+### Covariance
+
+Covariance is `health.covariance` (`Matrix6`). #17 shape, symmetry, and
+finiteness rules apply. When the matrix is present and well formed, only
+these diagonal indices may be non-zero. Every other entry must be exactly
+`0.0`:
+
+| Slot | Row-major index | Unit |
+| --- | --- | --- |
+| px variance | 0 | m² |
+| py variance | 7 | m² |
+| pz variance | 14 | m² |
+
+Unset covariance is unknown. Thirty-six zeros are a specified zero matrix.
+
+### Check order
+
+The first defect wins:
+
+1. Health missing on an engaged sample.
+2. Empty frame id.
+3. Frame id different from a caller-supplied expected id.
+4. Receive time strictly before source time, when both timestamps are present.
+5. Non-finite quality, when quality is present.
+6. Quality outside `[0, 1]`, when quality is present.
+7. Covariance shape, when covariance is present.
+8. Empty `source_id` on a present source entry.
+9. A covariance entry other than indices 0, 7, and 14 is not exactly zero, when covariance is present and well formed.
+10. Position triple incomplete.
+11. A position component is non-finite.
+12. `source` absent, `FIX_SOURCE_UNSPECIFIED`, or an unknown number.
+13. A present accuracy is non-finite (horizontal, then vertical), or negative.
+14. `satellite_count` or `beacon_count` is present and negative.
+15. Velocity triple partial (one or two components).
+16. A present velocity component is non-finite.
+
+An unengaged message is not a sample. `accepted` requires health state
+`VALID` and no structural defect. Absent optional fields are not defects.
+`DEGRADED` and `INVALID` are not rewritten. Header Validity does not select
+`accepted`.
+
+### Fake
+
+`FakeSurfaceFix` is a pure function of its config and truth. The same seed,
+bias, delay, dropout, and invalid-fix flags produce the same bytes. `seed`
+is written to `health.header.sequence`. The fake does not read `FakeIns`
+outputs and does not gate on submersion.
+
+Default config and truth are the nominal GNSS fixture: sequence 42, frame
+`gnss`, source time `1700000000.250000000`, delay `1s` plus `-250000000` ns
+so receive time is `1700000001.0`, position `(12.5, -3.25, 1.0)` m, source
+`FIX_SOURCE_GNSS`, `satellite_count` 12, quality `0.75`, and a specified
+covariance with diagonals `1`, `4`, and `0.25` at indices 0, 7, and 14.
+Header validity stays `STATE_VALID`. `source_id` is `nav_sensor`. The clock
+domain is monotonic. Sources are `primary` (valid) and `aiding` (unset
+validity).
+
+| Fault | What the fake emits |
+| --- | --- |
+| Dropout | No message. Checked first. Absent, not an error. |
+| Delay | `receive_time = source_time + delay`. A reversal is emitted and not repaired. |
+| Bias | Added to each position component. Any non-zero component sets `DEGRADED`, unless an invalid fix applies. The result is not repaired. |
+| Invalid fix | Canonical fixture: `source` is set to `FIX_SOURCE_UNSPECIFIED` and health state is `INVALID`. Bias is not applied. Delay is still applied. The host rejects it with a source defect and leaves the state `INVALID`. |
+
+### Evolution
+
+Append fields. Reserve removed tags and names. Preserve unknown fields.
+Golden bytes for the nominal GNSS fix are fixed in the C++ and Python
+serialization tests. Those bytes were captured from a local run of
+`FakeSurfaceFix` and are identical in both languages. Clearing
+`satellite_count` leaves a prefix of that golden. An unknown source number
+is preserved and is not accepted. Field 100 is preserved.
+
+Text format examples:
+[`examples/surface_fix_gnss.textproto`](examples/surface_fix_gnss.textproto)
+and
+[`examples/surface_fix_acoustic.textproto`](examples/surface_fix_acoustic.textproto).
+
+### Surface fix targets
+
+These targets stay off `.github/baseline/manipulator_targets.tsv`:
+
+- `//intrinsic_hardware/intrinsic/hardware/marine:surface_fix_proto`
+- `//intrinsic_hardware/intrinsic/hardware/marine:surface_fix_cc_proto`
+- `//intrinsic_hardware/intrinsic/hardware/marine:surface_fix_py_pb2`
+- `//intrinsic_hardware/intrinsic/hardware/marine:surface_fix_policy`
+- `//intrinsic_hardware/intrinsic/hardware/marine:surface_fix_policy_py`
+- `//intrinsic_hardware/intrinsic/hardware/marine:fake_surface_fix`
+- `//intrinsic_hardware/intrinsic/hardware/marine:fake_surface_fix_py`
+- `//intrinsic_hardware/intrinsic/hardware/marine:surface_fix_policy_test`
+- `//intrinsic_hardware/intrinsic/hardware/marine:surface_fix_policy_test_py`
+- `//intrinsic_hardware/intrinsic/hardware/marine:surface_fix_serialization_test`
+- `//intrinsic_hardware/intrinsic/hardware/marine:surface_fix_serialization_test_py`
+- `//intrinsic_hardware/intrinsic/hardware/marine:fake_surface_fix_test`
+- `//intrinsic_hardware/intrinsic/hardware/marine:fake_surface_fix_test_py`

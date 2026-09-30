@@ -858,6 +858,156 @@ py_test(
     ],
 )
 
+proto_library(
+    name = "surface_fix_proto",
+    srcs = ["surface_fix.proto"],
+    deps = [":measurement_health_proto"],
+)
+
+cc_proto_library(
+    name = "surface_fix_cc_proto",
+    deps = [":surface_fix_proto"],
+)
+
+py_proto_library(
+    name = "surface_fix_py_pb2",
+    deps = [":surface_fix_proto"],
+)
+
+cc_library(
+    name = "surface_fix_policy",
+    hdrs = ["surface_fix_policy.h"],
+    deps = [
+        ":measurement_health_policy",
+        "//intrinsic/vehicle:vehicle_contract_policy",
+    ],
+)
+
+cc_library(
+    name = "fake_surface_fix",
+    srcs = ["fake_surface_fix.cc"],
+    hdrs = ["fake_surface_fix.h"],
+    deps = [
+        ":measurement_health_cc_proto",
+        ":surface_fix_cc_proto",
+        ":surface_fix_policy",
+        "//intrinsic/embodiment:frame_policy",
+        "//intrinsic/vehicle:vehicle_contract_policy",
+        "@intrinsic_apis//intrinsic/embodiment/proto:stamped_header_cc_proto",
+        "@intrinsic_apis//intrinsic/vehicle/proto:vehicle_state_cc_proto",
+    ],
+)
+
+cc_test(
+    name = "surface_fix_policy_test",
+    size = "small",
+    srcs = ["surface_fix_policy_test.cc"],
+    deps = [
+        ":surface_fix_policy",
+        "//intrinsic/embodiment:frame_policy",
+        "//intrinsic/vehicle:vehicle_contract_policy",
+        "@com_google_googletest//:gtest_main",
+    ],
+)
+
+cc_test(
+    name = "surface_fix_serialization_test",
+    size = "small",
+    srcs = ["surface_fix_serialization_test.cc"],
+    data = [":examples"],
+    deps = [
+        ":fake_surface_fix",
+        ":measurement_health_cc_proto",
+        ":surface_fix_cc_proto",
+        ":surface_fix_policy",
+        "//intrinsic/embodiment:frame_policy",
+        "//intrinsic/vehicle:vehicle_contract_policy",
+        "@com_google_googletest//:gtest_main",
+        "@intrinsic_apis//intrinsic/embodiment/proto:stamped_header_cc_proto",
+    ],
+)
+
+cc_test(
+    name = "fake_surface_fix_test",
+    size = "small",
+    srcs = ["fake_surface_fix_test.cc"],
+    deps = [
+        ":fake_surface_fix",
+        ":measurement_health_cc_proto",
+        ":surface_fix_cc_proto",
+        ":surface_fix_policy",
+        "//intrinsic/embodiment:frame_policy",
+        "@com_google_googletest//:gtest_main",
+    ],
+)
+
+py_library(
+    name = "surface_fix_policy_py",
+    srcs = ["surface_fix_policy.py"],
+    deps = [
+        ":measurement_health_policy_py",
+        "//intrinsic/embodiment:frame_policy_py",
+        "//intrinsic/vehicle:vehicle_contract_policy_py",
+    ],
+)
+
+py_library(
+    name = "fake_surface_fix_py",
+    srcs = ["fake_surface_fix.py"],
+    deps = [
+        ":measurement_health_py_pb2",
+        ":surface_fix_policy_py",
+        ":surface_fix_py_pb2",
+        "//intrinsic/embodiment:frame_policy_py",
+        "//intrinsic/vehicle:vehicle_contract_policy_py",
+        "@intrinsic_apis//intrinsic/embodiment/proto:stamped_header_py_pb2",
+    ],
+)
+
+py_test(
+    name = "surface_fix_policy_test_py",
+    size = "small",
+    srcs = ["surface_fix_policy_test.py"],
+    main = "surface_fix_policy_test.py",
+    deps = [
+        ":measurement_health_policy_py",
+        ":surface_fix_policy_py",
+        "//intrinsic/embodiment:frame_policy_py",
+        "//intrinsic/vehicle:vehicle_contract_policy_py",
+    ],
+)
+
+py_test(
+    name = "surface_fix_serialization_test_py",
+    size = "small",
+    srcs = ["surface_fix_serialization_test.py"],
+    data = [":examples"],
+    main = "surface_fix_serialization_test.py",
+    deps = [
+        ":fake_surface_fix_py",
+        ":measurement_health_policy_py",
+        ":measurement_health_py_pb2",
+        ":surface_fix_policy_py",
+        ":surface_fix_py_pb2",
+        "//intrinsic/vehicle:vehicle_contract_policy_py",
+        "@intrinsic_apis//intrinsic/embodiment/proto:stamped_header_py_pb2",
+    ],
+)
+
+py_test(
+    name = "fake_surface_fix_test_py",
+    size = "small",
+    srcs = ["fake_surface_fix_test.py"],
+    main = "fake_surface_fix_test.py",
+    deps = [
+        ":fake_surface_fix_py",
+        ":measurement_health_policy_py",
+        ":measurement_health_py_pb2",
+        ":surface_fix_policy_py",
+        ":surface_fix_py_pb2",
+    ],
+)
+
 filegroup(
     name = "examples",
     srcs = [
@@ -869,5 +1019,7 @@ filegroup(
         "examples/measurement_health.textproto",
         "examples/measurement_health_unknown_covariance.textproto",
         "examples/pressure_depth_from_pressure.textproto",
+        "examples/surface_fix_acoustic.textproto",
+        "examples/surface_fix_gnss.textproto",
     ],
 )
