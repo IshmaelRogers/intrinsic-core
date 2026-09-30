@@ -1,0 +1,59 @@
+// Copyright 2026 Intrinsic Innovation LLC
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     https://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
+syntax = "proto3";
+
+package intrinsic_proto.world;
+
+import "intrinsic/world/proto/marine_component_validity.proto";
+
+option go_package = "intrinsic/world/proto/bathymetry_reference_component_go_proto";
+
+// Referenced bathymetry for one additive World component.
+//
+// The payload is an opaque asset reference. This message does not carry an
+// inline height grid, mesh, or occupancy sample. It does not convert between
+// ENU and NED, and it does not allocate a snapshot id.
+//
+// `frame_id` is exactly `world_enu` or `world_ned`.
+// `world_enu`: +Z up. `world_ned`: +Z down.
+// `vertical_bias_m` is meters along that frame's +Z. A positive value moves
+// the referenced surface toward +Z. Unset means absent, not zero.
+//
+// Host checks live in intrinsic/world/bathymetry_reference_component. See
+// README.md there.
+//
+// An empty message serializes to zero bytes. Callers that never set this
+// message keep the previous World wire image.
+//
+// Next tag: 5
+message BathymetryReferenceComponent {
+  // Required when this component is present for validation. Reuses
+  // MarineComponentValidity. Host code does not fork its unknown or expired
+  // rules.
+  MarineComponentValidity validity = 1;
+
+  // Exactly `world_enu` or `world_ned`. Empty and any other id are rejected.
+  // `world_enu` is +Z up. `world_ned` is +Z down. This message does not
+  // convert between those frames.
+  string frame_id = 2;
+
+  // Opaque URI, digest, or key for an external bathymetry artifact. This
+  // string is not a grid. Empty is rejected when the component is present.
+  string asset_reference = 3;
+
+  // Meters added to the referenced surface along `frame_id` +Z. Unset means
+  // absent. Zero is a supplied value. A non-finite value is rejected.
+  optional double vertical_bias_m = 4;
+}
