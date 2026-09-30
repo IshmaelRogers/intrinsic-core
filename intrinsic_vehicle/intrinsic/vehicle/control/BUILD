@@ -14,8 +14,9 @@
 
 load("//bazel:cc_macros.bzl", "cc_library", "cc_test")
 
-# Opt-in vehicle control scaffold. Not part of the protected manipulator
-# baseline. Do not add this package to
+# Opt-in vehicle reference control. ReferenceController and
+# ZeroWrenchController. Not a control law. Not part of the protected
+# manipulator baseline. Do not add this package to
 # .github/baseline/manipulator_targets.tsv.
 
 package(default_visibility = ["//visibility:public"])
@@ -25,12 +26,27 @@ filegroup(
     srcs = [
         "BUILD",
         "control.h",
+        "reference_control.cc",
+        "reference_control.h",
+        "zero_wrench_controller.cc",
+        "zero_wrench_controller.h",
     ],
 )
 
 cc_library(
     name = "control",
-    hdrs = ["control.h"],
+    srcs = [
+        "reference_control.cc",
+        "zero_wrench_controller.cc",
+    ],
+    hdrs = [
+        "control.h",
+        "reference_control.h",
+        "zero_wrench_controller.h",
+    ],
+    deps = [
+        "//intrinsic_vehicle/intrinsic/vehicle/guidance",
+    ],
 )
 
 cc_test(
@@ -39,6 +55,17 @@ cc_test(
     srcs = ["control_test.cc"],
     deps = [
         ":control",
+        "@com_google_googletest//:gtest_main",
+    ],
+)
+
+cc_test(
+    name = "reference_control_test",
+    size = "small",
+    srcs = ["reference_control_test.cc"],
+    deps = [
+        ":control",
+        "//intrinsic_vehicle/intrinsic/vehicle/guidance",
         "@com_google_googletest//:gtest_main",
     ],
 )

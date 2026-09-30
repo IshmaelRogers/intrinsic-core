@@ -12,21 +12,28 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#ifndef INTRINSIC_VEHICLE_GUIDANCE_GUIDANCE_H_
-#define INTRINSIC_VEHICLE_GUIDANCE_GUIDANCE_H_
+#include "intrinsic/vehicle/guidance/null_guidance.h"
 
 #include <string_view>
 
 namespace intrinsic::vehicle::guidance {
+namespace {
 
-// Soft-real-time package scaffold. Guidance belongs here, outside
-// the ICON cycle. GuidanceStep in guidance_step.h is the
-// DesiredMotion-to-reference boundary. EchoGuidance and NullGuidance
-// are the deterministic fakes. This header defines no guidance law.
-// Timing and ownership: README.md in this tree.
-inline constexpr std::string_view kPackageName =
-    "intrinsic_vehicle/intrinsic/vehicle/guidance";
+constexpr std::string_view kNullMessage =
+    "null guidance does not produce a reference";
+
+}  // namespace
+
+StatusOr<MotionReferenceRt> NullGuidance::Evaluate(
+    const DesiredMotionRt& intent, const VehicleStateRt* state,
+    Duration update_period) const {
+  const GuidanceStatus status =
+      ValidateGuidanceInputs(intent, state, update_period);
+  if (!status.ok()) {
+    return StatusOr<MotionReferenceRt>::Failure(status);
+  }
+  return StatusOr<MotionReferenceRt>::Failure(
+      GuidanceStatus::MissingObjective(kNullMessage));
+}
 
 }  // namespace intrinsic::vehicle::guidance
-
-#endif  // INTRINSIC_VEHICLE_GUIDANCE_GUIDANCE_H_

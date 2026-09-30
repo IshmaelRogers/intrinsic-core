@@ -21,8 +21,9 @@ linear/quadratic damping wrench, the gravity/buoyancy restoring wrench,
 the water-current relative velocity, and marine-force composition, and
 the allocation-to-parameters edge used by the thruster effectiveness
 matrix, unconstrained least-squares allocation, bounded thrust
-allocation, and the thruster-health input adapter. A later edge needs
-an update here and in README.md. Dynamics
+allocation, and the thruster-health input adapter, plus the
+control-to-guidance edge used by the reference-to-body-wrench step.
+A later edge needs an update here and in README.md. Dynamics
 interface sources include only the C++ standard library and headers in
 that package. The mass-matrix, Coriolis, damping, restoring,
 relative-velocity, and composition sources may include marine model
@@ -47,6 +48,7 @@ _PACKAGES = (
 # Sibling packages each BUILD file may name. `vehicle` is the parent.
 _ALLOWED = {name: frozenset() for name in _PACKAGES}
 _ALLOWED["allocation"] = frozenset(("parameters",))
+_ALLOWED["control"] = frozenset(("guidance",))
 _ALLOWED["dynamics"] = frozenset(("parameters",))
 _ALLOWED["testing"] = frozenset(
     (
@@ -102,6 +104,26 @@ _DYNAMICS_SOURCES = (
     "zero_force_dynamics.h",
 )
 
+_GUIDANCE_SOURCES = (
+    "BUILD",
+    "echo_guidance.cc",
+    "echo_guidance.h",
+    "guidance.h",
+    "guidance_step.cc",
+    "guidance_step.h",
+    "null_guidance.cc",
+    "null_guidance.h",
+)
+
+_CONTROL_SOURCES = (
+    "BUILD",
+    "control.h",
+    "reference_control.cc",
+    "reference_control.h",
+    "zero_wrench_controller.cc",
+    "zero_wrench_controller.h",
+)
+
 # Mass-matrix, Coriolis, damping, restoring, relative-velocity, and
 # composition sources read marine model parameters. Interface sources do not.
 _MASS_MATRIX_SOURCES = frozenset(
@@ -134,6 +156,14 @@ _FORBIDDEN_INCLUDE_TOKENS = (
     "proto",
     "sdformat",
     "vendor",
+)
+
+# Guidance and control stay off the dynamics and allocation graph.
+_STEP_FORBIDDEN_INCLUDE_TOKENS = _FORBIDDEN_INCLUDE_TOKENS + (
+    "allocation",
+    "dynamics",
+    "kinematics",
+    "parameters",
 )
 
 _LABEL_RE = re.compile(r'"((?:@|//)[^"]+)"')
@@ -303,6 +333,58 @@ class PackageGraphTest(unittest.TestCase):
                   and target.startswith("intrinsic/vehicle/parameters/")
               ),
               "%s includes %s" % (filename, target),
+          )
+
+  def test_guidance_and_control_sources_stay_in_package(self):
+    found = {}
+    for root in self._roots():
+      for dirpath, _, filenames in os.walk(root):
+        norm = dirpath.replace("\\", "/")
+        package = None
+        expected = None
+        if norm.endswith("intrinsic/vehicle/guidance"):
+          package = "guidance"
+          expected = _GUIDANCE_SOURCES
+        elif norm.endswith("intrinsic/vehicle/control"):
+          package = "control"
+          expected = _CONTROL_SOURCES
+        if package is None:
+          continue
+        for filename in filenames:
+          if filename in expected:
+            found[(package, filename)] = os.path.join(dirpath, filename)
+    expected_keys = {(package, filename)
+                     for package, sources in (
+                         ("guidance", _GUIDANCE_SOURCES),
+                         ("control", _CONTROL_SOURCES),
+                     )
+                     for filename in sources}
+    self.assertCountEqual(found, expected_keys)
+    for (package, filename), path in sorted(found.items()):
+      if not filename.endswith((".h", ".cc")):
+        continue
+      with open(path, encoding="utf-8") as handle:
+        for line in handle:
+          target = _include_target(line)
+          if target is None:
+            continue
+          lowered = target.lower()
+          for token in _STEP_FORBIDDEN_INCLUDE_TOKENS:
+            self.assertNotIn(
+                token,
+                lowered,
+                "%s/%s includes %s" % (package, filename, target),
+            )
+          allowed = "/" not in target or target.startswith(
+              "intrinsic/vehicle/%s/" % package
+          )
+          if package == "control" and target.startswith(
+              "intrinsic/vehicle/guidance/"
+          ):
+            allowed = True
+          self.assertTrue(
+              allowed,
+              "%s/%s includes %s" % (package, filename, target),
           )
 
   def _assert_acyclic(self, graph):
