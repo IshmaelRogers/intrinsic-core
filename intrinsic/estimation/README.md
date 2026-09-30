@@ -2,9 +2,9 @@
 
 Opt-in persistent estimation service contract (#29, ADR 0001 Phase 3).
 `EstimatorService` publishes the authoritative #17
-`intrinsic_proto.vehicle.VehicleState`. This package adds no state message, no
-filter equations (ESKF is #81 and later), no ICON wiring, and no safety
-authority (#31 and #32). Manipulator contracts are unchanged, and these targets
+`intrinsic_proto.vehicle.VehicleState`. This package adds no state message, no filter
+equations (#81 adds ESKF layout only, see `ESKF_LAYOUT.md`), no ICON wiring,
+and no safety authority (#31 and #32). Manipulator contracts are unchanged, and these targets
 are not listed in `.github/baseline/manipulator_targets.tsv`.
 
 ## Files
@@ -15,6 +15,9 @@ are not listed in `.github/baseline/manipulator_targets.tsv`.
 | `estimator_service.h`, `estimator_service.py` | Abstract `EstimatorService`. |
 | `fake_estimator_service.{h,cc,py}` | Fixed-seed `FakeEstimatorService`. |
 | `fake_estimator_service_test.{cc,py}` | Paired tests. Same cases in both languages. |
+| `eskf_state.{h,cc,py}` | ESKF nominal (16), error (15), and covariance (15x15) layout (#81). See `ESKF_LAYOUT.md`. |
+| `eskf_state_test.{cc,py}` | Paired layout tests: index order, dimensions, defaults. |
+| `ESKF_LAYOUT.md` | Index tables, defaults, and the #17 `VehicleState` mapping. |
 | `testdata/nominal_vehicle_state.textproto` | Golden nominal `VehicleState` from the fake. |
 
 ## Reuse of #17
