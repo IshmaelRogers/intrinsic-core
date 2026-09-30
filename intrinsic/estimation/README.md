@@ -32,6 +32,9 @@ are not listed in `.github/baseline/manipulator_targets.tsv`.
 | `depth_update.{h,cc,py}` | `UpdateDepth`: gated scalar depth update (positive down from a free-surface ENU Up), Joseph covariance, right-error attitude inject (#87). See `DEPTH_UPDATE.md`. |
 | `depth_update_test.{cc,py}` | Paired tests: hover accept, ENU/NED sign, outlier reject, invalid, singular, non-finite, golden. |
 | `DEPTH_UPDATE.md` | Locked model, statuses, update steps, fixtures. |
+| `altitude_update.{h,cc,py}` | `UpdateAltitude`: gated scalar terrain / seafloor altimeter clearance update (positive up above an external `SeafloorContext`), Joseph covariance, right-error attitude inject (#88). See `ALTITUDE_UPDATE.md`. |
+| `altitude_update_test.{cc,py}` | Paired tests: flat seafloor accept, missing seafloor, outlier reject, invalid, singular, non-finite, golden. |
+| `ALTITUDE_UPDATE.md` | Locked model, statuses, update steps, fixtures. |
 | `INNOVATION_GATE.md` | Locked numerics, statuses, diagnostics, fixtures. |
 | `ESKF_COV_PROPAGATE.md` | Locked `F` blocks, `Qd`, statuses, fixtures. |
 | `ESKF_PROPAGATE.md` | Locked discretization order, statuses, helpers, fixtures. |
