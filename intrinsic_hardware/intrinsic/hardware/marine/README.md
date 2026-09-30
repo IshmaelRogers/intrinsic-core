@@ -5,8 +5,8 @@ The message is `MeasurementHealth` in
 `intrinsic_proto.hardware.marine`. PDR §15 places sensor contracts in this
 package. Common stamped provenance stays on embodiment `StampedHeader`.
 Covariance and source health stay on the vehicle messages from #17.
-`DvlMeasurement` and `PressureDepthMeasurement` embed this envelope.
-Both are specified below.
+`DvlMeasurement`, `PressureDepthMeasurement`, and `AltimeterMeasurement`
+embed this envelope. Each is specified below.
 
 This package does not add a robot-type enum, a platform-wide embodiment
 switch, ICON feature interfaces, FlatBuffers, Gazebo plugins, filters, or
@@ -66,8 +66,8 @@ the header stamp.
 ## Documented producer status
 
 The DVL payload below is the first sensor message on this envelope.
-Pressure and depth follow it in this package. Other sensor payloads are
-later contracts. This envelope records the status those producers already
+Pressure and depth follow it. Altimeter range follows them. Other sensor
+payloads are later contracts. This envelope records the status those producers already
 decided:
 
 | Situation | What the producer sets | Host result |
@@ -494,3 +494,163 @@ These targets stay off `.github/baseline/manipulator_targets.tsv`:
 - `//intrinsic_hardware/intrinsic/hardware/marine:pressure_depth_serialization_test_py`
 - `//intrinsic_hardware/intrinsic/hardware/marine:fake_pressure_depth_test`
 - `//intrinsic_hardware/intrinsic/hardware/marine:fake_pressure_depth_test_py`
+
+## Altimeter measurement
+
+`AltimeterMeasurement` is one seafloor range sample along a single beam.
+It embeds `MeasurementHealth` as `health`. The range frame is
+`health.header.frame_id`. It is never inferred from `AltimeterMeasurement`.
+Units are SI. Range and the sensor bounds are meters. This leaf does not
+reuse DVL `altitude_m`.
+
+Host checks live in `altimeter_policy.h` and `altimeter_policy.py`. They
+do not parse protobuf, do not convert frames, and do not fuse bathymetry.
+`FakeAltimeter` is a deterministic producer. There is no estimator adapter,
+ICON FlatBuffer, Gazebo plugin, or real-hardware path.
+
+| Message | Role |
+| --- | --- |
+| `AltimeterMeasurement` | One beam range sample plus health. |
+
+### Range
+
+`range_m` is an optional double, meters along the beam. Unset means absent.
+An engaged sample needs a present range or an explicit no-return.
+
+| Wire | Meaning |
+| --- | --- |
+| Range unset | Absent. Not a defect when `has_return` is present and false. |
+| Range present and `0` | Contact. Legal. |
+| Range present and `> 0` | Seafloor range along the beam. |
+| Range present and `< 0` | Rejected. `health.state` is not rewritten. |
+| Range NaN or infinity | Rejected as non-finite, before the sign check. |
+
+`has_return` unset with a present finite in-bounds range is a range-only
+sample and is accepted when the rest of the sample is sound.
+
+### Beam and bounds
+
+`beam_id` unset means absent. A present value must be non-empty. There is
+no robot-type enum.
+
+`min_range_m` and `max_range_m` unset means unspecified. A present bound
+must be finite and `>= 0`. When both are present, `min_range_m` must be
+`<= max_range_m`. A present range strictly below a present minimum, or
+strictly above a present maximum, is a structural reject. Range equal to
+a present bound is inside the window. `min_range_m == max_range_m` is
+legal when the range equals that value.
+
+### Return
+
+`has_return` is `optional bool`. Unset means absent. Present false is
+no-return, which is not the same as unset.
+
+| Combination | Host result |
+| --- | --- |
+| `has_return` false, range absent, state `INVALID` | No-return. Not a structural error. Not accepted. |
+| `has_return` false, range absent, state `VALID` | Rejected. Inconsistent no-return. |
+| `has_return` false, range absent, state `DEGRADED` | Not the `VALID` combo. Not rewritten. Not accepted. |
+| `has_return` false and range present | Rejected, after the range and bound checks. |
+| `has_return` true, or unset, with a sound range | Accepted when nothing else fails. |
+
+### Covariance
+
+Covariance is `health.covariance` (`Matrix6`), not a new field. #17 shape,
+symmetry, and finiteness rules apply. When the matrix is present and well
+formed, every entry except diagonal index 0 must be exactly `0.0`:
+
+| Slot | Row-major index | Unit |
+| --- | --- | --- |
+| range variance | 0 | m² |
+
+The other 35 entries are exactly zero. Unset covariance is unknown.
+Thirty-six zeros are a specified zero matrix, and the range slot is zero.
+
+### Check order
+
+The first defect wins:
+
+1. Health missing on an engaged sample.
+2. Empty frame id.
+3. Frame id different from a caller-supplied expected id.
+4. Receive time strictly before source time, when both timestamps are present.
+5. Non-finite quality, when quality is present.
+6. Quality outside `[0, 1]`, when quality is present.
+7. Covariance shape, when covariance is present.
+8. Empty `source_id` on a present source entry.
+9. A covariance entry other than index 0 is not exactly zero, when covariance is present and well formed.
+10. Neither `range_m` present nor explicit no-return (`has_return` present and false).
+11. `range_m` non-finite, when range is present.
+12. `range_m` negative, when range is present.
+13. `min_range_m` non-finite, when min is present.
+14. `min_range_m` negative, when min is present.
+15. `max_range_m` non-finite, when max is present.
+16. `max_range_m` negative, when max is present.
+17. Both bounds present and `min_range_m` > `max_range_m`.
+18. Present `range_m` strictly below present `min_range_m`.
+19. Present `range_m` strictly above present `max_range_m`.
+20. `has_return` false and health state `VALID`.
+21. `has_return` false and `range_m` present.
+22. `beam_id` present and empty.
+
+An unengaged message (no health engagement, range, beam, bounds, or
+`has_return`) is not a sample. `accepted` requires health state `VALID`
+and no structural defect. `DEGRADED` is not rewritten to `INVALID`.
+
+### Fake
+
+`FakeAltimeter` is a pure function of its config and truth. The same seed,
+noise amplitude, delay, dropout, no-return, and out-of-range flags produce
+the same bytes. `seed` is written to `health.header.sequence`. It also
+mixes the noise draw. The draw is SplitMix64 of the seed, mapped onto
+`[-1, 1)` with a 53-bit fraction that is exact in binary64. C++ and Python
+use the same mix. The fake does not fuse bathymetry.
+
+Default config and truth are the nominal range fixture: sequence 42, frame
+`sensor`, source time `1700000000.250000000`, delay `1s` plus `-250000000`
+ns so receive time is `1700000001.0`, range `10` m, beam `down`, minimum
+`0.5` m, maximum `100` m, `has_return` true, quality `0.75`, and a
+specified covariance with range variance `0.25` at index 0. Header
+validity stays `STATE_VALID`. Sources are `primary` (valid) and `aiding`
+(unset validity). Noise amplitude defaults to `0`.
+
+| Fault | What the fake emits |
+| --- | --- |
+| Dropout | No message. Checked before no-return and out-of-range. Absent, not an error. |
+| Delay | `receive_time = source_time + delay`. A reversal is emitted and not repaired. |
+| Noise | A non-zero amplitude adds `amplitude * signed_unit(seed)` to a present range and sets health state `DEGRADED`, unless no-return or out-of-range applies. A negative or out-of-bounds result is emitted and not repaired. |
+| No-return | `has_return` false, range omitted, health state `INVALID`. Wins over out-of-range and noise. Beam and bounds stay on the truth. |
+| Out of range | Canonical fixture: `range_m = 101`, `min_range_m = 0.5`, `max_range_m = 100`, `has_return` true, health state `INVALID`. Noise is not added. Truth bounds are replaced. |
+
+A large positive delay is not a structural defect. This contract has no
+maximum age. Noise that drives range below zero is emitted as that value
+with `DEGRADED`. The host rejects the negative range and does not rewrite
+`health.state`.
+
+### Evolution
+
+Append fields. Reserve removed tags and names. Preserve unknown fields.
+Golden bytes for the nominal range fixture are fixed in the C++ and Python
+serialization tests. Clearing `has_return` leaves a prefix of that golden.
+Field 100 is preserved.
+
+Text format example:
+[`examples/altimeter_nominal.textproto`](examples/altimeter_nominal.textproto).
+
+### Altimeter targets
+
+These targets stay off `.github/baseline/manipulator_targets.tsv`:
+
+- `//intrinsic_hardware/intrinsic/hardware/marine:altimeter_proto`
+- `//intrinsic_hardware/intrinsic/hardware/marine:altimeter_cc_proto`
+- `//intrinsic_hardware/intrinsic/hardware/marine:altimeter_py_pb2`
+- `//intrinsic_hardware/intrinsic/hardware/marine:altimeter_policy`
+- `//intrinsic_hardware/intrinsic/hardware/marine:altimeter_policy_py`
+- `//intrinsic_hardware/intrinsic/hardware/marine:fake_altimeter`
+- `//intrinsic_hardware/intrinsic/hardware/marine:fake_altimeter_py`
+- `//intrinsic_hardware/intrinsic/hardware/marine:altimeter_policy_test`
+- `//intrinsic_hardware/intrinsic/hardware/marine:altimeter_policy_test_py`
+- `//intrinsic_hardware/intrinsic/hardware/marine:altimeter_serialization_test`
+- `//intrinsic_hardware/intrinsic/hardware/marine:altimeter_serialization_test_py`
+- `//intrinsic_hardware/intrinsic/hardware/marine:fake_altimeter_test`
+- `//intrinsic_hardware/intrinsic/hardware/marine:fake_altimeter_test_py`

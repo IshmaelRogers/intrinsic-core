@@ -1,0 +1,74 @@
+// Copyright 2026 Intrinsic Innovation LLC
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     https://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
+syntax = "proto3";
+
+package intrinsic_proto.hardware.marine;
+
+import "intrinsic/hardware/marine/measurement_health.proto";
+
+option go_package = "intrinsic/hardware/marine/altimeter_go_proto";
+
+// One seafloor range sample along a single beam.
+//
+// `health` embeds #75 MeasurementHealth. Stamp, frame, clock, quality,
+// covariance, and source health live there. The range frame is
+// `health.header.frame_id` and is never inferred from this type. It is the
+// body or sensor frame the producer stamped.
+//
+// `range_m` is meters along the beam. Unset means absent (no-return, or the
+// range field was dropped). A present value must be finite and >= 0. Zero
+// is a legal contact. Negative range is rejected. This message does not
+// reuse DVL `altitude_m`.
+//
+// `beam_id` unset means absent. A present value must be non-empty. There is
+// no robot-type enum and no platform switch.
+//
+// `min_range_m` and `max_range_m` are optional sensor capability bounds in
+// meters. Unset means unspecified. A present bound must be finite and >= 0.
+// When both are present, min must be <= max. A present range outside a
+// present bound is a structural reject. The host does not rewrite
+// `health.state`.
+//
+// `has_return` unset means absent. Present false is no-return: the producer
+// sets `health.state` to INVALID and omits `range_m`. The host rejects
+// no-return with state VALID, and no-return with a present range.
+//
+// Covariance stays on `health.covariance` (Matrix6). Diagonal index 0 is
+// range variance (m^2). When covariance is present, every other entry must
+// be exactly 0. Unset covariance is unknown. Thirty-six zeros are a
+// specified zero matrix.
+//
+// An empty message serializes to zero bytes and is absent, not an error.
+// Append fields. Reserve removed tags and names. See README.md.
+message AltimeterMeasurement {
+  // Required when this sample is engaged. Unset on an empty message.
+  MeasurementHealth health = 1;
+
+  // Meters along the beam. Unset means absent. Present values must be
+  // finite and >= 0.
+  optional double range_m = 2;
+
+  // Unset means absent. A present value must be non-empty.
+  optional string beam_id = 3;
+
+  // Meters. Unset means unspecified. Present values must be finite and >= 0.
+  optional double min_range_m = 4;
+
+  // Meters. Unset means unspecified. Present values must be finite and >= 0.
+  optional double max_range_m = 5;
+
+  // Unset means absent. False is explicit no-return.
+  optional bool has_return = 6;
+}

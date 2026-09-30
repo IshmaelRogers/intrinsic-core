@@ -1,0 +1,73 @@
+# Nominal altimeter range. Off-slot covariance is 0. Index 0 is range variance.
+health {
+  header {
+    sequence: 42
+    source_time {
+      seconds: 1700000000
+      nanos: 250000000
+    }
+    receive_time {
+      seconds: 1700000001
+    }
+    source_id: "nav_sensor"
+    frame_id: "sensor"
+    clock_domain: "monotonic"
+    validity {
+      state: STATE_VALID
+    }
+  }
+  state: VALID
+  quality: 0.75
+  covariance {
+    values: 0.25
+    values: 0
+    values: 0
+    values: 0
+    values: 0
+    values: 0
+    values: 0
+    values: 0
+    values: 0
+    values: 0
+    values: 0
+    values: 0
+    values: 0
+    values: 0
+    values: 0
+    values: 0
+    values: 0
+    values: 0
+    values: 0
+    values: 0
+    values: 0
+    values: 0
+    values: 0
+    values: 0
+    values: 0
+    values: 0
+    values: 0
+    values: 0
+    values: 0
+    values: 0
+    values: 0
+    values: 0
+    values: 0
+    values: 0
+    values: 0
+    values: 0
+  }
+  sources {
+    source_id: "primary"
+    validity {
+      state: STATE_VALID
+    }
+  }
+  sources {
+    source_id: "aiding"
+  }
+}
+range_m: 10
+beam_id: "down"
+min_range_m: 0.5
+max_range_m: 100
+has_return: true
