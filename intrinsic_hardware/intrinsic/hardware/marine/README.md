@@ -10,8 +10,10 @@ Covariance and source health stay on the vehicle messages from #17.
 is specified below.
 
 This package does not add a robot-type enum, a platform-wide embodiment
-switch, ICON feature interfaces, FlatBuffers, Gazebo plugins, filters, or
-actuator commands. It does not append a value to
+switch, ICON feature interfaces, FlatBuffers, Gazebo plugins, or filters.
+`ThrusterArrayCommand` and `ThrusterArrayFeedback` are an opt-in actuator
+HAL described below. They do not call ICON, allocate thrust, or estimate
+state. The package does not append a value to
 `intrinsic_proto.embodiment.Validity`.
 
 Manipulator joint, Cartesian, kinematics, motion-planning, World, and Gazebo
@@ -1125,3 +1127,144 @@ These targets stay off `.github/baseline/manipulator_targets.tsv`:
 - `//intrinsic_hardware/intrinsic/hardware/marine:surface_fix_serialization_test_py`
 - `//intrinsic_hardware/intrinsic/hardware/marine:fake_surface_fix_test`
 - `//intrinsic_hardware/intrinsic/hardware/marine:fake_surface_fix_test_py`
+
+## Thruster array
+
+`ThrusterArrayCommand` and `ThrusterArrayFeedback` are the opt-in actuator
+HAL for one ordered thruster array. They are not `MeasurementHealth`
+samples and they are not a `BodyWrench`. Thrust is newtons per slot, the
+same unit as allocation `thrust_command_n`. Slot order matches the marine
+model thruster order. `name` on an element is an optional label. The array
+identity is the slot index.
+
+Geometry stays in the body frame (REP-103). Producers set the array-level
+`header.frame_id` to `body`. The host does not invent a second body frame.
+There is one header on each message. Per-element stamps are out of scope.
+
+`ThrusterHealth` wire numbers match
+`intrinsic::vehicle::parameters::ThrusterHealthState`:
+
+| Name | Wire | Derate |
+| --- | --- | --- |
+| `THRUSTER_HEALTH_NOMINAL` | 0 | 1 |
+| `THRUSTER_HEALTH_DISABLED` | 1 | 0 |
+| `THRUSTER_HEALTH_DERATED` | 2 | (0, 1) |
+| `THRUSTER_HEALTH_STUCK_OFF` | 3 | 0 |
+| `THRUSTER_HEALTH_FAILED` | 4 | 0 |
+
+There is no `UNSPECIFIED` enumerator. Absent health is an unset optional,
+which is distinct from `NOMINAL=0`. Unknown future numbers stay on the wire
+and are rejected by the host. Health is not rewritten into embodiment
+`Validity`.
+
+Host checks live in `thruster_array_policy.h` and
+`thruster_array_policy.py`. They do not parse protobuf, do not call ICON,
+do not allocate thrust, and do not integrate dynamics.
+`FakeThrusterArray` is a deterministic producer. There is no estimator,
+ICON FlatBuffer, Gazebo plugin, vendor SDK, or real-hardware path. A
+watchdog or independent hardware timer is a later driver concern. This
+fake only neutralizes on disable and on configured stuck-off, failed, and
+disabled faults.
+
+| Message | Role |
+| --- | --- |
+| `ThrusterArrayCommand` | Array-level header plus ordered `thrust_n` commands. |
+| `ThrusterCommandElement` | Optional name, required thrust when the element is present, optional enable. |
+| `ThrusterArrayFeedback` | Array-level header plus ordered command, measurement, saturation, health, derate, and efficiency. |
+| `ThrusterHealth` | Actuator health. Integers match `ThrusterHealthState`. |
+
+### Command and feedback fields
+
+An empty message serializes to zero bytes and is absent, not an error. An
+engaged message needs `header` and at least one thruster element.
+
+`thrust_n` is required on every command element and must be finite. Zero is
+a supplied neutral command. `enable` unset means enabled. Explicit `false`
+is accepted by the host and is the neutralize path in the fake.
+
+`name` unset means absent. A present name must be non-empty.
+
+On feedback, `commanded_thrust_n` and `measured_thrust_n` are optional and
+must be finite when present. `saturated` is diagnostic only. When `health`
+is present, `health_derate` must be present and must match the table above.
+Comparison is exact. `efficiency`, when present, is dimensionless in
+`(0, 1]`.
+
+`frame_id` must be `body`. An empty id is a missing frame. Any other id is
+a wrong frame.
+
+### Check order
+
+The first defect wins. The same header order applies to command and
+feedback:
+
+1. Header missing on an engaged message.
+2. Empty frame id.
+3. Frame id other than `body`.
+4. Receive time strictly before source time, when both timestamps are present.
+5. Zero thruster elements.
+6. Command elements, in order: empty name, missing thrust, non-finite thrust.
+7. Feedback elements, in order: empty name, non-finite commanded thrust, non-finite measured thrust, non-finite derate, non-finite efficiency, unknown health, health/derate inconsistency, efficiency outside `(0, 1]`.
+
+Unset optional fields are not defects. Header Validity does not select
+`accepted`. `accepted` means the engaged message has no structural defect.
+
+### Fake
+
+`FakeThrusterArray` is a pure function of its config and the command
+sequence. `seed` is written to `header.sequence` as `seed + step`. It is
+not a random source. The default seed is 42.
+
+Default slots copy the six-thruster example bounds. This package does not
+link that example and does not pull Gazebo:
+
+| Slot | min N | max N | forward slew N/s | reverse slew N/s |
+| --- | --- | --- | --- | --- |
+| `surge_port` | -35 | 50 | 250 | 175 |
+| `surge_starboard` | -35 | 50 | 250 | 175 |
+| `sway_fore` | -30 | 30 | 150 | 150 |
+| `sway_aft` | -30 | 30 | 150 | 150 |
+| `heave_fore` | -25 | 40 | 200 | 125 |
+| `heave_aft` | -25 | 40 | 200 | 125 |
+
+Each `Apply` records the command, then:
+
+1. Dropout returns no message. The command stays in the delay line. Dropout is absent, not an engaged fault.
+2. The applied command is the sample from `lag_steps` earlier. `lag_steps` 0 uses the current command. A missing past sample is neutral (0 N, enabled). That hold is not a repair of the new command.
+3. The stronger fault wins: stuck-off, failed, disabled (configured or `enable` false), configured derated, efficiency in `(0, 1)`, then nominal. Neutral faults force applied thrust to 0 and reset slew memory to 0.
+4. Otherwise optional slew limits the step from the last clamped thrust, saturation clamps to `[min, max]`, and efficiency scales the clamped thrust. An exact bound is not saturated. Saturation is judged before the efficiency scale.
+5. The feedback header copies the current command header and overwrites sequence. Thrust values come from the delayed command. Stamps are not rewritten to hide lag.
+
+Configured `DERATED` reports `fault_derate` and does not apply a second
+scale. Efficiency still scales thrust. Non-unit efficiency with no
+stronger fault sets health `DERATED` and derate equal to that efficiency.
+
+### Evolution
+
+Append fields. Reserve removed tags and names. Preserve unknown fields.
+Golden bytes for the nominal command and the default-fake feedback are
+fixed in the C++ and Python serialization tests. Those bytes were captured
+from a local run. Bazel was not available in the authoring environment.
+
+Text format examples:
+[`examples/thruster_array_command_nominal.textproto`](examples/thruster_array_command_nominal.textproto)
+and
+[`examples/thruster_array_feedback_nominal.textproto`](examples/thruster_array_feedback_nominal.textproto).
+
+### Thruster array targets
+
+These targets stay off `.github/baseline/manipulator_targets.tsv`:
+
+- `//intrinsic_hardware/intrinsic/hardware/marine:thruster_array_proto`
+- `//intrinsic_hardware/intrinsic/hardware/marine:thruster_array_cc_proto`
+- `//intrinsic_hardware/intrinsic/hardware/marine:thruster_array_py_pb2`
+- `//intrinsic_hardware/intrinsic/hardware/marine:thruster_array_policy`
+- `//intrinsic_hardware/intrinsic/hardware/marine:thruster_array_policy_py`
+- `//intrinsic_hardware/intrinsic/hardware/marine:fake_thruster_array`
+- `//intrinsic_hardware/intrinsic/hardware/marine:fake_thruster_array_py`
+- `//intrinsic_hardware/intrinsic/hardware/marine:thruster_array_policy_test`
+- `//intrinsic_hardware/intrinsic/hardware/marine:thruster_array_policy_test_py`
+- `//intrinsic_hardware/intrinsic/hardware/marine:thruster_array_serialization_test`
+- `//intrinsic_hardware/intrinsic/hardware/marine:thruster_array_serialization_test_py`
+- `//intrinsic_hardware/intrinsic/hardware/marine:fake_thruster_array_test`
+- `//intrinsic_hardware/intrinsic/hardware/marine:fake_thruster_array_test_py`

@@ -1,0 +1,73 @@
+# Nominal feedback for the six-slot command. Lag is zero, efficiency is 1,
+# and every slot is inside its bound, so measured thrust matches the
+# command. Health is NOMINAL with derate 1. saturated false is present.
+header {
+  sequence: 42
+  source_time {
+    seconds: 1700000000
+    nanos: 250000000
+  }
+  receive_time {
+    seconds: 1700000001
+  }
+  source_id: "thruster_array"
+  frame_id: "body"
+  clock_domain: "monotonic"
+  validity {
+    state: STATE_VALID
+  }
+}
+thrusters {
+  name: "surge_port"
+  commanded_thrust_n: 10
+  measured_thrust_n: 10
+  saturated: false
+  health: THRUSTER_HEALTH_NOMINAL
+  health_derate: 1
+  efficiency: 1
+}
+thrusters {
+  name: "surge_starboard"
+  commanded_thrust_n: -5
+  measured_thrust_n: -5
+  saturated: false
+  health: THRUSTER_HEALTH_NOMINAL
+  health_derate: 1
+  efficiency: 1
+}
+thrusters {
+  name: "sway_fore"
+  commanded_thrust_n: 0
+  measured_thrust_n: 0
+  saturated: false
+  health: THRUSTER_HEALTH_NOMINAL
+  health_derate: 1
+  efficiency: 1
+}
+thrusters {
+  name: "sway_aft"
+  commanded_thrust_n: 4
+  measured_thrust_n: 4
+  saturated: false
+  health: THRUSTER_HEALTH_NOMINAL
+  health_derate: 1
+  efficiency: 1
+}
+thrusters {
+  name: "heave_fore"
+  commanded_thrust_n: 8
+  measured_thrust_n: 8
+  saturated: false
+  health: THRUSTER_HEALTH_NOMINAL
+  health_derate: 1
+  efficiency: 1
+}
+thrusters {
+  name: "heave_aft"
+  commanded_thrust_n: -2
+  measured_thrust_n: -2
+  saturated: false
+  health: THRUSTER_HEALTH_NOMINAL
+  health_derate: 1
+  efficiency: 1
+}

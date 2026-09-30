@@ -1,0 +1,93 @@
+// Copyright 2026 Intrinsic Innovation LLC
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     https://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
+syntax = "proto3";
+
+package intrinsic_proto.hardware.marine;
+
+import "intrinsic/embodiment/proto/stamped_header.proto";
+
+option go_package = "intrinsic/hardware/marine/thruster_array_go_proto";
+
+// Actuator health for one thruster slot.
+//
+// Wire numbers match
+// `intrinsic::vehicle::parameters::ThrusterHealthState`:
+// NOMINAL=0, DISABLED=1, DERATED=2, STUCK_OFF=3, FAILED=4.
+// There is no UNSPECIFIED enumerator. Absent health is an unset optional
+// field, which is distinct from NOMINAL=0. Unknown future numbers stay on
+// the wire and are rejected by the host.
+enum ThrusterHealth {
+  THRUSTER_HEALTH_NOMINAL = 0;
+  THRUSTER_HEALTH_DISABLED = 1;
+  THRUSTER_HEALTH_DERATED = 2;
+  THRUSTER_HEALTH_STUCK_OFF = 3;
+  THRUSTER_HEALTH_FAILED = 4;
+}
+
+// One ordered thruster slot in a command. Slot order matches the marine
+// model thruster order. `name` is an optional label, not the identity.
+//
+// `thrust_n` is newtons, the same unit as allocation `thrust_command_n`.
+// Zero is a supplied neutral command. Unset means the element has no
+// thrust. `enable` unset means enabled. Explicit false neutralizes the
+// slot in the fake.
+message ThrusterCommandElement {
+  optional string name = 1;
+  optional double thrust_n = 2;
+  optional bool enable = 3;
+}
+
+// Per-actuator thrust command. This is not a BodyWrench.
+//
+// `header` is one array-level #15 StampedHeader. Producers set `frame_id`
+// to `body` (REP-103). The host does not invent a second body frame.
+// An empty message serializes to zero bytes and is absent, not an error.
+// An engaged message needs the header and at least one thruster element.
+//
+// This message does not call ICON, allocate thrust, or estimate state.
+// Append fields. Reserve removed tags and names. See README.md.
+message ThrusterArrayCommand {
+  intrinsic_proto.embodiment.StampedHeader header = 1;
+  repeated ThrusterCommandElement thrusters = 2;
+}
+
+// One ordered thruster slot in feedback. Slot order matches the command
+// the fake applied. `commanded_thrust_n` is the request. `measured_thrust_n`
+// is the thrust after lag, slew, saturation, efficiency, and faults.
+//
+// `saturated` is diagnostic only. `health` and `health_derate` follow the
+// #65 rules: NOMINAL derate 1, DERATED derate in (0, 1), and DISABLED,
+// STUCK_OFF, and FAILED derate 0. `efficiency` is dimensionless in (0, 1]
+// when present.
+message ThrusterFeedbackElement {
+  optional string name = 1;
+  optional double commanded_thrust_n = 2;
+  optional double measured_thrust_n = 3;
+  optional bool saturated = 4;
+  optional ThrusterHealth health = 5;
+  optional double health_derate = 6;
+  optional double efficiency = 7;
+}
+
+// Per-actuator thrust feedback. One array-level header. An empty message
+// is absent. Dropout omits the message. An engaged message needs the
+// header and at least one element.
+//
+// This message does not call ICON, allocate thrust, or estimate state.
+// Append fields. Reserve removed tags and names. See README.md.
+message ThrusterArrayFeedback {
+  intrinsic_proto.embodiment.StampedHeader header = 1;
+  repeated ThrusterFeedbackElement thrusters = 2;
+}
