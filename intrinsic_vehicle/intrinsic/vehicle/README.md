@@ -484,8 +484,7 @@ reference is `kMissingObjective`. A `world_ned` pose is `kInvalid`.
 `Evaluate` is const. `EchoGuidance`, `NullGuidance`, and
 `ZeroWrenchController` have no data members. Concurrent `Evaluate` calls
 on one of those instances do not share mutable state.
-`ReferenceDepthController` owns its integrated depth error in a mutable
-member.
+`ReferenceDepthController` owns its integral force in a mutable member.
 Concurrent `Evaluate` or `Reset` calls on that instance are not safe.
 The functions do not allocate, do not retain arguments, and do not take
 locks. Status text is a static string view. `TrajectoryId::view()` is
@@ -548,22 +547,23 @@ depend on `dynamics`.
 
 Contract revision 1 sets `k_p = 20` N/m, `k_i = 0.2` N/(m·s), and
 `k_d = 45` N/(m/s). Heave is clamped to [-50, 50] N. The controller
-owns the integrated depth error `I`, clamped to [-40, 40]. `Reset()`
-sets `I` to 0.
+owns the integral force `S` in newtons, clamped to [-40, 40].
+`Reset()` sets `S` to 0.
 
 ```
 e = depth_cmd_m - depth_meas_m
 v_depth = -v_z_world
-u_unsat = -k_p * e - k_i * I + k_d * v_depth
+u_unsat = -k_p * e + S + k_d * v_depth
 ```
 
-The derivative opposes positive-down rate. A positive depth error
-produces negative heave. Surge and every torque stay 0. `I` is
-advanced with `IntegrateBackCalculation`. The integrator input is `e`.
-`k_aw` is 0.2. The helper gain is `-k_aw/k_i` because the command
-subtracts `k_i*I`.
+Away from the clamp and from saturation, `S = -k_i * ∫ e dt`, so the
+command is `-k_p * e - k_i * I + k_d * v_depth`. The derivative
+opposes positive-down rate. A positive depth error produces negative
+heave. Surge and every torque stay 0. `S` is advanced with
+`IntegrateBackCalculation`. The integrator input is `-k_i * e` and
+`k_aw` is 0.2.
 
-A rejected call leaves `I` unchanged and returns finite zeros. That
+A rejected call leaves `S` unchanged and returns finite zeros. That
 zero wrench is not a command. `ValidateControlInputs` runs first. A
 missing pose is `kMissingObjective`. A non-ENU world frame is
 `kInvalid`. Non-finite depth, rate, or heave is `kInvalidArgument`.
@@ -714,5 +714,5 @@ onto unsaturated thrusters, mass-matrix acceleration, body-state time
 integration, guidance laws, heading and surge control, trajectory
 sampling, Gazebo plugins, and ICON feature wiring are later issues.
 The guidance interface above is not a guidance law. The scalar
-integrator in `control` clamps the integrated depth error owned by
-the depth controller. It does not integrate a body state.
+integrator in `control` clamps the integral force owned by the depth
+controller. It does not integrate a body state.

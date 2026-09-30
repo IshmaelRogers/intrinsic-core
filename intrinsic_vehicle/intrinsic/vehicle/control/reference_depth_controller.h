@@ -24,7 +24,7 @@
 //
 //   e = depth_cmd_m - depth_meas_m
 //   v_depth = -v_z_world
-//   u_unsat = -k_p * e - k_i * I + k_d * v_depth
+//   u_unsat = -k_p * e + S + k_d * v_depth
 //   u = clamp(u_unsat, -50, 50)
 //
 // v_z_world is the ENU up component of the body linear twist, using the
@@ -33,14 +33,15 @@
 // descent produces positive heave. A positive depth error produces
 // negative heave.
 //
-// I is the integrated depth error, owned by this controller and clamped
-// to [-40, 40]. Reset() sets I to 0. I is advanced by
-// IntegrateBackCalculation with integrator input e. The helper adds its
-// gain times (u_sat - u_unsat). The command subtracts k_i*I, so that
-// gain is -k_aw/k_i with k_aw = 0.2. A rejected Evaluate does not
-// write I.
+// S is the integral force in newtons, owned by this controller and
+// clamped to [-40, 40]. Reset() sets S to 0. Away from the clamp and
+// from saturation, S = -k_i * integral(e dt), so the command is
+// -k_p * e - k_i * I + k_d * v_depth. S is advanced by
+// IntegrateBackCalculation. The integrator input is -k_i * e and k_aw
+// is 0.2, the gain on (u_sat - u_unsat). A rejected Evaluate does not
+// write S.
 //
-// Evaluate stays const. I is a mutable member. One instance is not safe
+// Evaluate stays const. S is a mutable member. One instance is not safe
 // for concurrent Evaluate or Reset calls. The caller owns the
 // reference, the state, and the result. Evaluate does not retain them
 // and does not allocate. Status text is a static string view.
@@ -64,10 +65,10 @@ class ReferenceDepthController final : public ReferenceController {
  public:
   ReferenceDepthController();
 
-  // Sets the integrated depth error to 0.
+  // Sets the integral force to 0.
   void Reset();
 
-  // Integrated depth error, inside [-40, 40].
+  // Integral force in newtons, inside [-40, 40].
   [[nodiscard]] double integrator_state() const;
 
   [[nodiscard]] StatusOr<BodyWrenchRt> Evaluate(

@@ -90,19 +90,19 @@ TEST(ReferenceDepthController, DeepenAtRestCommandsNegativeHeave) {
       controller.Evaluate(DepthCommand(12.0), StateAt(10.0), Period());
   ASSERT_TRUE(result.ok());
   ExpectHeaveOnly(result.value(), -40.0);
-  EXPECT_NEAR(controller.integrator_state(), 0.2, 1e-12);
+  EXPECT_NEAR(controller.integrator_state(), -0.04, 1e-12);
 }
 
-TEST(ReferenceDepthController, IntegratedErrorChangesTheNextCommand) {
+TEST(ReferenceDepthController, IntegralForceChangesTheNextCommand) {
   ReferenceDepthController controller;
   ASSERT_TRUE(
       controller.Evaluate(DepthCommand(12.0), StateAt(10.0), Period()).ok());
-  const double integrated_error = controller.integrator_state();
+  const double integral_force = controller.integrator_state();
   const StatusOr<BodyWrenchRt> second =
       controller.Evaluate(DepthCommand(12.0), StateAt(10.0), Period());
   ASSERT_TRUE(second.ok());
-  ExpectHeaveOnly(second.value(), -40.0 - 0.2 * integrated_error);
-  EXPECT_NEAR(controller.integrator_state(), integrated_error + 0.2, 1e-12);
+  ExpectHeaveOnly(second.value(), -40.0 + integral_force);
+  EXPECT_NEAR(controller.integrator_state(), integral_force - 0.04, 1e-12);
 }
 
 TEST(ReferenceDepthController, DerivativeOpposesPositiveDownRate) {
@@ -140,12 +140,12 @@ TEST(ReferenceDepthController, AntiWindupFeedsTheIntegrator) {
       controller.Evaluate(DepthCommand(3.0), StateAt(0.0), Period());
   ASSERT_TRUE(result.ok());
   ExpectHeaveOnly(result.value(), -50.0);
-  const double pure_integral = 3.0 * kDt;
+  const double pure_integral = -0.2 * 3.0 * kDt;
   const double u_unsat = -20.0 * 3.0;
-  const double tracking = (-0.2 / 0.2) * (-50.0 - u_unsat);
-  const double expected = (3.0 + tracking) * kDt;
+  const double tracking = 0.2 * (-50.0 - u_unsat);
+  const double expected = (-0.2 * 3.0 + tracking) * kDt;
   EXPECT_NEAR(controller.integrator_state(), expected, 1e-9);
-  EXPECT_LT(controller.integrator_state(), pure_integral);
+  EXPECT_GT(controller.integrator_state(), pure_integral);
 }
 
 TEST(ReferenceDepthController, SaturatedHoldStaysInsideTheClamp) {
@@ -159,7 +159,7 @@ TEST(ReferenceDepthController, SaturatedHoldStaysInsideTheClamp) {
     EXPECT_LE(controller.integrator_state(), 40.0);
     EXPECT_GE(controller.integrator_state(), -40.0);
   }
-  EXPECT_DOUBLE_EQ(controller.integrator_state(), -40.0);
+  EXPECT_DOUBLE_EQ(controller.integrator_state(), 40.0);
 }
 
 TEST(ReferenceDepthController, RejectedInputDoesNotWriteTheIntegrator) {
