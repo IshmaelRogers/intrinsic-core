@@ -120,3 +120,32 @@ py_test(
         "@intrinsic_apis//intrinsic/vehicle/proto:vehicle_state_py_pb2",
     ],
 )
+
+cc_library(
+    name = "eskf_state",
+    srcs = ["eskf_state.cc"],
+    hdrs = ["eskf_state.h"],
+)
+
+cc_test(
+    name = "eskf_state_test",
+    size = "small",
+    srcs = ["eskf_state_test.cc"],
+    deps = [
+        ":eskf_state",
+        "@com_google_googletest//:gtest_main",
+    ],
+)
+
+py_library(
+    name = "eskf_state_py",
+    srcs = ["eskf_state.py"],
+)
+
+py_test(
+    name = "eskf_state_test_py",
+    size = "small",
+    srcs = ["eskf_state_test.py"],
+    main = "eskf_state_test.py",
+    deps = [":eskf_state_py"],
+)
