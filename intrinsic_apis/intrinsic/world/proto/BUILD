@@ -344,6 +344,30 @@ py_proto_library(
 )
 
 proto_library(
+    name = "world_snapshot_descriptor_proto",
+    srcs = ["world_snapshot_descriptor.proto"],
+    deps = ["@com_google_protobuf//:timestamp_proto"],
+)
+
+cc_proto_library(
+    name = "world_snapshot_descriptor_cc_proto",
+    deps = [":world_snapshot_descriptor_proto"],
+)
+
+go_proto_library(
+    name = "world_snapshot_descriptor_go_proto",
+    importpath = "intrinsic/world/proto/world_snapshot_descriptor_go_proto",
+    importpath_aliases = ["intrinsic/world/public/proto/world_snapshot_descriptor_go_proto"],
+    protos = [":world_snapshot_descriptor_proto"],
+    deps = ["@org_golang_google_protobuf//types/known/timestamppb"],
+)
+
+py_proto_library(
+    name = "world_snapshot_descriptor_py_pb2",
+    deps = [":world_snapshot_descriptor_proto"],
+)
+
+proto_library(
     name = "physics_component_proto",
     srcs = ["physics_component.proto"],
     deps = [
