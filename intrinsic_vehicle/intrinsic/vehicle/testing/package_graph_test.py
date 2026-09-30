@@ -118,6 +118,8 @@ _GUIDANCE_SOURCES = (
 _CONTROL_SOURCES = (
     "BUILD",
     "control.h",
+    "control_math.cc",
+    "control_math.h",
     "reference_control.cc",
     "reference_control.h",
     "zero_wrench_controller.cc",

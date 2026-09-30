@@ -18,7 +18,9 @@ thrust allocation, clamps those commands to per-actuator thrust
 bounds, and applies thruster health to those columns and bounds.
 `guidance` is the DesiredMotion-to-reference step. `control` is the
 reference-to-body-wrench step. Both are soft-real-time interfaces with
-deterministic fakes and no guidance or control law.
+deterministic fakes and no guidance or control law. `control` also
+holds scalar heading wrap, a bounded integrator, and back-calculation.
+Those helpers are not a control law.
 Marine model parameter schemas and validation are in `parameters`.
 
 Protobuf `VehicleState` and `DesiredMotion` stay in
@@ -36,7 +38,7 @@ commands.
 | `//intrinsic_vehicle/intrinsic/vehicle/dynamics` | Soft-real-time | `VehicleDynamics` interface, zero-force test double, rigid-body mass matrix, added-mass matrix, rigid-body Coriolis matrix, added-mass Coriolis matrix, linear/quadratic damping wrench, gravity/buoyancy restoring wrench, water-current relative velocity, and marine-force composition. Outside ICON. |
 | `//intrinsic_vehicle/intrinsic/vehicle/parameters` | Soft-real-time | Marine model schemas and validation. Not loaded by ICON. |
 | `//intrinsic_vehicle/intrinsic/vehicle/guidance` | Soft-real-time | `GuidanceStep` maps `DesiredMotionRt` to `MotionReferenceRt` with typed status. `EchoGuidance` echoes a pose or twist. `NullGuidance` returns a missing-objective status and an empty reference. Outside ICON. 10 to 50 Hz. Fails closed on a stale snapshot or an expired horizon. |
-| `//intrinsic_vehicle/intrinsic/vehicle/control` | Soft-real-time | `ReferenceController` maps `MotionReferenceRt` and vehicle state to `BodyWrenchRt` with typed status. `ZeroWrenchController` validates inputs and returns a neutral zero body wrench. Outside ICON. ICON remains the only actuator writer. |
+| `//intrinsic_vehicle/intrinsic/vehicle/control` | Soft-real-time | `ReferenceController` maps `MotionReferenceRt` and vehicle state to `BodyWrenchRt` with typed status. `ZeroWrenchController` validates inputs and returns a neutral zero body wrench. Scalar helpers wrap a heading error into (-pi, pi], clamp one integrator state, and add back-calculation. Outside ICON. ICON remains the only actuator writer. |
 | `//intrinsic_vehicle/intrinsic/vehicle/testing` | Test-only | Test-only umbrella and the package-graph check. |
 
 Include paths strip the `intrinsic_vehicle` root, the same way the other
@@ -72,7 +74,7 @@ the ICON cycle. The `parameters` package is that configuration-time check.
 | Package | Role on this boundary |
 | --- | --- |
 | `guidance` | `GuidanceStep::Evaluate` at 10 to 50 Hz. DesiredMotion is not an actuator command. Fails closed on expiry and on a stale snapshot. |
-| `control` | `ReferenceController::Evaluate` maps a reference to a body wrench. A zero wrench is neutral only when the status is `kOk`. ICON remains the only writer of actuator commands. |
+| `control` | `ReferenceController::Evaluate` maps a reference to a body wrench. A zero wrench is neutral only when the status is `kOk`. Scalar heading wrap, bounded integration, and back-calculation do not write an actuator command. ICON remains the only writer of actuator commands. |
 | `parameters` | Marine mass, inertia, buoyancy, added mass, damping, centers, environment, and thruster parameters (pose, axis, bounds, slew, efficiency, and health defaults). Validated at configuration time. |
 | `dynamics` | `VehicleDynamics::Evaluate` outside ICON. Fixed-size inputs and results. No Gazebo API and no thruster allocation. |
 
@@ -494,6 +496,40 @@ checks this contract and the two guidance fakes.
 `//intrinsic_vehicle/intrinsic/vehicle/control:reference_control_test`
 checks this contract and the neutral-wrench fake.
 
+### Scalar control math
+
+`//intrinsic_vehicle/intrinsic/vehicle/control:control` also defines
+scalar helpers in `control_math.h`. They take doubles. They do not read
+`MotionReferenceRt`, `VehicleStateRt`, or `BodyWrenchRt`.
+
+`ShortestSignedAngle` returns `atan2(sin(delta), cos(delta))` in
+(-pi, pi]. A result of exactly -pi is returned as +pi.
+`HeadingError(reference, measured)` is that wrap of
+`reference - measured`.
+
+`BoundedIntegrator::Integrate` computes `x + u * dt` and then clamps
+`x` to the configured inclusive limits. The write happens only after
+the checks succeed. A zero time step with a finite input leaves `x`
+unchanged and returns success. A negative or non-finite time step, a
+non-finite input, or a non-finite product or sum returns
+`kInvalidArgument` and leaves `x` unchanged.
+
+`BackCalculation` is `k_aw * (u_sat - u_unsat)`.
+`IntegrateBackCalculation` adds that term to the integrator input and
+then calls `Integrate`. The caller supplies the unsaturated command,
+the saturated command, and the gain. The helper does not clamp the
+command and does not choose `k_aw`. A negative finite gain is accepted.
+
+These functions do not allocate. Status text is a static string view.
+`Integrate` and `IntegrateBackCalculation` mutate one integrator and
+are not safe for concurrent calls on that object. The pure functions
+do not share mutable state. This is not a controller, a gain policy,
+or a closed-loop plant.
+
+`//intrinsic_vehicle/intrinsic/vehicle/control:control_math_test`
+checks the pi boundaries, saturation entry and exit, a zero time step,
+non-finite rejection, and integrator recovery after back-calculation.
+
 ## Thruster effectiveness matrix
 
 `//intrinsic_vehicle/intrinsic/vehicle/allocation:allocation` defines
@@ -628,7 +664,9 @@ a single-failure residual, determinism, and rejected inputs.
 ## Out of scope
 
 Slew limiting, efficiency scaling, redistributing a saturated wrench
-onto unsaturated thrusters, mass-matrix acceleration, time integration,
-guidance laws, control laws, gains, trajectory sampling, Gazebo plugins,
-and ICON feature wiring are later issues. The guidance and control
-interfaces above are not those laws.
+onto unsaturated thrusters, mass-matrix acceleration, body-state time
+integration, guidance laws, control laws, gains, trajectory sampling,
+Gazebo plugins, and ICON feature wiring are later issues. The guidance
+and control interfaces above are not those laws. The scalar integrator
+in `control` clamps one caller-owned state. It does not integrate a
+body state.
