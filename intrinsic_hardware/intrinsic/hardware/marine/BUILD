@@ -409,9 +409,157 @@ py_test(
     ],
 )
 
+proto_library(
+    name = "altimeter_proto",
+    srcs = ["altimeter.proto"],
+    deps = [":measurement_health_proto"],
+)
+
+cc_proto_library(
+    name = "altimeter_cc_proto",
+    deps = [":altimeter_proto"],
+)
+
+py_proto_library(
+    name = "altimeter_py_pb2",
+    deps = [":altimeter_proto"],
+)
+
+cc_library(
+    name = "altimeter_policy",
+    hdrs = ["altimeter_policy.h"],
+    deps = [
+        ":measurement_health_policy",
+        "//intrinsic/vehicle:vehicle_contract_policy",
+    ],
+)
+
+cc_library(
+    name = "fake_altimeter",
+    srcs = ["fake_altimeter.cc"],
+    hdrs = ["fake_altimeter.h"],
+    deps = [
+        ":altimeter_cc_proto",
+        ":measurement_health_cc_proto",
+        "//intrinsic/embodiment:frame_policy",
+        "//intrinsic/vehicle:vehicle_contract_policy",
+        "@intrinsic_apis//intrinsic/embodiment/proto:stamped_header_cc_proto",
+        "@intrinsic_apis//intrinsic/vehicle/proto:vehicle_state_cc_proto",
+    ],
+)
+
+cc_test(
+    name = "altimeter_policy_test",
+    size = "small",
+    srcs = ["altimeter_policy_test.cc"],
+    deps = [
+        ":altimeter_policy",
+        "//intrinsic/embodiment:frame_policy",
+        "//intrinsic/vehicle:vehicle_contract_policy",
+        "@com_google_googletest//:gtest_main",
+    ],
+)
+
+cc_test(
+    name = "altimeter_serialization_test",
+    size = "small",
+    srcs = ["altimeter_serialization_test.cc"],
+    data = [":examples"],
+    deps = [
+        ":altimeter_cc_proto",
+        ":altimeter_policy",
+        ":fake_altimeter",
+        "//intrinsic/embodiment:frame_policy",
+        "//intrinsic/vehicle:vehicle_contract_policy",
+        "@com_google_googletest//:gtest_main",
+        "@intrinsic_apis//intrinsic/embodiment/proto:stamped_header_cc_proto",
+    ],
+)
+
+cc_test(
+    name = "fake_altimeter_test",
+    size = "small",
+    srcs = ["fake_altimeter_test.cc"],
+    deps = [
+        ":altimeter_cc_proto",
+        ":altimeter_policy",
+        ":fake_altimeter",
+        ":measurement_health_cc_proto",
+        "//intrinsic/embodiment:frame_policy",
+        "@com_google_googletest//:gtest_main",
+    ],
+)
+
+py_library(
+    name = "altimeter_policy_py",
+    srcs = ["altimeter_policy.py"],
+    deps = [
+        ":measurement_health_policy_py",
+        "//intrinsic/embodiment:frame_policy_py",
+        "//intrinsic/vehicle:vehicle_contract_policy_py",
+    ],
+)
+
+py_library(
+    name = "fake_altimeter_py",
+    srcs = ["fake_altimeter.py"],
+    deps = [
+        ":altimeter_py_pb2",
+        ":measurement_health_py_pb2",
+        "//intrinsic/embodiment:frame_policy_py",
+        "//intrinsic/vehicle:vehicle_contract_policy_py",
+        "@intrinsic_apis//intrinsic/embodiment/proto:stamped_header_py_pb2",
+    ],
+)
+
+py_test(
+    name = "altimeter_policy_test_py",
+    size = "small",
+    srcs = ["altimeter_policy_test.py"],
+    main = "altimeter_policy_test.py",
+    deps = [
+        ":altimeter_policy_py",
+        ":measurement_health_policy_py",
+        "//intrinsic/embodiment:frame_policy_py",
+        "//intrinsic/vehicle:vehicle_contract_policy_py",
+    ],
+)
+
+py_test(
+    name = "altimeter_serialization_test_py",
+    size = "small",
+    srcs = ["altimeter_serialization_test.py"],
+    data = [":examples"],
+    main = "altimeter_serialization_test.py",
+    deps = [
+        ":altimeter_policy_py",
+        ":altimeter_py_pb2",
+        ":fake_altimeter_py",
+        ":measurement_health_policy_py",
+        ":measurement_health_py_pb2",
+        "//intrinsic/vehicle:vehicle_contract_policy_py",
+        "@intrinsic_apis//intrinsic/embodiment/proto:stamped_header_py_pb2",
+    ],
+)
+
+py_test(
+    name = "fake_altimeter_test_py",
+    size = "small",
+    srcs = ["fake_altimeter_test.py"],
+    main = "fake_altimeter_test.py",
+    deps = [
+        ":altimeter_policy_py",
+        ":altimeter_py_pb2",
+        ":fake_altimeter_py",
+        ":measurement_health_policy_py",
+        ":measurement_health_py_pb2",
+    ],
+)
+
 filegroup(
     name = "examples",
     srcs = [
+        "examples/altimeter_nominal.textproto",
         "examples/dvl_bottom_track.textproto",
         "examples/measurement_health.textproto",
         "examples/measurement_health_unknown_covariance.textproto",
