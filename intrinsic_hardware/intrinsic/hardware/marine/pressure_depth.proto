@@ -1,0 +1,78 @@
+// Copyright 2026 Intrinsic Innovation LLC
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     https://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
+syntax = "proto3";
+
+package intrinsic_proto.hardware.marine;
+
+import "intrinsic/hardware/marine/measurement_health.proto";
+
+option go_package = "intrinsic/hardware/marine/pressure_depth_go_proto";
+
+// One pressure and/or depth sample. Pressure and depth are distinct fields.
+//
+// `health` embeds #75 MeasurementHealth. Stamp, frame, clock, quality,
+// covariance, and source health live there. The sample frame is
+// `health.header.frame_id` and is never inferred from this type.
+//
+// `pressure_pa` is pascals. Unset means absent. A present value must be
+// finite. Zero and negative pressure are allowed. This message has no
+// absolute-pressure floor.
+//
+// `depth_m` is meters, positive deeper (down from the free surface). Unset
+// means absent. Zero is the surface. A present value must be finite and
+// >= 0. Negative depth is out of range.
+//
+// Either field may appear alone. Both may appear together. This message
+// does not derive one from the other and it has no altitude field.
+//
+// `depth_provenance` unset means absent. DEPTH_PROVENANCE_UNSPECIFIED is an
+// explicit missing-conversion judgment. Unknown numbers are preserved.
+// When `depth_m` is present, provenance must be DIRECT or FROM_PRESSURE.
+// FROM_PRESSURE also requires present finite `pressure_pa` and present
+// finite `fluid_density_kg_m3` > 0. DIRECT may omit density. A present
+// density must be finite and > 0. FROM_PRESSURE without depth is
+// inconsistent.
+//
+// Covariance stays on `health.covariance` (Matrix6). Diagonal index 0 is
+// pressure variance (Pa^2). Diagonal index 7 is depth variance (m^2).
+// When covariance is present, every other entry must be exactly 0. Unset
+// covariance is unknown. Thirty-six zeros are a specified zero matrix.
+//
+// An empty message serializes to zero bytes and is absent, not an error.
+// Append fields. Reserve removed tags and names. See README.md.
+message PressureDepthMeasurement {
+  enum DepthProvenance {
+    // Judgment present and not a conversion. Not an unset field.
+    DEPTH_PROVENANCE_UNSPECIFIED = 0;
+    DEPTH_PROVENANCE_DIRECT = 1;
+    DEPTH_PROVENANCE_FROM_PRESSURE = 2;
+  }
+
+  // Required when this sample is engaged. Unset on an empty message.
+  MeasurementHealth health = 1;
+
+  // Pascals. Unset means absent. Present values must be finite.
+  optional double pressure_pa = 2;
+
+  // Meters, positive deeper. Unset means absent. Present values must be
+  // finite and >= 0.
+  optional double depth_m = 3;
+
+  // Unset means absent. UNSPECIFIED is an explicit non-conversion.
+  optional DepthProvenance depth_provenance = 4;
+
+  // kg/m^3. Unset means absent. A present value must be finite and > 0.
+  optional double fluid_density_kg_m3 = 5;
+}
