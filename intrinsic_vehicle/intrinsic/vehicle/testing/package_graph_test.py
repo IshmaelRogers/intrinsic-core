@@ -122,6 +122,8 @@ _CONTROL_SOURCES = (
     "control_math.h",
     "reference_control.cc",
     "reference_control.h",
+    "reference_depth_controller.cc",
+    "reference_depth_controller.h",
     "zero_wrench_controller.cc",
     "zero_wrench_controller.h",
 )

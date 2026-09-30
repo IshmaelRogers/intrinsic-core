@@ -163,7 +163,10 @@ class StatusOr {
 
 // Narrow reference-control boundary. Implementations must reject the
 // defects ValidateControlInputs names, must return a finite wrench, and
-// must keep Evaluate const and free of unsynchronized mutable state.
+// must keep Evaluate const. An implementation with no mutable members
+// may be called concurrently on one instance. An implementation that
+// owns integrator state stores it in a mutable member and is not safe
+// for concurrent Evaluate calls on that instance.
 // On failure the wrench is finite zeros and is not a command.
 class ReferenceController {
  public:

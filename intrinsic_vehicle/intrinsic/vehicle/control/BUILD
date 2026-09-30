@@ -15,9 +15,10 @@
 load("//bazel:cc_macros.bzl", "cc_library", "cc_test")
 
 # Opt-in vehicle reference control. ReferenceController,
-# ZeroWrenchController, and scalar control math. Not a control law.
-# Not part of the protected manipulator baseline. Do not add this
-# package to .github/baseline/manipulator_targets.tsv.
+# ZeroWrenchController, ReferenceDepthController, and scalar control
+# math. The depth controller is the heave law. Not part of the
+# protected manipulator baseline. Do not add this package to
+# .github/baseline/manipulator_targets.tsv.
 
 package(default_visibility = ["//visibility:public"])
 
@@ -30,6 +31,8 @@ filegroup(
         "control_math.h",
         "reference_control.cc",
         "reference_control.h",
+        "reference_depth_controller.cc",
+        "reference_depth_controller.h",
         "zero_wrench_controller.cc",
         "zero_wrench_controller.h",
     ],
@@ -40,12 +43,14 @@ cc_library(
     srcs = [
         "control_math.cc",
         "reference_control.cc",
+        "reference_depth_controller.cc",
         "zero_wrench_controller.cc",
     ],
     hdrs = [
         "control.h",
         "control_math.h",
         "reference_control.h",
+        "reference_depth_controller.h",
         "zero_wrench_controller.h",
     ],
     deps = [
@@ -67,6 +72,16 @@ cc_test(
     name = "control_test",
     size = "small",
     srcs = ["control_test.cc"],
+    deps = [
+        ":control",
+        "@com_google_googletest//:gtest_main",
+    ],
+)
+
+cc_test(
+    name = "reference_depth_controller_test",
+    size = "small",
+    srcs = ["reference_depth_controller_test.cc"],
     deps = [
         ":control",
         "@com_google_googletest//:gtest_main",
