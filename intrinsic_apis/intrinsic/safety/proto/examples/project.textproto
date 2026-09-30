@@ -1,0 +1,53 @@
+# PROJECT: the original twist is scaled down. applied_intent is present.
+header {
+  sequence: 2
+  source_time {
+    seconds: 1700000010
+    nanos: 500000000
+  }
+  receive_time {
+    seconds: 1700000011
+  }
+  source_id: "safety_filter"
+  clock_domain: "monotonic"
+  validity {
+    state: STATE_VALID
+  }
+}
+kind: SAFETY_DECISION_KIND_PROJECT
+original_intent_digest: "5c12e76d610e5cf3f5b0d6c402bcfef05db2ec4deb5faacd03cfecdd2f3e34ae"
+snapshot_id: "6ceb1af0dca7d2b01d4e876fe699fb8c5d5709d5a4938ea3f46e8d355d3b33de"
+applied_intent {
+  header {
+    sequence: 20
+    source_time {
+      seconds: 1700000010
+      nanos: 500000000
+    }
+    receive_time {
+      seconds: 1700000011
+    }
+    source_id: "safety_filter"
+    frame_id: "body"
+    clock_domain: "monotonic"
+    validity {
+      state: STATE_VALID
+    }
+  }
+  twist {
+    body_twist {
+      linear_x_m_s: 0.25
+    }
+  }
+  horizon {
+    seconds: 1
+  }
+  confidence: 0.5
+}
+findings {
+  rule_id: "speed_limit"
+  severity: SAFETY_FINDING_SEVERITY_WARNING
+  summary: "Forward speed reduced."
+  detail: "Requested 0.5 m/s, limit 0.25 m/s."
+}
+decision_epoch: 2
