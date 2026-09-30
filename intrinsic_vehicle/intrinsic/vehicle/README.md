@@ -20,10 +20,11 @@ bounds, and applies thruster health to those columns and bounds.
 reference-to-body-wrench step. Guidance is a soft-real-time interface
 with deterministic fakes and no guidance law. `control` holds the
 reference depth controller, the reference heading controller, the
-neutral-wrench fake, scalar heading wrap, a bounded integrator, and
-back-calculation. The depth controller is heave only. The heading
-controller is yaw torque only. The scalar helpers are not a control
-law. Forward speed is not controlled here.
+reference forward-speed controller, the neutral-wrench fake, scalar
+heading wrap, a bounded integrator, and back-calculation. The depth
+controller is heave only. The heading controller is yaw torque only.
+The forward-speed controller is surge force only. The scalar helpers
+are not a control law.
 Marine model parameter schemas and validation are in `parameters`.
 
 Protobuf `VehicleState` and `DesiredMotion` stay in
@@ -41,7 +42,7 @@ commands.
 | `//intrinsic_vehicle/intrinsic/vehicle/dynamics` | Soft-real-time | `VehicleDynamics` interface, zero-force test double, rigid-body mass matrix, added-mass matrix, rigid-body Coriolis matrix, added-mass Coriolis matrix, linear/quadratic damping wrench, gravity/buoyancy restoring wrench, water-current relative velocity, and marine-force composition. Outside ICON. |
 | `//intrinsic_vehicle/intrinsic/vehicle/parameters` | Soft-real-time | Marine model schemas and validation. Not loaded by ICON. |
 | `//intrinsic_vehicle/intrinsic/vehicle/guidance` | Soft-real-time | `GuidanceStep` maps `DesiredMotionRt` to `MotionReferenceRt` with typed status. `EchoGuidance` echoes a pose or twist. `NullGuidance` returns a missing-objective status and an empty reference. Outside ICON. 10 to 50 Hz. Fails closed on a stale snapshot or an expired horizon. |
-| `//intrinsic_vehicle/intrinsic/vehicle/control` | Soft-real-time | `ReferenceController` maps `MotionReferenceRt` and vehicle state to `BodyWrenchRt` with typed status. `ZeroWrenchController` validates inputs and returns a neutral zero body wrench. `ReferenceDepthController` maps ENU depth error to a saturated heave force and leaves surge and torque at zero. `ReferenceHeadingController` maps ENU heading error to a saturated yaw torque and leaves force, roll, and pitch at zero. Scalar helpers wrap a heading error into (-pi, pi], clamp one integrator state, and add back-calculation. Outside ICON. ICON remains the only actuator writer. |
+| `//intrinsic_vehicle/intrinsic/vehicle/control` | Soft-real-time | `ReferenceController` maps `MotionReferenceRt` and vehicle state to `BodyWrenchRt` with typed status. `ZeroWrenchController` validates inputs and returns a neutral zero body wrench. `ReferenceDepthController` maps ENU depth error to a saturated heave force and leaves surge and torque at zero. `ReferenceHeadingController` maps ENU heading error to a saturated yaw torque and leaves force, roll, and pitch at zero. `ReferenceForwardSpeedController` maps body surge-speed error to a saturated surge force and leaves sway, heave, and torque at zero. Scalar helpers wrap a heading error into (-pi, pi], clamp one integrator state, and add back-calculation. Outside ICON. ICON remains the only actuator writer. |
 | `//intrinsic_vehicle/intrinsic/vehicle/testing` | Test-only | Test-only umbrella and the package-graph check. |
 
 Include paths strip the `intrinsic_vehicle` root, the same way the other
@@ -478,8 +479,11 @@ missing pose and twist; snapshot identity. A reference field that is
 not present is not read. Stored numbers with `has_pose` and `has_twist`
 both false are not a pose. The depth controller and the heading
 controller then require a pose and a `world_enu` frame on the state
-and on that pose. A twist-only reference is `kMissingObjective`. A
-`world_ned` pose is `kInvalid`.
+and on that pose. A twist-only reference is `kMissingObjective` for
+those laws. A `world_ned` pose is `kInvalid` for those laws. The
+forward-speed controller requires a body-frame twist. A pose-only
+reference is `kMissingObjective` for that law. A non-body twist frame
+is `kInvalid`.
 
 ### Thread safety and ownership
 
@@ -488,7 +492,9 @@ and on that pose. A twist-only reference is `kMissingObjective`. A
 on one of those instances do not share mutable state.
 `ReferenceDepthController` owns its integral force in a mutable member.
 `ReferenceHeadingController` owns its integral torque the same way.
-Concurrent `Evaluate` or `Reset` calls on either instance are not safe.
+`ReferenceForwardSpeedController` owns its integral surge force the
+same way. Concurrent `Evaluate` or `Reset` calls on one of those
+instances are not safe.
 The functions do not allocate, do not retain arguments, and do not take
 locks. Status text is a static string view. `TrajectoryId::view()` is
 valid only while that object is alive. The caller owns the intent, the
@@ -620,6 +626,51 @@ rejected inputs, and the 0.5 rad step on a point-mass yaw plant
 (`J = 5` kg m^2, `b = 1` N·m·s/rad, `dt = 0.1` s, semi-implicit Euler).
 The fixture bounds are overshoot at most 15% of the step and settling
 within 20 s into ±0.02 rad.
+
+### Reference forward-speed controller
+
+`ReferenceForwardSpeedController` maps one body surge-speed objective
+to body surge force. Surge is `force_n[0]`, newtons, REP-103 +x. The
+command and the measurement are `body_twist[kSurge]`, meters per
+second, in the body frame. The policy is ground-relative body surge.
+`VehicleStateRt` has no water-current field. This controller does not
+subtract a current and does not call a relative-velocity helper.
+Current-relative control is the caller's job: present the speed to
+track in `state.body_twist[kSurge]`. This package does not convert
+NED and does not depend on `dynamics`. Depth and heading are not
+controlled.
+
+Contract revision 2 sets `k_p = 50` N/(m/s) and `k_i = 5` N/(m/s)/s.
+There is no derivative term. Surge force is clamped to [-60, 60] N.
+The controller owns the integral force `S` in newtons, clamped to
+[-48, 48]. `Reset()` sets `S` to 0.
+
+```
+e = u_cmd - u_meas
+u_unsat = k_p * e + S
+u = clamp(u_unsat, -60, 60)
+```
+
+Away from the clamp and from saturation, `S = k_i * ∫ e dt`, so the
+command is `k_p * e + k_i * I`. A positive speed error produces
+positive surge. Sway, heave, and every torque stay 0. `S` is advanced
+with `IntegrateBackCalculation`. The integrator input is `k_i * e` and
+`k_aw` is 0.2.
+
+A rejected call leaves `S` unchanged and returns finite zeros. That
+zero wrench is not a command. `ValidateControlInputs` runs first. A
+missing twist, including a pose-only reference, is
+`kMissingObjective`. A non-body twist frame is `kInvalid`. Non-finite
+surge speed or surge force is `kInvalidArgument`. A snapshot mismatch
+is `kStale`.
+
+`//intrinsic_vehicle/intrinsic/vehicle/control:reference_forward_speed_controller_test`
+checks the surge sign, the integral, anti-windup against pure
+integration, the integrator clamp, rejected inputs, the
+ground-relative policy (no current input), and the 0.5 m/s step on a
+point-mass surge plant (`m = 60` kg, `b = 5` N·s/m, `dt = 0.1` s,
+semi-implicit Euler). The fixture bounds are overshoot at most 15% of
+the step and settling within 20 s into ±0.02 m/s.
 
 ## Thruster effectiveness matrix
 
@@ -756,9 +807,10 @@ a single-failure residual, determinism, and rejected inputs.
 
 Slew limiting, efficiency scaling, redistributing a saturated wrench
 onto unsaturated thrusters, mass-matrix acceleration, body-state time
-integration, guidance laws, surge control, trajectory sampling,
+integration, guidance laws, trajectory sampling,
 Gazebo plugins, and ICON feature wiring are later issues.
 The guidance interface above is not a guidance law. The scalar
 integrator in `control` clamps the integral force owned by the depth
-controller and the integral torque owned by the heading controller.
-It does not integrate a body state.
+controller, the integral torque owned by the heading controller, and
+the integral surge force owned by the forward-speed controller. It
+does not integrate a body state.

@@ -24,9 +24,10 @@ namespace intrinsic::vehicle::control {
 // is the reference-to-body-wrench boundary. ZeroWrenchController is
 // the deterministic neutral-wrench fake. ReferenceDepthController is
 // the heave depth law. ReferenceHeadingController is the yaw heading
-// law. Scalar heading wrap, the bounded integrator, and
-// back-calculation live in control_math.h. This header defines no
-// control law and writes no actuator command.
+// law. ReferenceForwardSpeedController is the surge speed law. Scalar
+// heading wrap, the bounded integrator, and back-calculation live in
+// control_math.h. This header defines no control law and writes no
+// actuator command.
 // Timing and ownership: README.md in this tree.
 inline constexpr std::string_view kPackageName =
     "intrinsic_vehicle/intrinsic/vehicle/control";
