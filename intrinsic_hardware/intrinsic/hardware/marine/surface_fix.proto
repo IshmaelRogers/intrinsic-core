@@ -1,0 +1,96 @@
+// Copyright 2026 Intrinsic Innovation LLC
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     https://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
+syntax = "proto3";
+
+package intrinsic_proto.hardware.marine;
+
+import "intrinsic/hardware/marine/measurement_health.proto";
+
+option go_package = "intrinsic/hardware/marine/surface_fix_go_proto";
+
+// One surface position fix from GNSS, an acoustic positioning system, or
+// another source. This message is not `InsSolution`: it carries position and
+// optional accuracy, counts, and linear velocity only. There is no
+// orientation and no angular velocity.
+//
+// `health` embeds #75 MeasurementHealth. Stamp, frame, clock, state,
+// quality, covariance, and source health live there. Position and velocity
+// are in `health.header.frame_id` and that frame is never inferred from this
+// type. The host does not convert lat/lon, WGS84, ENU, or NED, and it does
+// not decide whether the vehicle is submerged.
+//
+// `position_x_m`, `position_y_m`, and `position_z_m` are meters. Each is
+// unset when absent. An engaged sample needs all three present and finite.
+// Zero and negative values are supplied values.
+//
+// `source` is the measurement-local fix source. Unset means absent and is
+// distinct from `FIX_SOURCE_UNSPECIFIED`. An engaged sample needs a set
+// source that is not `FIX_SOURCE_UNSPECIFIED`. Unknown future numbers are
+// kept on the wire and are not accepted.
+//
+// `health.quality` in [0, 1] is the fix quality. There is no second quality
+// field.
+//
+// `satellite_count` and `beacon_count` are optional counts. Unset means
+// absent. A present value must be >= 0. Zero is a supplied count.
+//
+// `horizontal_accuracy_m` and `vertical_accuracy_m` are optional meters.
+// Unset means absent. A present value must be finite and >= 0.
+//
+// `velocity_*_m_s` is an optional linear velocity triple in m/s. If any
+// component is present, all three must be present and finite.
+//
+// Covariance stays on `health.covariance` (Matrix6). When present and well
+// formed, only diagonal indices 0, 7, and 14 (position x, y, z variance in
+// m^2) may be non-zero. Unset covariance is unknown. Thirty-six zeros are a
+// specified zero matrix.
+//
+// A producer may emit an engaged sample with `health.state = INVALID`. That
+// is a present invalid fix, not an absent sample. Dropout omits the sample.
+//
+// An empty message serializes to zero bytes and is absent, not an error.
+// Append fields. Reserve removed tags and names. See README.md.
+message SurfaceFix {
+  enum FixSource {
+    FIX_SOURCE_UNSPECIFIED = 0;
+    FIX_SOURCE_GNSS = 1;
+    FIX_SOURCE_ACOUSTIC = 2;
+    FIX_SOURCE_OTHER = 3;
+  }
+
+  // Required when this sample is engaged. Unset on an empty message.
+  MeasurementHealth health = 1;
+
+  // Meters in `health.header.frame_id`. Unset means absent.
+  optional double position_x_m = 2;
+  optional double position_y_m = 3;
+  optional double position_z_m = 4;
+
+  // Unset means absent. Required and not UNSPECIFIED when engaged.
+  optional FixSource source = 5;
+
+  // Unset means absent. Present values must be >= 0.
+  optional int32 satellite_count = 6;
+  optional int32 beacon_count = 7;
+
+  // Meters. Unset means absent. Present values must be finite and >= 0.
+  optional double horizontal_accuracy_m = 8;
+  optional double vertical_accuracy_m = 9;
+
+  // Linear velocity in m/s. All three or none.
+  optional double velocity_x_m_s = 10;
+  optional double velocity_y_m_s = 11;
+  optional double velocity_z_m_s = 12;
+}

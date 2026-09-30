@@ -1,0 +1,74 @@
+# Nominal GNSS surface fix. Diagonal slots are px, py, pz. Every other
+# entry is 0.
+health {
+  header {
+    sequence: 42
+    source_time {
+      seconds: 1700000000
+      nanos: 250000000
+    }
+    receive_time {
+      seconds: 1700000001
+    }
+    source_id: "nav_sensor"
+    frame_id: "gnss"
+    clock_domain: "monotonic"
+    validity {
+      state: STATE_VALID
+    }
+  }
+  state: VALID
+  quality: 0.75
+  covariance {
+    values: 1.0
+    values: 0.0
+    values: 0.0
+    values: 0.0
+    values: 0.0
+    values: 0.0
+    values: 0.0
+    values: 4.0
+    values: 0.0
+    values: 0.0
+    values: 0.0
+    values: 0.0
+    values: 0.0
+    values: 0.0
+    values: 0.25
+    values: 0.0
+    values: 0.0
+    values: 0.0
+    values: 0.0
+    values: 0.0
+    values: 0.0
+    values: 0.0
+    values: 0.0
+    values: 0.0
+    values: 0.0
+    values: 0.0
+    values: 0.0
+    values: 0.0
+    values: 0.0
+    values: 0.0
+    values: 0.0
+    values: 0.0
+    values: 0.0
+    values: 0.0
+    values: 0.0
+    values: 0.0
+  }
+  sources {
+    source_id: "primary"
+    validity {
+      state: STATE_VALID
+    }
+  }
+  sources {
+    source_id: "aiding"
+  }
+}
+position_x_m: 12.5
+position_y_m: -3.25
+position_z_m: 1.0
+source: FIX_SOURCE_GNSS
+satellite_count: 12
