@@ -434,3 +434,51 @@ py_test(
         ":eskf_state_py",
     ],
 )
+
+cc_library(
+    name = "surface_position_update",
+    srcs = ["surface_position_update.cc"],
+    hdrs = ["surface_position_update.h"],
+    deps = [
+        ":eskf_propagate",
+        ":eskf_state",
+        ":innovation_gate",
+    ],
+)
+
+cc_test(
+    name = "surface_position_update_test",
+    size = "small",
+    srcs = ["surface_position_update_test.cc"],
+    deps = [
+        ":eskf_state",
+        ":surface_position_update",
+        "@com_google_googletest//:gtest_main",
+    ],
+)
+
+py_library(
+    name = "surface_position_update_py",
+    srcs = ["surface_position_update.py"],
+    deps = [
+        ":eskf_propagate_py",
+        ":eskf_state_py",
+        ":innovation_gate_py",
+    ],
+)
+
+py_test(
+    name = "surface_position_update_test_py",
+    size = "small",
+    srcs = ["surface_position_update_test.py"],
+    data = [
+        "surface_position_update.cc",
+        "surface_position_update.h",
+        "surface_position_update.py",
+    ],
+    main = "surface_position_update_test.py",
+    deps = [
+        ":eskf_state_py",
+        ":surface_position_update_py",
+    ],
+)
