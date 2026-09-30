@@ -1,0 +1,94 @@
+// Copyright 2026 Intrinsic Innovation LLC
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     https://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
+syntax = "proto3";
+
+package intrinsic_proto.hardware.marine;
+
+import "intrinsic/hardware/marine/measurement_health.proto";
+
+option go_package = "intrinsic/hardware/marine/ins_go_proto";
+
+// One optional vendor navigation solution. This message is not an IMU sample
+// and it does not propagate a filter from `ImuMeasurement`.
+//
+// `health` embeds #75 MeasurementHealth. Stamp, frame, clock, quality,
+// covariance, and source health live there. Position and attitude are in
+// `health.header.frame_id`. The frame is never inferred from this type. The
+// host does not convert ENU and NED and does not apply a submerged-acceptance
+// policy.
+//
+// Position is meters. An engaged sample requires all three components, each
+// finite. Zero and negative positions are supplied values.
+//
+// `orientation_xyzw` is a Hamilton quaternion (x, y, z, w). It is required
+// when the sample is engaged. All four components are supplied when the
+// message is present. The quaternion must be finite and unit-norm within
+// absolute tolerance 1e-6 of 1. The host does not renormalize.
+//
+// Linear velocity (m/s) and angular velocity (rad/s) are optional triples.
+// Unset means that twist was not reported. If any component of a triple is
+// present, all three must be present and finite.
+//
+// `source` is measurement-local. Unset means absent. SOURCE_UNSPECIFIED is
+// an explicit non-source. Unknown numbers are kept and are not accepted.
+//
+// Covariance stays on `health.covariance` (Matrix6). When present and well
+// formed, only diagonal indices 0, 7, 14, 21, 28, and 35 may be non-zero.
+// Those slots are px, py, pz and placeholder attitude variances rx, ry, rz.
+// They are not a quaternion covariance. Velocity covariance is not in this
+// matrix. Unset covariance is unknown. Thirty-six zeros are specified zero.
+//
+// An empty message serializes to zero bytes and is absent, not an error.
+// Append fields. Reserve removed tags and names. See README.md.
+message InsSolution {
+  enum SourceKind {
+    // Judgment present and not a navigation source. Not an unset field.
+    SOURCE_UNSPECIFIED = 0;
+    SOURCE_VENDOR_INS = 1;
+    SOURCE_EXTERNAL_NAV = 2;
+  }
+
+  // Hamilton quaternion, stored x, y, z, w. Zero components are values.
+  message QuaternionXyzw {
+    double x = 1;
+    double y = 2;
+    double z = 3;
+    double w = 4;
+  }
+
+  // Required when this sample is engaged. Unset on an empty message.
+  MeasurementHealth health = 1;
+
+  // Meters in `health.header.frame_id`. An engaged sample requires all three.
+  optional double position_x_m = 2;
+  optional double position_y_m = 3;
+  optional double position_z_m = 4;
+
+  // Required when this sample is engaged. Sensor/body attitude quaternion.
+  QuaternionXyzw orientation_xyzw = 5;
+
+  // m/s. All unset means absent. A partial triple is rejected.
+  optional double linear_velocity_x_m_s = 6;
+  optional double linear_velocity_y_m_s = 7;
+  optional double linear_velocity_z_m_s = 8;
+
+  // rad/s. All unset means absent. A partial triple is rejected.
+  optional double angular_velocity_x_rad_s = 9;
+  optional double angular_velocity_y_rad_s = 10;
+  optional double angular_velocity_z_rad_s = 11;
+
+  // Unset means absent. SOURCE_UNSPECIFIED is an explicit non-source.
+  optional SourceKind source = 12;
+}

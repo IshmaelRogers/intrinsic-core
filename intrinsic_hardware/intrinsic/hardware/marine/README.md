@@ -5,8 +5,9 @@ The message is `MeasurementHealth` in
 `intrinsic_proto.hardware.marine`. PDR §15 places sensor contracts in this
 package. Common stamped provenance stays on embodiment `StampedHeader`.
 Covariance and source health stay on the vehicle messages from #17.
-`DvlMeasurement`, `PressureDepthMeasurement`, and `AltimeterMeasurement`
-embed this envelope. Each is specified below.
+`DvlMeasurement`, `PressureDepthMeasurement`, `AltimeterMeasurement`,
+`ImuMeasurement`, and `InsSolution` embed this envelope. Each is specified
+below.
 
 This package does not add a robot-type enum, a platform-wide embodiment
 switch, ICON feature interfaces, FlatBuffers, Gazebo plugins, filters, or
@@ -66,9 +67,11 @@ the header stamp.
 ## Documented producer status
 
 The DVL payload below is the first sensor message on this envelope.
-Pressure and depth follow it. Altimeter range follows them. Other sensor
-payloads are later contracts. This envelope records the status those producers already
-decided:
+Pressure and depth follow it. Altimeter range follows them. IMU and INS
+follow the altimeter as separate messages. There is no filter between
+them, and this leaf does not apply a submerged-acceptance policy. Other
+sensor payloads are later contracts. This envelope records the status those
+producers already decided:
 
 | Situation | What the producer sets | Host result |
 | --- | --- | --- |
@@ -654,3 +657,316 @@ These targets stay off `.github/baseline/manipulator_targets.tsv`:
 - `//intrinsic_hardware/intrinsic/hardware/marine:altimeter_serialization_test_py`
 - `//intrinsic_hardware/intrinsic/hardware/marine:fake_altimeter_test`
 - `//intrinsic_hardware/intrinsic/hardware/marine:fake_altimeter_test_py`
+
+## IMU measurement
+
+`ImuMeasurement` is one raw inertial sample. It embeds `MeasurementHealth`
+as `health`. The sample frame is `health.header.frame_id`. It is never
+inferred from `ImuMeasurement`. Axes are REP-103 in that frame. The host
+does not convert ENU and NED. Units are SI: angular velocity is rad/s and
+linear acceleration is m/s². This message is not an INS solution and it
+does not propagate a filter.
+
+Host checks live in `imu_policy.h` and `imu_policy.py`. They do not parse
+protobuf, do not convert frames, do not renormalize quaternions, and do
+not rewrite `health.state` or embodiment Validity.
+`FakeImu` is a deterministic producer. There is no estimator adapter,
+magnetometer field, ICON FlatBuffer, Gazebo plugin, or real-hardware path.
+
+| Message | Role |
+| --- | --- |
+| `ImuMeasurement` | One raw ω and a sample plus health. |
+| `ImuMeasurement.QuaternionXyzw` | Optional Hamilton attitude, stored x, y, z, w. |
+
+### Rates and acceleration
+
+An engaged sample requires both triples. Each component is an optional
+double, so zero is a supplied value and is not the same as absent.
+
+| Wire | Meaning |
+| --- | --- |
+| All six components present and finite | Required payload. Zero is legal. |
+| Any component of either triple absent | Rejected. |
+| Any present component NaN or infinity | Rejected as non-finite. `health.state` is not rewritten. |
+
+There is no magnitude cap.
+
+### Orientation
+
+`orientation_xyzw` is optional. Unset means a raw IMU sample with no
+attitude. When the nested message is present, all four components are
+supplied (zero is a component). The quaternion must be finite and
+unit-norm: `|‖q‖ − 1| ≤ 1e-6`. The host does not renormalize and does not
+mutate the view. Identity `(0, 0, 0, 1)` and `(0, 0, 0, -1)` are unit.
+A present non-unit quaternion is `kOrientation`.
+
+### Covariance
+
+Covariance is `health.covariance` (`Matrix6`), not a new field. #17 shape,
+symmetry, and finiteness rules apply. When the matrix is present and well
+formed, only these diagonal indices may be non-zero. Every other entry
+must be exactly `0.0`:
+
+| Slot | Row-major index | Unit |
+| --- | --- | --- |
+| ωx variance | 0 | (rad/s)² |
+| ωy variance | 7 | (rad/s)² |
+| ωz variance | 14 | (rad/s)² |
+| ax variance | 21 | (m/s²)² |
+| ay variance | 28 | (m/s²)² |
+| az variance | 35 | (m/s²)² |
+
+Orientation uncertainty is not a second matrix. Unset covariance is
+unknown. Thirty-six zeros are a specified zero matrix. A negative diagonal
+is structurally allowed. An off-diagonal that breaks #17 symmetry beyond
+`1e-9` is a covariance defect. An entry that is within that symmetry
+tolerance and is not exactly zero is a slot defect.
+
+### Check order
+
+The first defect wins:
+
+1. Health missing on an engaged sample.
+2. Empty frame id.
+3. Frame id different from a caller-supplied expected id.
+4. Receive time strictly before source time, when both timestamps are present.
+5. Non-finite quality, when quality is present.
+6. Quality outside `[0, 1]`, when quality is present.
+7. Covariance shape, when covariance is present.
+8. Empty `source_id` on a present source entry.
+9. A covariance entry other than indices 0, 7, 14, 21, 28, and 35 is not exactly zero, when covariance is present and well formed.
+10. Angular-velocity triple incomplete.
+11. A present angular-velocity component is non-finite.
+12. Linear-acceleration triple incomplete.
+13. A present linear-acceleration component is non-finite.
+14. A present orientation component is non-finite.
+15. A present orientation is not unit-norm within `1e-6`.
+
+An unengaged message (no health engagement and no rate, acceleration, or
+orientation presence) is not a sample. `accepted` requires health state
+`VALID` and no structural defect. `DEGRADED` and `INVALID` are not
+rewritten. Header Validity does not select `accepted`.
+
+### Fake
+
+`FakeImu` is a pure function of its config and truth. The same seed, bias,
+drift, noise, delay, dropout, and invalid-orientation flags produce the
+same bytes. `seed` is written to `health.header.sequence`. It also mixes
+the noise draw. The draw is SplitMix64 of the seed, mapped onto `[-1, 1)`
+with a 53-bit fraction that is exact in binary64. C++ and Python use the
+same mix. Angular noise uses `seed`. Linear-acceleration noise uses
+`seed + 1`. The fake does not read an INS solution.
+
+Default config and truth are the nominal fixture: sequence 42, frame
+`imu`, source time `1700000000.250000000`, delay `1s` plus `-250000000` ns
+so receive time is `1700000001.0`, angular velocity `(0.25, -0.5, 0.125)`
+rad/s, linear acceleration `(0, 0, 8)` m/s², orientation identity
+`(0, 0, 0, 1)`, quality `0.75`, and a specified covariance with diagonals
+`0.25`, `0.5`, `0.125`, `1`, `2`, and `4` at indices 0, 7, 14, 21, 28, and
+35. Header validity stays `STATE_VALID`. `source_id` is `nav_sensor`. The
+clock domain is monotonic. Sources are `primary` (valid) and `aiding`
+(unset validity). Noise, bias, and drift amplitudes default to `0`.
+
+| Fault | What the fake emits |
+| --- | --- |
+| Dropout | No message. Checked first, including when invalid orientation is also set. Absent, not an error. |
+| Delay | `receive_time = source_time + delay`. A reversal is emitted and not repaired. |
+| Bias | Added per component to ω and/or a. Any non-zero component sets health state `DEGRADED`, unless invalid orientation applies. |
+| Drift | `amplitude * seed` added to every component of that triple. A non-zero amplitude sets `DEGRADED`, unless invalid orientation applies. |
+| Noise | A non-zero amplitude, including a non-finite amplitude, adds the signed-unit draw and sets `DEGRADED`, unless invalid orientation applies. The result is not repaired. |
+| Invalid orientation | Canonical quaternion `(0, 0, 0, 2)`, health state `INVALID`. Bias, drift, and noise are not applied. Delay is still applied. |
+
+A large positive delay is not a structural defect. This contract has no
+maximum age. The canonical non-unit quaternion is the stronger `INVALID`
+fixture. The host rejects it and does not rewrite `health.state` or the
+header Validity companion.
+
+### Evolution
+
+Append fields. Reserve removed tags and names. Preserve unknown fields.
+Golden bytes for the nominal fixture and the rates-only fixture (orientation
+absent) are fixed in the C++ and Python serialization tests. Those bytes
+were captured from a local C++ protobuf run of `FakeImu` because Bazel was
+not available in the authoring environment. The rates-only encoding is a
+prefix of the nominal encoding. Field 100 is preserved.
+
+Text format examples:
+[`examples/imu_nominal.textproto`](examples/imu_nominal.textproto) and
+[`examples/imu_rates_only.textproto`](examples/imu_rates_only.textproto).
+
+### IMU targets
+
+These targets stay off `.github/baseline/manipulator_targets.tsv`:
+
+- `//intrinsic_hardware/intrinsic/hardware/marine:imu_proto`
+- `//intrinsic_hardware/intrinsic/hardware/marine:imu_cc_proto`
+- `//intrinsic_hardware/intrinsic/hardware/marine:imu_py_pb2`
+- `//intrinsic_hardware/intrinsic/hardware/marine:imu_policy`
+- `//intrinsic_hardware/intrinsic/hardware/marine:imu_policy_py`
+- `//intrinsic_hardware/intrinsic/hardware/marine:fake_imu`
+- `//intrinsic_hardware/intrinsic/hardware/marine:fake_imu_py`
+- `//intrinsic_hardware/intrinsic/hardware/marine:imu_policy_test`
+- `//intrinsic_hardware/intrinsic/hardware/marine:imu_policy_test_py`
+- `//intrinsic_hardware/intrinsic/hardware/marine:imu_serialization_test`
+- `//intrinsic_hardware/intrinsic/hardware/marine:imu_serialization_test_py`
+- `//intrinsic_hardware/intrinsic/hardware/marine:fake_imu_test`
+- `//intrinsic_hardware/intrinsic/hardware/marine:fake_imu_test_py`
+
+## INS solution
+
+`InsSolution` is one optional vendor navigation solution. It embeds
+`MeasurementHealth` as `health`. Position and attitude are in
+`health.header.frame_id`. The frame is never inferred from `InsSolution`.
+The host does not convert ENU and NED and does not apply a
+submerged-acceptance policy. Position is meters. This message is not an
+IMU sample and it does not propagate a filter from `ImuMeasurement`.
+
+Host checks live in `ins_policy.h` and `ins_policy.py`. They do not parse
+protobuf, do not convert frames, do not renormalize quaternions, do not
+read IMU samples, and do not rewrite `health.state` or embodiment
+Validity. `FakeIns` is a deterministic producer. There is no estimator
+adapter, ICON FlatBuffer, Gazebo plugin, or real-hardware path.
+
+| Message | Role |
+| --- | --- |
+| `InsSolution` | One position, attitude, and optional twist plus health. |
+| `InsSolution.QuaternionXyzw` | Required Hamilton attitude when the sample is engaged. |
+| `InsSolution.SourceKind` | Optional measurement-local source. |
+
+### Position and orientation
+
+An engaged sample requires a finite position triple and a present unit
+quaternion. Each position component is an optional double, so zero and
+negative positions are supplied values.
+
+`orientation_xyzw` is a message, not `optional`. Presence of the nested
+message is required when the sample is engaged. All four components are
+supplied when it is present. The quaternion must be finite and unit-norm:
+`|‖q‖ − 1| ≤ 1e-6`. The host does not renormalize. The canonical non-unit
+fixture is `(0, 0, 0, 2)`.
+
+### Twist
+
+Linear velocity (m/s) and angular velocity (rad/s) are optional triples.
+All three components unset means that twist was not reported. If any
+component of a triple is present, all three must be present and finite.
+Zero components of a present triple are supplied values.
+
+### Source
+
+`source` is `optional`. Unset is absent and is not `SOURCE_UNSPECIFIED`.
+
+| Wire | Host classification |
+| --- | --- |
+| Field unset | Absent. Allowed on an otherwise sound sample. |
+| `SOURCE_UNSPECIFIED` (`0`) | Explicit non-source. Rejected when the sample is engaged. Not rewritten. |
+| `SOURCE_VENDOR_INS` (`1`) | Known vendor solution. |
+| `SOURCE_EXTERNAL_NAV` (`2`) | Known external navigation source. |
+| Any other number | Kept on the wire. Not accepted. Not rewritten. |
+
+### Covariance
+
+Covariance is `health.covariance` (`Matrix6`). #17 shape, symmetry, and
+finiteness rules apply. When the matrix is present and well formed, only
+these diagonal indices may be non-zero. Every other entry must be exactly
+`0.0`:
+
+| Slot | Row-major index | Unit |
+| --- | --- | --- |
+| px variance | 0 | m² |
+| py variance | 7 | m² |
+| pz variance | 14 | m² |
+| rx placeholder attitude variance | 21 | rad² |
+| ry placeholder attitude variance | 28 | rad² |
+| rz placeholder attitude variance | 35 | rad² |
+
+The attitude slots are placeholders. They are not a quaternion covariance.
+Velocity covariance is not in this matrix. Unset covariance is unknown.
+Thirty-six zeros are a specified zero matrix.
+
+### Check order
+
+The first defect wins:
+
+1. Health missing on an engaged sample.
+2. Empty frame id.
+3. Frame id different from a caller-supplied expected id.
+4. Receive time strictly before source time, when both timestamps are present.
+5. Non-finite quality, when quality is present.
+6. Quality outside `[0, 1]`, when quality is present.
+7. Covariance shape, when covariance is present.
+8. Empty `source_id` on a present source entry.
+9. A covariance entry other than indices 0, 7, 14, 21, 28, and 35 is not exactly zero, when covariance is present and well formed.
+10. Position triple incomplete.
+11. A present position component is non-finite.
+12. Orientation message absent.
+13. A present orientation component is non-finite.
+14. A present orientation is not unit-norm within `1e-6`.
+15. Linear-velocity triple partial (one or two components).
+16. A present linear-velocity component is non-finite.
+17. Angular-velocity triple partial (one or two components).
+18. A present angular-velocity component is non-finite.
+19. `source` present and not `SOURCE_VENDOR_INS` or `SOURCE_EXTERNAL_NAV`.
+
+An unengaged message is not a sample. `accepted` requires health state
+`VALID` and no structural defect. Absent twist and absent source are not
+defects. `DEGRADED` and `INVALID` are not rewritten. Header Validity does
+not select `accepted`.
+
+### Fake
+
+`FakeIns` is a pure function of its config and truth. The same seed, bias,
+drift, noise, delay, dropout, and invalid-orientation flags produce the
+same bytes. `seed` is written to `health.header.sequence` and mixes the
+noise draws. Position noise uses `seed`, linear-velocity noise uses
+`seed + 1`, and angular-velocity noise uses `seed + 2`. The fake does not
+read `FakeImu` outputs.
+
+Default config and truth are the nominal fixture: sequence 42, frame
+`ins`, source time `1700000000.250000000`, delay `1s` plus `-250000000` ns
+so receive time is `1700000001.0`, position `(12, -4, 0.5)` m, orientation
+identity `(0, 0, 0, 1)`, linear velocity `(1.5, 0, -0.25)` m/s, angular
+velocity `(0, 0.125, 0)` rad/s, source `SOURCE_VENDOR_INS`, quality
+`0.75`, and a specified covariance with diagonals `1`, `4`, `0.25`,
+`0.0625`, `0.125`, and `0.5` at indices 0, 7, 14, 21, 28, and 35. Header
+validity stays `STATE_VALID`. `source_id` is `nav_sensor`. The clock domain
+is monotonic. Sources are `primary` (valid) and `aiding` (unset validity).
+
+| Fault | What the fake emits |
+| --- | --- |
+| Dropout | No message. Checked first. Absent, not an error. |
+| Delay | `receive_time = source_time + delay`. A reversal is emitted and not repaired. |
+| Position bias or drift | Added to each position component. Drift is `amplitude * seed`. A non-zero value sets `DEGRADED`, unless invalid orientation applies. |
+| Position noise | A non-zero amplitude adds `amplitude * signed_unit(seed)` and sets `DEGRADED`, unless invalid orientation applies. |
+| Rate bias or noise | Applied only when that twist triple is present on the truth. A non-zero applicable amplitude sets `DEGRADED`. An absent triple is not invented, and an inapplicable rate fault does not set `DEGRADED`. |
+| Invalid orientation | Canonical quaternion `(0, 0, 0, 2)`, health state `INVALID`. Bias, drift, and noise are not applied. Delay is still applied. |
+
+### Evolution
+
+Append fields. Reserve removed tags and names. Preserve unknown fields.
+Golden bytes for the nominal solution are fixed in the C++ and Python
+serialization tests. Those bytes were captured from a local C++ protobuf
+run of `FakeIns` because Bazel was not available in the authoring
+environment. Clearing `source` leaves a prefix of that golden. An unknown
+source number is preserved and is not accepted. Field 100 is preserved.
+
+Text format example:
+[`examples/ins_nominal.textproto`](examples/ins_nominal.textproto).
+
+### INS targets
+
+These targets stay off `.github/baseline/manipulator_targets.tsv`:
+
+- `//intrinsic_hardware/intrinsic/hardware/marine:ins_proto`
+- `//intrinsic_hardware/intrinsic/hardware/marine:ins_cc_proto`
+- `//intrinsic_hardware/intrinsic/hardware/marine:ins_py_pb2`
+- `//intrinsic_hardware/intrinsic/hardware/marine:ins_policy`
+- `//intrinsic_hardware/intrinsic/hardware/marine:ins_policy_py`
+- `//intrinsic_hardware/intrinsic/hardware/marine:fake_ins`
+- `//intrinsic_hardware/intrinsic/hardware/marine:fake_ins_py`
+- `//intrinsic_hardware/intrinsic/hardware/marine:ins_policy_test`
+- `//intrinsic_hardware/intrinsic/hardware/marine:ins_policy_test_py`
+- `//intrinsic_hardware/intrinsic/hardware/marine:ins_serialization_test`
+- `//intrinsic_hardware/intrinsic/hardware/marine:ins_serialization_test_py`
+- `//intrinsic_hardware/intrinsic/hardware/marine:fake_ins_test`
+- `//intrinsic_hardware/intrinsic/hardware/marine:fake_ins_test_py`

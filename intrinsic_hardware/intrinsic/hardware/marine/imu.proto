@@ -1,0 +1,74 @@
+// Copyright 2026 Intrinsic Innovation LLC
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     https://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
+syntax = "proto3";
+
+package intrinsic_proto.hardware.marine;
+
+import "intrinsic/hardware/marine/measurement_health.proto";
+
+option go_package = "intrinsic/hardware/marine/imu_go_proto";
+
+// One raw inertial sample. This message is not an INS solution and it does
+// not propagate a filter.
+//
+// `health` embeds #75 MeasurementHealth. Stamp, frame, clock, quality,
+// covariance, and source health live there. The sample frame is
+// `health.header.frame_id` and is never inferred from this type. Axes are
+// REP-103 in that frame. The host does not convert ENU and NED.
+//
+// Angular velocity is rad/s. Linear acceleration is m/s^2. An engaged sample
+// requires all three components of each triple, and each present component
+// must be finite. Zero is a supplied component. There is no magnitude cap
+// and no magnetometer field.
+//
+// `orientation_xyzw` is an optional Hamilton quaternion (x, y, z, w). It is
+// the sensor or body attitude the producer stamped. Unset means a raw IMU
+// sample with no orientation. When present, all four components are supplied
+// (zero is a component) and the quaternion must be finite and unit-norm
+// within absolute tolerance 1e-6 of 1. The host does not renormalize.
+//
+// Covariance stays on `health.covariance` (Matrix6). When present and well
+// formed, only diagonal indices 0, 7, 14, 21, 28, and 35 may be non-zero.
+// Those slots are ωx, ωy, ωz, ax, ay, az variances. Orientation uncertainty
+// is not a second matrix. Unset covariance is unknown. Thirty-six zeros are
+// a specified zero matrix.
+//
+// An empty message serializes to zero bytes and is absent, not an error.
+// Append fields. Reserve removed tags and names. See README.md.
+message ImuMeasurement {
+  // Hamilton quaternion, stored x, y, z, w. Zero components are values.
+  message QuaternionXyzw {
+    double x = 1;
+    double y = 2;
+    double z = 3;
+    double w = 4;
+  }
+
+  // Required when this sample is engaged. Unset on an empty message.
+  MeasurementHealth health = 1;
+
+  // rad/s. Unset means absent. An engaged sample requires all three.
+  optional double angular_velocity_x_rad_s = 2;
+  optional double angular_velocity_y_rad_s = 3;
+  optional double angular_velocity_z_rad_s = 4;
+
+  // m/s^2. Unset means absent. An engaged sample requires all three.
+  optional double linear_acceleration_x_m_s2 = 5;
+  optional double linear_acceleration_y_m_s2 = 6;
+  optional double linear_acceleration_z_m_s2 = 7;
+
+  // Unset means absent. Present values are a sensor/body attitude quaternion.
+  optional QuaternionXyzw orientation_xyzw = 8;
+}

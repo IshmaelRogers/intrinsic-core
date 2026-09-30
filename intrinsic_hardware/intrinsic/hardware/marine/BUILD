@@ -556,11 +556,316 @@ py_test(
     ],
 )
 
+proto_library(
+    name = "imu_proto",
+    srcs = ["imu.proto"],
+    deps = [":measurement_health_proto"],
+)
+
+cc_proto_library(
+    name = "imu_cc_proto",
+    deps = [":imu_proto"],
+)
+
+py_proto_library(
+    name = "imu_py_pb2",
+    deps = [":imu_proto"],
+)
+
+cc_library(
+    name = "imu_policy",
+    hdrs = ["imu_policy.h"],
+    deps = [
+        ":measurement_health_policy",
+        "//intrinsic/embodiment:frame_policy",
+        "//intrinsic/vehicle:vehicle_contract_policy",
+    ],
+)
+
+cc_library(
+    name = "fake_imu",
+    srcs = ["fake_imu.cc"],
+    hdrs = ["fake_imu.h"],
+    deps = [
+        ":imu_cc_proto",
+        ":imu_policy",
+        ":measurement_health_cc_proto",
+        "//intrinsic/embodiment:frame_policy",
+        "//intrinsic/vehicle:vehicle_contract_policy",
+        "@intrinsic_apis//intrinsic/embodiment/proto:stamped_header_cc_proto",
+        "@intrinsic_apis//intrinsic/vehicle/proto:vehicle_state_cc_proto",
+    ],
+)
+
+cc_test(
+    name = "imu_policy_test",
+    size = "small",
+    srcs = ["imu_policy_test.cc"],
+    deps = [
+        ":imu_policy",
+        ":ins_policy",
+        "//intrinsic/embodiment:frame_policy",
+        "//intrinsic/vehicle:vehicle_contract_policy",
+        "@com_google_googletest//:gtest_main",
+    ],
+)
+
+cc_test(
+    name = "imu_serialization_test",
+    size = "small",
+    srcs = ["imu_serialization_test.cc"],
+    data = [":examples"],
+    deps = [
+        ":fake_imu",
+        ":imu_cc_proto",
+        ":imu_policy",
+        "//intrinsic/embodiment:frame_policy",
+        "//intrinsic/vehicle:vehicle_contract_policy",
+        "@com_google_googletest//:gtest_main",
+        "@intrinsic_apis//intrinsic/embodiment/proto:stamped_header_cc_proto",
+    ],
+)
+
+cc_test(
+    name = "fake_imu_test",
+    size = "small",
+    srcs = ["fake_imu_test.cc"],
+    deps = [
+        ":fake_imu",
+        ":imu_cc_proto",
+        ":imu_policy",
+        ":measurement_health_cc_proto",
+        "//intrinsic/embodiment:frame_policy",
+        "@com_google_googletest//:gtest_main",
+    ],
+)
+
+py_library(
+    name = "imu_policy_py",
+    srcs = ["imu_policy.py"],
+    deps = [
+        ":measurement_health_policy_py",
+        "//intrinsic/embodiment:frame_policy_py",
+        "//intrinsic/vehicle:vehicle_contract_policy_py",
+    ],
+)
+
+py_library(
+    name = "fake_imu_py",
+    srcs = ["fake_imu.py"],
+    deps = [
+        ":imu_policy_py",
+        ":imu_py_pb2",
+        ":measurement_health_py_pb2",
+        "//intrinsic/embodiment:frame_policy_py",
+        "//intrinsic/vehicle:vehicle_contract_policy_py",
+        "@intrinsic_apis//intrinsic/embodiment/proto:stamped_header_py_pb2",
+    ],
+)
+
+py_test(
+    name = "imu_policy_test_py",
+    size = "small",
+    srcs = ["imu_policy_test.py"],
+    main = "imu_policy_test.py",
+    deps = [
+        ":imu_policy_py",
+        ":ins_policy_py",
+        ":measurement_health_policy_py",
+        "//intrinsic/embodiment:frame_policy_py",
+        "//intrinsic/vehicle:vehicle_contract_policy_py",
+    ],
+)
+
+py_test(
+    name = "imu_serialization_test_py",
+    size = "small",
+    srcs = ["imu_serialization_test.py"],
+    data = [":examples"],
+    main = "imu_serialization_test.py",
+    deps = [
+        ":fake_imu_py",
+        ":imu_policy_py",
+        ":imu_py_pb2",
+        ":measurement_health_policy_py",
+        ":measurement_health_py_pb2",
+        "//intrinsic/vehicle:vehicle_contract_policy_py",
+        "@intrinsic_apis//intrinsic/embodiment/proto:stamped_header_py_pb2",
+    ],
+)
+
+py_test(
+    name = "fake_imu_test_py",
+    size = "small",
+    srcs = ["fake_imu_test.py"],
+    main = "fake_imu_test.py",
+    deps = [
+        ":fake_imu_py",
+        ":imu_policy_py",
+        ":imu_py_pb2",
+        ":measurement_health_policy_py",
+        ":measurement_health_py_pb2",
+    ],
+)
+
+proto_library(
+    name = "ins_proto",
+    srcs = ["ins.proto"],
+    deps = [":measurement_health_proto"],
+)
+
+cc_proto_library(
+    name = "ins_cc_proto",
+    deps = [":ins_proto"],
+)
+
+py_proto_library(
+    name = "ins_py_pb2",
+    deps = [":ins_proto"],
+)
+
+cc_library(
+    name = "ins_policy",
+    hdrs = ["ins_policy.h"],
+    deps = [
+        ":measurement_health_policy",
+        "//intrinsic/embodiment:frame_policy",
+        "//intrinsic/vehicle:vehicle_contract_policy",
+    ],
+)
+
+cc_library(
+    name = "fake_ins",
+    srcs = ["fake_ins.cc"],
+    hdrs = ["fake_ins.h"],
+    deps = [
+        ":ins_cc_proto",
+        ":ins_policy",
+        ":measurement_health_cc_proto",
+        "//intrinsic/embodiment:frame_policy",
+        "//intrinsic/vehicle:vehicle_contract_policy",
+        "@intrinsic_apis//intrinsic/embodiment/proto:stamped_header_cc_proto",
+        "@intrinsic_apis//intrinsic/vehicle/proto:vehicle_state_cc_proto",
+    ],
+)
+
+cc_test(
+    name = "ins_policy_test",
+    size = "small",
+    srcs = ["ins_policy_test.cc"],
+    deps = [
+        ":ins_policy",
+        "//intrinsic/embodiment:frame_policy",
+        "//intrinsic/vehicle:vehicle_contract_policy",
+        "@com_google_googletest//:gtest_main",
+    ],
+)
+
+cc_test(
+    name = "ins_serialization_test",
+    size = "small",
+    srcs = ["ins_serialization_test.cc"],
+    data = [":examples"],
+    deps = [
+        ":fake_ins",
+        ":ins_cc_proto",
+        ":ins_policy",
+        "//intrinsic/embodiment:frame_policy",
+        "//intrinsic/vehicle:vehicle_contract_policy",
+        "@com_google_googletest//:gtest_main",
+        "@intrinsic_apis//intrinsic/embodiment/proto:stamped_header_cc_proto",
+    ],
+)
+
+cc_test(
+    name = "fake_ins_test",
+    size = "small",
+    srcs = ["fake_ins_test.cc"],
+    deps = [
+        ":fake_ins",
+        ":ins_cc_proto",
+        ":ins_policy",
+        ":measurement_health_cc_proto",
+        "//intrinsic/embodiment:frame_policy",
+        "@com_google_googletest//:gtest_main",
+    ],
+)
+
+py_library(
+    name = "ins_policy_py",
+    srcs = ["ins_policy.py"],
+    deps = [
+        ":measurement_health_policy_py",
+        "//intrinsic/embodiment:frame_policy_py",
+        "//intrinsic/vehicle:vehicle_contract_policy_py",
+    ],
+)
+
+py_library(
+    name = "fake_ins_py",
+    srcs = ["fake_ins.py"],
+    deps = [
+        ":ins_policy_py",
+        ":ins_py_pb2",
+        ":measurement_health_py_pb2",
+        "//intrinsic/embodiment:frame_policy_py",
+        "//intrinsic/vehicle:vehicle_contract_policy_py",
+        "@intrinsic_apis//intrinsic/embodiment/proto:stamped_header_py_pb2",
+    ],
+)
+
+py_test(
+    name = "ins_policy_test_py",
+    size = "small",
+    srcs = ["ins_policy_test.py"],
+    main = "ins_policy_test.py",
+    deps = [
+        ":ins_policy_py",
+        ":measurement_health_policy_py",
+        "//intrinsic/embodiment:frame_policy_py",
+        "//intrinsic/vehicle:vehicle_contract_policy_py",
+    ],
+)
+
+py_test(
+    name = "ins_serialization_test_py",
+    size = "small",
+    srcs = ["ins_serialization_test.py"],
+    data = [":examples"],
+    main = "ins_serialization_test.py",
+    deps = [
+        ":fake_ins_py",
+        ":ins_policy_py",
+        ":ins_py_pb2",
+        ":measurement_health_policy_py",
+        ":measurement_health_py_pb2",
+        "//intrinsic/vehicle:vehicle_contract_policy_py",
+        "@intrinsic_apis//intrinsic/embodiment/proto:stamped_header_py_pb2",
+    ],
+)
+
+py_test(
+    name = "fake_ins_test_py",
+    size = "small",
+    srcs = ["fake_ins_test.py"],
+    main = "fake_ins_test.py",
+    deps = [
+        ":fake_ins_py",
+        ":ins_policy_py",
+        ":ins_py_pb2",
+        ":measurement_health_policy_py",
+        ":measurement_health_py_pb2",
+    ],
+)
+
 filegroup(
     name = "examples",
     srcs = [
         "examples/altimeter_nominal.textproto",
         "examples/dvl_bottom_track.textproto",
+        "examples/imu_nominal.textproto",
+        "examples/imu_rates_only.textproto",
+        "examples/ins_nominal.textproto",
         "examples/measurement_health.textproto",
         "examples/measurement_health_unknown_covariance.textproto",
         "examples/pressure_depth_from_pressure.textproto",
