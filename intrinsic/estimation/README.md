@@ -3,7 +3,7 @@
 Opt-in persistent estimation service contract (#29, ADR 0001 Phase 3).
 `EstimatorService` publishes the authoritative #17
 `intrinsic_proto.vehicle.VehicleState`. This package adds no state message, no filter
-equations (#81 adds ESKF layout only, see `ESKF_LAYOUT.md`), no ICON wiring,
+equations (#81 adds ESKF layout only, see `ESKF_LAYOUT.md`; #82 adds nominal propagation only, see `ESKF_PROPAGATE.md`), no ICON wiring,
 and no safety authority (#31 and #32). Manipulator contracts are unchanged, and these targets
 are not listed in `.github/baseline/manipulator_targets.tsv`.
 
@@ -17,6 +17,9 @@ are not listed in `.github/baseline/manipulator_targets.tsv`.
 | `fake_estimator_service_test.{cc,py}` | Paired tests. Same cases in both languages. |
 | `eskf_state.{h,cc,py}` | ESKF nominal (16), error (15), and covariance (15x15) layout (#81). See `ESKF_LAYOUT.md`. |
 | `eskf_state_test.{cc,py}` | Paired layout tests: index order, dimensions, defaults. |
+| `eskf_propagate.{h,cc,py}` | `PropagateNominal`: IMU nominal-state propagation only (#82). See `ESKF_PROPAGATE.md`. |
+| `eskf_propagate_test.{cc,py}` | Paired propagation tests: stationary, constant rate, rejects, determinism. |
+| `ESKF_PROPAGATE.md` | Locked discretization order, statuses, helpers, fixtures. |
 | `ESKF_LAYOUT.md` | Index tables, defaults, and the #17 `VehicleState` mapping. |
 | `testdata/nominal_vehicle_state.textproto` | Golden nominal `VehicleState` from the fake. |
 
