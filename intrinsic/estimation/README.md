@@ -3,7 +3,7 @@
 Opt-in persistent estimation service contract (#29, ADR 0001 Phase 3).
 `EstimatorService` publishes the authoritative #17
 `intrinsic_proto.vehicle.VehicleState`. This package adds no state message, no filter
-equations (#81 adds ESKF layout only, see `ESKF_LAYOUT.md`; #82 adds nominal propagation only, see `ESKF_PROPAGATE.md`; #83 adds covariance propagation only, see `ESKF_COV_PROPAGATE.md`; #84 adds a reusable innovation gate only, see `INNOVATION_GATE.md`; #85 adds the DVL bottom-track velocity update only, see `DVL_BOTTOM_TRACK_UPDATE.md`), no ICON wiring,
+equations (#81 adds ESKF layout only, see `ESKF_LAYOUT.md`; #82 adds nominal propagation only, see `ESKF_PROPAGATE.md`; #83 adds covariance propagation only, see `ESKF_COV_PROPAGATE.md`; #84 adds a reusable innovation gate only, see `INNOVATION_GATE.md`; #85 adds the DVL bottom-track velocity update only, see `DVL_BOTTOM_TRACK_UPDATE.md`; #86 adds the DVL water-track velocity update only, see `DVL_WATER_TRACK_UPDATE.md`), no ICON wiring,
 and no safety authority (#31 and #32). Manipulator contracts are unchanged, and these targets
 are not listed in `.github/baseline/manipulator_targets.tsv`.
 
@@ -26,6 +26,9 @@ are not listed in `.github/baseline/manipulator_targets.tsv`.
 | `dvl_bottom_track_update.{h,cc,py}` | `UpdateDvlBottomTrack`: gated body-velocity update with Joseph covariance and right-error attitude inject (#85). See `DVL_BOTTOM_TRACK_UPDATE.md`. |
 | `dvl_bottom_track_update_test.{cc,py}` | Paired tests: accept, reject, lock loss, invalid, singular, non-finite, golden. |
 | `DVL_BOTTOM_TRACK_UPDATE.md` | Locked model, statuses, update steps, fixtures. |
+| `dvl_water_track_update.{h,cc,py}` | `UpdateDvlWaterTrack`: gated water-relative body-velocity update using an external `WaterCurrentEstimate`, Joseph covariance, right-error attitude inject (#86). See `DVL_WATER_TRACK_UPDATE.md`. |
+| `dvl_water_track_update_test.{cc,py}` | Paired tests: accept, nonzero current, missing current, reject, invalid, singular, non-finite, golden. |
+| `DVL_WATER_TRACK_UPDATE.md` | Locked model, statuses, update steps, fixtures. |
 | `INNOVATION_GATE.md` | Locked numerics, statuses, diagnostics, fixtures. |
 | `ESKF_COV_PROPAGATE.md` | Locked `F` blocks, `Qd`, statuses, fixtures. |
 | `ESKF_PROPAGATE.md` | Locked discretization order, statuses, helpers, fixtures. |
