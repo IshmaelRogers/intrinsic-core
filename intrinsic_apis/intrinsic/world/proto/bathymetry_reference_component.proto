@@ -1,0 +1,51 @@
+// Copyright 2026 Intrinsic Innovation LLC
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     https://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
+syntax = "proto3";
+
+package intrinsic_proto.world;
+
+import "intrinsic/world/proto/marine_component_validity.proto";
+
+option go_package = "intrinsic/world/proto/bathymetry_reference_component_go_proto";
+
+// Referenced bathymetry. The grid or mesh lives in an external asset.
+// This message does not carry inline samples, occupancy, or contacts.
+//
+// `frame_id` names an ENU world frame (PDR §5): +X east, +Y north, +Z up,
+// meters. This message does not define a NED mode and does not convert axes.
+//
+// `validity_meta` is MarineComponentValidity. Host checks call those helpers.
+// Expiry is not re-encoded here.
+//
+// An empty message serializes to zero bytes. See README.md.
+//
+// Next tag: 5
+message BathymetryReferenceComponent {
+  // Required when this component is present for validation.
+  MarineComponentValidity validity_meta = 1;
+
+  // ENU world frame at the platform boundary. Empty is rejected when this
+  // component is present. The id is stored as given and is not rewritten.
+  string frame_id = 2;
+
+  // Opaque CAS URI, digest, or key for an external bathymetry asset. Empty
+  // is rejected when this component is present. This string is not cells.
+  string bathymetry_asset_ref = 3;
+
+  // Optional ENU +Z offset in meters applied to the referenced surface.
+  // Unset means no offset. Zero is a supplied offset. Non-finite values are
+  // rejected when the field is set.
+  optional double reference_z_m = 4;
+}

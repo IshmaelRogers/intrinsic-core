@@ -20,6 +20,30 @@ load("@io_bazel_rules_go//proto:def.bzl", "go_proto_library")
 package(default_visibility = ["//visibility:public"])
 
 proto_library(
+    name = "bathymetry_reference_component_proto",
+    srcs = ["bathymetry_reference_component.proto"],
+    deps = [":marine_component_validity_proto"],
+)
+
+cc_proto_library(
+    name = "bathymetry_reference_component_cc_proto",
+    deps = [":bathymetry_reference_component_proto"],
+)
+
+go_proto_library(
+    name = "bathymetry_reference_component_go_proto",
+    importpath = "intrinsic/world/proto/bathymetry_reference_component_go_proto",
+    importpath_aliases = ["intrinsic/world/public/proto/bathymetry_reference_component_go_proto"],
+    protos = [":bathymetry_reference_component_proto"],
+    deps = [":marine_component_validity_go_proto"],
+)
+
+py_proto_library(
+    name = "bathymetry_reference_component_py_pb2",
+    deps = [":bathymetry_reference_component_proto"],
+)
+
+proto_library(
     name = "collision_action_proto",
     srcs = ["collision_action.proto"],
 )
@@ -115,6 +139,36 @@ go_proto_library(
 py_proto_library(
     name = "collision_settings_py_pb2",
     deps = [":collision_settings_proto"],
+)
+
+proto_library(
+    name = "current_field_component_proto",
+    srcs = ["current_field_component.proto"],
+    deps = [
+        ":marine_component_validity_proto",
+        "@intrinsic_apis//intrinsic/math/proto:vector3_proto",
+    ],
+)
+
+cc_proto_library(
+    name = "current_field_component_cc_proto",
+    deps = [":current_field_component_proto"],
+)
+
+go_proto_library(
+    name = "current_field_component_go_proto",
+    importpath = "intrinsic/world/proto/current_field_component_go_proto",
+    importpath_aliases = ["intrinsic/world/public/proto/current_field_component_go_proto"],
+    protos = [":current_field_component_proto"],
+    deps = [
+        ":marine_component_validity_go_proto",
+        "@intrinsic_apis//intrinsic/math/proto:vector3_go_proto",
+    ],
+)
+
+py_proto_library(
+    name = "current_field_component_py_pb2",
+    deps = [":current_field_component_proto"],
 )
 
 proto_library(

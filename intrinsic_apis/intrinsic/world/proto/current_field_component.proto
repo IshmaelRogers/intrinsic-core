@@ -1,0 +1,59 @@
+// Copyright 2026 Intrinsic Innovation LLC
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     https://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
+syntax = "proto3";
+
+package intrinsic_proto.world;
+
+import "intrinsic/math/proto/vector3.proto";
+import "intrinsic/world/proto/marine_component_validity.proto";
+
+option go_package = "intrinsic/world/proto/current_field_component_go_proto";
+
+// Spatially uniform water current. Later field models append a new arm of
+// `representation`. They do not reuse these tags.
+//
+// `frame_id` names an ENU world frame (PDR §5): +X east, +Y north, +Z up.
+// `ConstantCurrent.velocity_m_s` is linear water velocity relative to that
+// frame, in meters per second, on those ENU axes. This message does not
+// convert frames.
+//
+// `validity_meta` is MarineComponentValidity. Host checks call those helpers.
+// Expiry is not re-encoded here.
+//
+// An empty message serializes to zero bytes. See README.md.
+//
+// Next tag: 4
+message CurrentFieldComponent {
+  // Required when this component is present for validation.
+  MarineComponentValidity validity_meta = 1;
+
+  // ENU world frame for the velocity vector. Empty is rejected when this
+  // component is present. The id is stored as given and is not rewritten.
+  string frame_id = 2;
+
+  // Only ConstantCurrent is defined in this leaf.
+  oneof representation {
+    ConstantCurrent constant = 3;
+  }
+}
+
+// Constant current in the parent frame. Every component of `velocity_m_s`
+// must be finite when this arm is present. Omitted axes are zero.
+//
+// Next tag: 2
+message ConstantCurrent {
+  // Linear current, SI meters per second, ENU axes of frame_id.
+  intrinsic_proto.Vector3 velocity_m_s = 1;
+}

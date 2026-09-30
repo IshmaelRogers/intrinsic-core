@@ -1,0 +1,22 @@
+# Referenced bathymetry. ENU world frame, meters.
+# Accepts when validity_meta is STATE_VALID and the query time is fresh.
+# Deadline: 1700000000.250s + 10.500s = 1700000010.750s.
+validity_meta {
+  source_id: "fusion_0"
+  observation_time {
+    seconds: 1700000000
+    nanos: 250000000
+  }
+  validity_horizon {
+    seconds: 10
+    nanos: 500000000
+  }
+  confidence: 0.75
+  uncertainty_reference: "cov-ref-7"
+  validity {
+    state: STATE_VALID
+  }
+}
+frame_id: "world_enu"
+bathymetry_asset_ref: "cas:bathy-grid-1"
+reference_z_m: -12.5

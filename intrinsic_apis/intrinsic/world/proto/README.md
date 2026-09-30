@@ -83,3 +83,69 @@ Append fields. Reserve removed tags and names. Preserve unknown fields on
 parse and reserialize. An unknown `Validity` enum number round-trips.
 Golden bytes for one populated message are fixed in the C++ and Python
 serialization tests. Bytes that omit `validity` are a prefix of that golden.
+
+## Referenced bathymetry
+
+`bathymetry_reference_component.proto` names an external bathymetry asset.
+It does not store a height grid, a mesh, occupancy, or contacts.
+
+| Field | Tag | Meaning |
+| --- | --- | --- |
+| `validity_meta` | 1 | `MarineComponentValidity`. Required when the component is present. |
+| `frame_id` | 2 | ENU world frame (PDR §5): +X east, +Y north, +Z up. Empty is rejected. |
+| `bathymetry_asset_ref` | 3 | Opaque CAS URI, digest, or key. Empty is rejected. Not inline cells. |
+| `reference_z_m` | 4 | Optional ENU +Z offset in meters. Unset means no offset. |
+
+`frame_id` is stored as given. This message does not define a NED mode and
+does not convert axes. The example uses `world_enu`. A non-empty id is not
+rewritten.
+
+`reference_z_m` uses proto3 `optional`. A supplied `0` stays distinct from
+an omitted offset. A set value must be finite. Units are meters.
+
+Host checks live in `intrinsic/world/bathymetry_reference_component`. They
+call `AssessMarineComponentValidity` for `validity_meta`. They do not encode
+a second expiry rule. Unknown, fresh, and expired stay the results from that
+helper. Acceptance requires no component defect and an accepted validity
+assessment (`STATE_VALID`, fresh, no validity defect).
+
+Check order, first defect wins:
+
+1. Missing `validity_meta`, or a structural defect from the validity helper.
+2. Empty `frame_id`.
+3. Empty `bathymetry_asset_ref`.
+4. Present `reference_z_m` that is not finite.
+
+An empty message serializes to zero bytes and is not an error. The textproto
+example is
+`intrinsic/world/bathymetry_reference_component/testdata/referenced_bathymetry.textproto`.
+It validates at `observation_time + validity_horizon` when `validity.state`
+is `STATE_VALID`.
+
+## Constant current
+
+`current_field_component.proto` is a spatially uniform water current. Later
+field models append another arm of `representation`. They do not reuse these
+tags.
+
+| Field | Tag | Meaning |
+| --- | --- | --- |
+| `validity_meta` | 1 | `MarineComponentValidity`. Same rules as bathymetry. |
+| `frame_id` | 2 | ENU world frame for the velocity. Empty is rejected. |
+| `constant` | 3 | `ConstantCurrent` arm of `oneof representation`. |
+
+`ConstantCurrent.velocity_m_s` is `intrinsic_proto.Vector3`. It is linear
+water velocity relative to `frame_id`, in meters per second, on ENU axes.
+Omitted axes are zero. Every component must be finite when the arm is
+present. This message does not convert frames.
+
+Host checks live in `intrinsic/world/current_field_component` and call the
+same validity helper. A present component with no `constant` arm is rejected.
+Check order: validity, `frame_id`, missing constant arm, non-finite velocity.
+
+An empty message serializes to zero bytes. The textproto example is
+`intrinsic/world/current_field_component/testdata/constant_current.textproto`.
+It validates under the same fresh `STATE_VALID` rule.
+
+These targets are not listed in `.github/baseline/manipulator_targets.tsv`.
+Existing World component protos are unchanged.
