@@ -62,6 +62,16 @@ void ExpectInOpenClosedPi(double angle) {
   EXPECT_LE(angle, kPi);
 }
 
+double SaturateSymmetric(double command, double limit) {
+  if (command > limit) {
+    return limit;
+  }
+  if (command < -limit) {
+    return -limit;
+  }
+  return command;
+}
+
 void ExpectRejected(const ControlMathResult<double>& result,
                     std::string_view message) {
   EXPECT_FALSE(result.ok());
@@ -398,15 +408,6 @@ TEST(IntegrateBackCalculation, StaysBoundedAndRecovers) {
   constexpr double kCommandLimit = 1;
   constexpr double kDt = 0.5;
   constexpr double kAw = 1;
-  auto saturate = [kCommandLimit](double command) {
-    if (command > kCommandLimit) {
-      return kCommandLimit;
-    }
-    if (command < -kCommandLimit) {
-      return -kCommandLimit;
-    }
-    return command;
-  };
 
   BoundedIntegrator with_tracking =
       BoundedIntegrator::Create(0, kLower, kUpper).value();
@@ -414,9 +415,9 @@ TEST(IntegrateBackCalculation, StaysBoundedAndRecovers) {
       BoundedIntegrator::Create(0, kLower, kUpper).value();
   for (int i = 0; i < 40; ++i) {
     const double tracked_command = with_tracking.state();
-    ASSERT_TRUE(IntegrateBackCalculation(with_tracking, /*integrator_input=*/1,
-                                         tracked_command,
-                                         saturate(tracked_command), kAw, kDt)
+    ASSERT_TRUE(IntegrateBackCalculation(
+                    with_tracking, /*integrator_input=*/1, tracked_command,
+                    SaturateSymmetric(tracked_command, kCommandLimit), kAw, kDt)
                     .ok());
     EXPECT_GE(with_tracking.state(), kLower);
     EXPECT_LE(with_tracking.state(), kUpper);
@@ -424,7 +425,8 @@ TEST(IntegrateBackCalculation, StaysBoundedAndRecovers) {
     const double clamped_command = clamped_only.state();
     ASSERT_TRUE(IntegrateBackCalculation(
                     clamped_only, /*integrator_input=*/1, clamped_command,
-                    saturate(clamped_command), /*k_aw=*/0, kDt)
+                    SaturateSymmetric(clamped_command, kCommandLimit),
+                    /*k_aw=*/0, kDt)
                     .ok());
   }
   EXPECT_NEAR(with_tracking.state(), 2.0, 1e-9);
@@ -434,8 +436,9 @@ TEST(IntegrateBackCalculation, StaysBoundedAndRecovers) {
 
   for (int i = 0; i < 40; ++i) {
     const double command = with_tracking.state();
-    ASSERT_TRUE(IntegrateBackCalculation(with_tracking, /*integrator_input=*/0,
-                                         command, saturate(command), kAw, kDt)
+    ASSERT_TRUE(IntegrateBackCalculation(
+                    with_tracking, /*integrator_input=*/0, command,
+                    SaturateSymmetric(command, kCommandLimit), kAw, kDt)
                     .ok());
     EXPECT_GE(with_tracking.state(), kLower);
     EXPECT_LE(with_tracking.state(), kUpper);
