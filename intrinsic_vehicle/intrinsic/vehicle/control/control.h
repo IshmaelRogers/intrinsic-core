@@ -22,8 +22,9 @@ namespace intrinsic::vehicle::control {
 // Soft-real-time package scaffold. Reference control belongs here,
 // outside the ICON cycle. ReferenceController in reference_control.h
 // is the reference-to-body-wrench boundary. ZeroWrenchController is
-// the deterministic neutral-wrench fake. This header defines no
-// control law and writes no actuator command.
+// the deterministic neutral-wrench fake. Scalar heading wrap, the
+// bounded integrator, and back-calculation live in control_math.h.
+// This header defines no control law and writes no actuator command.
 // Timing and ownership: README.md in this tree.
 inline constexpr std::string_view kPackageName =
     "intrinsic_vehicle/intrinsic/vehicle/control";
