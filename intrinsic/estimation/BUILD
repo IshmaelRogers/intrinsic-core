@@ -482,3 +482,39 @@ py_test(
         ":surface_position_update_py",
     ],
 )
+
+cc_test(
+    name = "dive_lock_loss_resurface_replay_test",
+    size = "small",
+    srcs = ["dive_lock_loss_resurface_replay_test.cc"],
+    data = ["testdata/dive_lock_loss_resurface.txt"],
+    deps = [
+        ":altitude_update",
+        ":depth_update",
+        ":dvl_bottom_track_update",
+        ":dvl_water_track_update",
+        ":eskf_cov_propagate",
+        ":eskf_propagate",
+        ":eskf_state",
+        ":surface_position_update",
+        "@com_google_googletest//:gtest_main",
+    ],
+)
+
+py_test(
+    name = "dive_lock_loss_resurface_replay_test_py",
+    size = "small",
+    srcs = ["dive_lock_loss_resurface_replay_test.py"],
+    data = ["testdata/dive_lock_loss_resurface.txt"],
+    main = "dive_lock_loss_resurface_replay_test.py",
+    deps = [
+        ":altitude_update_py",
+        ":depth_update_py",
+        ":dvl_bottom_track_update_py",
+        ":dvl_water_track_update_py",
+        ":eskf_cov_propagate_py",
+        ":eskf_propagate_py",
+        ":eskf_state_py",
+        ":surface_position_update_py",
+    ],
+)

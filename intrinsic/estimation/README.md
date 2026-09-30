@@ -38,6 +38,9 @@ are not listed in `.github/baseline/manipulator_targets.tsv`.
 | `surface_position_update.{h,cc,py}` | `UpdateSurfacePosition`: gated surfaced horizontal ENU (East, North) position update behind a caller-supplied `SurfaceFixPolicy`, Joseph covariance, right-error attitude inject (#89). No navigation-mode transition. See `SURFACE_POSITION_UPDATE.md`. |
 | `surface_position_update_test.{cc,py}` | Paired tests: surfaced accept, submerged and low-quality policy skips, outlier reject, invalid, singular, non-finite, golden. |
 | `SURFACE_POSITION_UPDATE.md` | Locked model, statuses, update steps, fixtures. |
+| `dive_lock_loss_resurface_replay_test.{cc,py}` | Paired replay tests (#90): dive, DVL lock loss, recovery, resurface through the public #82 to #89 APIs only. Phase statuses, covariance bounds, final state, edge cases, and a digest that is identical across two replays. Test only, no production logic. |
+| `DIVE_LOCK_LOSS_RESURFACE.md` | Episode, fixture format, exact numbers, bounds, digest policy. |
+| `testdata/dive_lock_loss_resurface.txt` | Timestamped deterministic replay fixture with expected statuses. |
 | `INNOVATION_GATE.md` | Locked numerics, statuses, diagnostics, fixtures. |
 | `ESKF_COV_PROPAGATE.md` | Locked `F` blocks, `Qd`, statuses, fixtures. |
 | `ESKF_PROPAGATE.md` | Locked discretization order, statuses, helpers, fixtures. |
