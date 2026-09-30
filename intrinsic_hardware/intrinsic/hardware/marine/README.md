@@ -5,10 +5,11 @@ The message is `MeasurementHealth` in
 `intrinsic_proto.hardware.marine`. PDR §15 places sensor contracts in this
 package. Common stamped provenance stays on embodiment `StampedHeader`.
 Covariance and source health stay on the vehicle messages from #17.
+`DvlMeasurement` embeds this envelope and is specified below.
 
 This package does not add a robot-type enum, a platform-wide embodiment
-switch, ICON feature interfaces, FlatBuffers, Gazebo plugins, sensor
-payloads, filters, or actuator commands. It does not append a value to
+switch, ICON feature interfaces, FlatBuffers, Gazebo plugins, filters, or
+actuator commands. It does not append a value to
 `intrinsic_proto.embodiment.Validity`.
 
 Manipulator joint, Cartesian, kinematics, motion-planning, World, and Gazebo
@@ -63,8 +64,9 @@ the header stamp.
 
 ## Documented producer status
 
-Sensor payloads and fault simulators are later contracts. This envelope
-records the status those producers already decided:
+The DVL payload below is the first sensor message on this envelope. Other
+sensor payloads are later contracts. This envelope records the status those
+producers already decided:
 
 | Situation | What the producer sets | Host result |
 | --- | --- | --- |
@@ -178,3 +180,157 @@ These targets are separate from the protected manipulator baseline:
 - `//intrinsic_hardware/intrinsic/hardware/marine:measurement_health_serialization_test`
 - `//intrinsic_hardware/intrinsic/hardware/marine:measurement_health_serialization_test_py`
 - `//intrinsic_hardware/intrinsic/hardware/marine:examples`
+
+## DVL measurement
+
+`DvlMeasurement` is one bottom-track or water-track Doppler velocity sample.
+It embeds `MeasurementHealth` as `health`. The velocity frame is
+`health.header.frame_id`. It is never inferred from `DvlMeasurement`. Units
+are SI. Velocity is meters per second. Altitude is meters.
+
+Host checks live in `dvl_policy.h` and `dvl_policy.py`. They do not parse
+protobuf and they do not convert frames. `FakeDvl` is a deterministic
+producer. There is no estimator adapter, ICON FlatBuffer, Gazebo plugin, or
+real-hardware path.
+
+| Message | Role |
+| --- | --- |
+| `DvlMeasurement` | One DVL sample: health plus track payload. |
+| `DvlMeasurement.Mode` | `MODE_UNSPECIFIED=0`, `MODE_BOTTOM_TRACK=1`, `MODE_WATER_TRACK=2`. |
+
+### Mode
+
+`mode` is `optional`. Unset and `MODE_UNSPECIFIED` are different wire values.
+This enum is not `NavigationMode`.
+
+| Observation | Meaning |
+| --- | --- |
+| `mode` field missing | Absent. Not a track mode. |
+| `MODE_UNSPECIFIED` | Judgment present and not a track mode. |
+| `MODE_BOTTOM_TRACK` | Bottom track. |
+| `MODE_WATER_TRACK` | Water track. |
+| Any other number | Kept on the wire. Not a valid track mode. Not rewritten. |
+
+An engaged sample with absent, unspecified, or unrecognized mode is rejected.
+
+### Velocity
+
+`velocity_x_m_s`, `velocity_y_m_s`, and `velocity_z_m_s` are optional doubles,
+REP-103 axes in `health.header.frame_id`. An engaged sample requires all
+three, and each present component must be finite. There is no magnitude cap.
+A missing component is rejected before a non-finite component. Non-finite
+velocity does not rewrite `health.state`. Zero velocity is a supplied sample.
+
+### Covariance
+
+Covariance is `health.covariance` (`Matrix6`), not a new field. Order is
+linear x, y, z, then angular x, y, z. #17 shape, symmetry, and finiteness
+rules apply. When the matrix is present and well formed, the three angular
+variance slots must be exactly `0.0`:
+
+| Slot | Row-major index |
+| --- | --- |
+| angular x variance | 21 |
+| angular y variance | 28 |
+| angular z variance | 35 |
+
+Off-diagonal angular entries are not given a further ban here. Positive
+semidefinite checks stay with the estimator. Unset covariance is unknown.
+Thirty-six zeros are a specified zero matrix, and those three slots are zero.
+
+### Bottom lock
+
+`bottom_lock` is `optional bool`. Unset means absent. Present false is not
+the same as unset.
+
+| Combination | Host result |
+| --- | --- |
+| Bottom track, lock absent, state `VALID` | Not the lock-loss combo. Accepted when nothing else fails. |
+| Bottom track, lock false, state `VALID` | Rejected. Inconsistent lock. |
+| Bottom track, lock false, state `INVALID` | Lock-loss. Not a structural error. Not accepted. |
+| Bottom track, lock false, state `DEGRADED` | Not the `VALID` combo. Not rewritten. Not accepted. |
+| Water track, lock false, state `VALID` | Accepted when the rest of the sample is sound. |
+
+### Altitude
+
+`altitude_m` unset means unavailable. A present value must be finite and
+`>= 0`. Zero is supplied. Water-track may carry altitude. A finite
+non-negative altitude on water track is accepted. This leaf does not ban
+that combination.
+
+### Check order
+
+The first defect wins:
+
+1. Health missing on an engaged sample.
+2. Empty frame id.
+3. Frame id different from a caller-supplied expected id.
+4. Receive time strictly before source time, when both timestamps are present.
+5. Non-finite quality, when quality is present.
+6. Quality outside `[0, 1]`, when quality is present.
+7. Covariance shape, when covariance is present.
+8. Empty `source_id` on a present source entry.
+9. Angular variance slot not exactly zero, when covariance is present and well formed.
+10. Mode absent, unspecified, or unrecognized.
+11. Any velocity component absent.
+12. Any velocity component non-finite.
+13. Bottom track with explicit lock false and health state `VALID`.
+14. Altitude non-finite, when altitude is present.
+15. Altitude negative, when altitude is present.
+
+An unengaged message (no health engagement, mode, velocity, lock, or
+altitude) is not a sample. `accepted` requires health state `VALID`, a
+bottom or water track mode, and no structural defect. `DEGRADED` is not
+rewritten to `INVALID`.
+
+### Fake
+
+`FakeDvl` is a pure function of its config and truth. The same seed, bias,
+delay, dropout, and lock-loss flags produce the same bytes. `seed` is
+written to `health.header.sequence`. The fake does not draw noise.
+
+Default config and truth are the nominal bottom-track fixture: sequence 42,
+frame `sensor`, source time `1700000000.250000000`, delay `1s` plus
+`-250000000` ns so receive time is `1700000001.0`, velocity `(0.5, -0.25,
+0)` m/s, quality `0.75`, altitude `10` m, bottom lock true, and a specified
+covariance with linear variance `0.25` and zero angular variances. Header
+validity stays `STATE_VALID`. Sources are `primary` (valid) and `aiding`
+(unset validity).
+
+| Fault | What the fake emits |
+| --- | --- |
+| Dropout | No message. Checked before lock-loss. Absent, not an error. |
+| Delay | `receive_time = source_time + delay`. A reversal is emitted and not repaired. |
+| Bias | Each bias component is added to truth velocity. Any non-zero bias sets health state `DEGRADED` unless lock-loss applies. |
+| Lock loss | Mode bottom track, `bottom_lock` false, health state `INVALID`. Bias still adds. |
+
+A large positive delay is not a structural defect. This contract has no
+maximum age.
+
+### Evolution
+
+Append fields and enum values. Reserve removed tags and names. Preserve
+unknown fields and unknown mode numbers. Golden bytes for the nominal
+bottom-track fixture are fixed in the C++ and Python serialization tests.
+Clearing `altitude_m` leaves a prefix of that golden. Field 100 is preserved.
+
+Text format example:
+[`examples/dvl_bottom_track.textproto`](examples/dvl_bottom_track.textproto).
+
+### DVL targets
+
+These targets stay off `.github/baseline/manipulator_targets.tsv`:
+
+- `//intrinsic_hardware/intrinsic/hardware/marine:dvl_proto`
+- `//intrinsic_hardware/intrinsic/hardware/marine:dvl_cc_proto`
+- `//intrinsic_hardware/intrinsic/hardware/marine:dvl_py_pb2`
+- `//intrinsic_hardware/intrinsic/hardware/marine:dvl_policy`
+- `//intrinsic_hardware/intrinsic/hardware/marine:dvl_policy_py`
+- `//intrinsic_hardware/intrinsic/hardware/marine:fake_dvl`
+- `//intrinsic_hardware/intrinsic/hardware/marine:fake_dvl_py`
+- `//intrinsic_hardware/intrinsic/hardware/marine:dvl_policy_test`
+- `//intrinsic_hardware/intrinsic/hardware/marine:dvl_policy_test_py`
+- `//intrinsic_hardware/intrinsic/hardware/marine:dvl_serialization_test`
+- `//intrinsic_hardware/intrinsic/hardware/marine:dvl_serialization_test_py`
+- `//intrinsic_hardware/intrinsic/hardware/marine:fake_dvl_test`
+- `//intrinsic_hardware/intrinsic/hardware/marine:fake_dvl_test_py`

@@ -1,0 +1,76 @@
+// Copyright 2026 Intrinsic Innovation LLC
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     https://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
+syntax = "proto3";
+
+package intrinsic_proto.hardware.marine;
+
+import "intrinsic/hardware/marine/measurement_health.proto";
+
+option go_package = "intrinsic/hardware/marine/dvl_go_proto";
+
+// One Doppler velocity log sample: bottom track or water track.
+//
+// `health` embeds #75 MeasurementHealth. Stamp, frame, clock, quality,
+// covariance, and source health live there. The velocity frame is
+// `health.header.frame_id` and is never inferred from this type.
+//
+// `mode` is measurement-local. It is not NavigationMode. Unset mode is
+// absent. MODE_UNSPECIFIED is an explicit non-track judgment. Unknown
+// numbers are preserved and are not a valid track mode.
+//
+// Velocity components are m/s on REP-103 axes of the stamped frame. An
+// engaged sample requires all three, and each one must be finite. This
+// message does not impose a magnitude cap.
+//
+// `bottom_lock` unset means absent. Bottom track with lock false is
+// lock-loss: the producer sets `health.state` to INVALID. The host rejects
+// bottom track with lock false and state VALID.
+//
+// `altitude_m` unset means unavailable. A present value must be finite and
+// >= 0. Water-track may carry altitude. That combination is accepted when
+// the value is finite and non-negative.
+//
+// Covariance stays on `health.covariance` (Matrix6). Order is linear x, y, z
+// then angular x, y, z. When covariance is present, the three angular
+// variance slots (row-major indices 21, 28, and 35) must be exactly 0.
+// Unset covariance is unknown. Thirty-six zeros are a specified zero matrix.
+//
+// An empty message serializes to zero bytes and is absent, not an error.
+// Append fields. Reserve removed tags and names. See README.md.
+message DvlMeasurement {
+  enum Mode {
+    // Judgment present and not a track mode. Not an unset `mode` field.
+    MODE_UNSPECIFIED = 0;
+    MODE_BOTTOM_TRACK = 1;
+    MODE_WATER_TRACK = 2;
+  }
+
+  // Required when this sample is engaged. Unset on an empty message.
+  MeasurementHealth health = 1;
+
+  // Unset means absent. MODE_UNSPECIFIED is an explicit non-track judgment.
+  optional Mode mode = 2;
+
+  // REP-103 linear velocity in `health.header.frame_id`, meters per second.
+  optional double velocity_x_m_s = 3;
+  optional double velocity_y_m_s = 4;
+  optional double velocity_z_m_s = 5;
+
+  // Unset means absent. False on bottom track with state VALID is rejected.
+  optional bool bottom_lock = 6;
+
+  // Unset means unavailable. Present values are meters, finite, and >= 0.
+  optional double altitude_m = 7;
+}
