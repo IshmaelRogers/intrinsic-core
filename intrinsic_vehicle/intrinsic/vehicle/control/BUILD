@@ -16,10 +16,11 @@ load("//bazel:cc_macros.bzl", "cc_library", "cc_test")
 
 # Opt-in vehicle reference control. ReferenceController,
 # ZeroWrenchController, ReferenceDepthController,
-# ReferenceHeadingController, and scalar control math. The depth
-# controller is the heave law. The heading controller is the yaw law.
-# Not part of the protected manipulator baseline. Do not add this
-# package to .github/baseline/manipulator_targets.tsv.
+# ReferenceHeadingController, ReferenceForwardSpeedController, and
+# scalar control math. The depth controller is the heave law. The
+# heading controller is the yaw law. The forward-speed controller is
+# the surge law. Not part of the protected manipulator baseline. Do
+# not add this package to .github/baseline/manipulator_targets.tsv.
 
 package(default_visibility = ["//visibility:public"])
 
@@ -34,6 +35,8 @@ filegroup(
         "reference_control.h",
         "reference_depth_controller.cc",
         "reference_depth_controller.h",
+        "reference_forward_speed_controller.cc",
+        "reference_forward_speed_controller.h",
         "reference_heading_controller.cc",
         "reference_heading_controller.h",
         "zero_wrench_controller.cc",
@@ -47,6 +50,7 @@ cc_library(
         "control_math.cc",
         "reference_control.cc",
         "reference_depth_controller.cc",
+        "reference_forward_speed_controller.cc",
         "reference_heading_controller.cc",
         "zero_wrench_controller.cc",
     ],
@@ -55,6 +59,7 @@ cc_library(
         "control_math.h",
         "reference_control.h",
         "reference_depth_controller.h",
+        "reference_forward_speed_controller.h",
         "reference_heading_controller.h",
         "zero_wrench_controller.h",
     ],
@@ -87,6 +92,16 @@ cc_test(
     name = "reference_depth_controller_test",
     size = "small",
     srcs = ["reference_depth_controller_test.cc"],
+    deps = [
+        ":control",
+        "@com_google_googletest//:gtest_main",
+    ],
+)
+
+cc_test(
+    name = "reference_forward_speed_controller_test",
+    size = "small",
+    srcs = ["reference_forward_speed_controller_test.cc"],
     deps = [
         ":control",
         "@com_google_googletest//:gtest_main",
