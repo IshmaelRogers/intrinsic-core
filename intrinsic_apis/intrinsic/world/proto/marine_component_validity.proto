@@ -1,0 +1,73 @@
+// Copyright 2026 Intrinsic Innovation LLC
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     https://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
+syntax = "proto3";
+
+package intrinsic_proto.world;
+
+import "google/protobuf/duration.proto";
+import "google/protobuf/timestamp.proto";
+import "intrinsic/embodiment/proto/stamped_header.proto";
+
+option go_package = "intrinsic/world/proto/marine_component_validity_go_proto";
+
+// Reusable validity metadata for one additive World component.
+//
+// This message carries source, time, confidence, and an opaque uncertainty
+// reference. It is not a bathymetry, current, occupancy, or covariance
+// payload, and it does not allocate a snapshot id.
+//
+// `validity` reuses intrinsic_proto.embodiment.Validity. Unset means unknown
+// (no judgment). A present STATE_UNSPECIFIED is a judgment that is
+// unclassified. STATE_VALID and STATE_INVALID keep their embodiment meaning.
+// Expiry is a host assessment of observation_time and validity_horizon. It is
+// not a Validity.State. Embodiment Validity stays free of STATE_EXPIRED and
+// STATE_DEGRADED.
+//
+// Host checks live in intrinsic/world/marine_component_validity. See
+// README.md.
+//
+// An empty message serializes to zero bytes. Callers that never set this
+// message keep the previous World wire image.
+//
+// Next tag: 7
+message MarineComponentValidity {
+  // Stable producer id. Empty is rejected when this message is present for
+  // validation.
+  string source_id = 1;
+
+  // When the component observation was formed. Required for a valid
+  // judgment. Missing means freshness cannot be evaluated and the host
+  // reports unknown.
+  google.protobuf.Timestamp observation_time = 2;
+
+  // Non-negative duration after observation_time during which the component
+  // stays fresh. query_time equal to observation_time + validity_horizon is
+  // still fresh. The next instant is expired. A negative duration is
+  // rejected. Missing means freshness is unknown.
+  google.protobuf.Duration validity_horizon = 3;
+
+  // Dimensionless confidence in [0, 1] when set. Unset means absent. Zero is
+  // a supplied value. NaN and infinity are rejected.
+  optional double confidence = 4;
+
+  // Opaque reference (URI, digest, or key) to an external uncertainty or
+  // covariance artifact. This string is not the covariance payload. Empty
+  // means no reference.
+  string uncertainty_reference = 5;
+
+  // Optional embodiment Validity companion. Unset means unknown. Expiry is
+  // reported by the host helper and is not encoded here.
+  intrinsic_proto.embodiment.Validity validity = 6;
+}

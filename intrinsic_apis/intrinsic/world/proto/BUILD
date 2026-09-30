@@ -200,6 +200,38 @@ go_proto_library(
 )
 
 proto_library(
+    name = "marine_component_validity_proto",
+    srcs = ["marine_component_validity.proto"],
+    deps = [
+        "@com_google_protobuf//:duration_proto",
+        "@com_google_protobuf//:timestamp_proto",
+        "@intrinsic_apis//intrinsic/embodiment/proto:stamped_header_proto",
+    ],
+)
+
+cc_proto_library(
+    name = "marine_component_validity_cc_proto",
+    deps = [":marine_component_validity_proto"],
+)
+
+go_proto_library(
+    name = "marine_component_validity_go_proto",
+    importpath = "intrinsic/world/proto/marine_component_validity_go_proto",
+    importpath_aliases = ["intrinsic/world/public/proto/marine_component_validity_go_proto"],
+    protos = [":marine_component_validity_proto"],
+    deps = [
+        "@intrinsic_apis//intrinsic/embodiment/proto:stamped_header_go_proto",
+        "@org_golang_google_protobuf//types/known/durationpb",
+        "@org_golang_google_protobuf//types/known/timestamppb",
+    ],
+)
+
+py_proto_library(
+    name = "marine_component_validity_py_pb2",
+    deps = [":marine_component_validity_proto"],
+)
+
+proto_library(
     name = "physics_component_proto",
     srcs = ["physics_component.proto"],
     deps = [
