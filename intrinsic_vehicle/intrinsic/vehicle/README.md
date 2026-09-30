@@ -16,7 +16,9 @@ velocity, and marine-force composition. `allocation` builds the
 thruster effectiveness matrix, solves unconstrained least-squares
 thrust allocation, clamps those commands to per-actuator thrust
 bounds, and applies thruster health to those columns and bounds.
-Guidance remains later work.
+`guidance` is the DesiredMotion-to-reference step. `control` is the
+reference-to-body-wrench step. Both are soft-real-time interfaces with
+deterministic fakes and no guidance or control law.
 Marine model parameter schemas and validation are in `parameters`.
 
 Protobuf `VehicleState` and `DesiredMotion` stay in
@@ -33,8 +35,8 @@ commands.
 | `//intrinsic_vehicle/intrinsic/vehicle/allocation` | Real-time | Thruster effectiveness matrix from body-frame geometry and an explicit mask. Unconstrained least-squares allocation from that matrix, a hard clamp onto per-actuator thrust bounds, and a health adapter that scales those columns and bounds before the clamp. |
 | `//intrinsic_vehicle/intrinsic/vehicle/dynamics` | Soft-real-time | `VehicleDynamics` interface, zero-force test double, rigid-body mass matrix, added-mass matrix, rigid-body Coriolis matrix, added-mass Coriolis matrix, linear/quadratic damping wrench, gravity/buoyancy restoring wrench, water-current relative velocity, and marine-force composition. Outside ICON. |
 | `//intrinsic_vehicle/intrinsic/vehicle/parameters` | Soft-real-time | Marine model schemas and validation. Not loaded by ICON. |
-| `//intrinsic_vehicle/intrinsic/vehicle/guidance` | Soft-real-time | Empty marker. Guidance lands here later, outside ICON. |
-| `//intrinsic_vehicle/intrinsic/vehicle/control` | Soft-real-time | Empty marker. Reference control lands here later, outside ICON. |
+| `//intrinsic_vehicle/intrinsic/vehicle/guidance` | Soft-real-time | `GuidanceStep` maps `DesiredMotionRt` to `MotionReferenceRt` with typed status. `EchoGuidance` echoes a pose or twist. `NullGuidance` returns a missing-objective status and an empty reference. Outside ICON. 10 to 50 Hz. Fails closed on a stale snapshot or an expired horizon. |
+| `//intrinsic_vehicle/intrinsic/vehicle/control` | Soft-real-time | `ReferenceController` maps `MotionReferenceRt` and vehicle state to `BodyWrenchRt` with typed status. `ZeroWrenchController` validates inputs and returns a neutral zero body wrench. Outside ICON. ICON remains the only actuator writer. |
 | `//intrinsic_vehicle/intrinsic/vehicle/testing` | Test-only | Test-only umbrella and the package-graph check. |
 
 Include paths strip the `intrinsic_vehicle` root, the same way the other
@@ -69,8 +71,8 @@ the ICON cycle. The `parameters` package is that configuration-time check.
 
 | Package | Role on this boundary |
 | --- | --- |
-| `guidance` | Future DesiredMotion-to-reference step. Intent is not an actuator command. |
-| `control` | Future reference-to-body-wrench step. ICON remains the only writer of actuator commands. |
+| `guidance` | `GuidanceStep::Evaluate` at 10 to 50 Hz. DesiredMotion is not an actuator command. Fails closed on expiry and on a stale snapshot. |
+| `control` | `ReferenceController::Evaluate` maps a reference to a body wrench. A zero wrench is neutral only when the status is `kOk`. ICON remains the only writer of actuator commands. |
 | `parameters` | Marine mass, inertia, buoyancy, added mass, damping, centers, environment, and thruster parameters (pose, axis, bounds, slew, efficiency, and health defaults). Validated at configuration time. |
 | `dynamics` | `VehicleDynamics::Evaluate` outside ICON. Fixed-size inputs and results. No Gazebo API and no thruster allocation. |
 
@@ -86,10 +88,13 @@ Present edges inside this tree are from `testing` to `state`, `dynamics`,
 to `parameters` for the rigid-body mass matrix, the added-mass matrix, the
 rigid-body Coriolis matrix, the added-mass Coriolis matrix, the
 linear/quadratic damping wrench, the gravity/buoyancy restoring wrench,
-the water-current relative velocity, and marine-force composition, and
+the water-current relative velocity, and marine-force composition,
 from `allocation` to `parameters` for the thruster effectiveness matrix,
 unconstrained least-squares allocation, bounded thrust allocation, and
-the thruster-health input adapter.
+the thruster-health input adapter, and from `control` to `guidance`
+for the motion-reference types the controller reads. `guidance` does
+not depend on `dynamics`, `state`, or `allocation`. `control` does not
+depend on `dynamics` or `allocation`.
 That graph is acyclic.
 
 Allowed later, and not wired in this scaffold:
@@ -97,7 +102,7 @@ Allowed later, and not wired in this scaffold:
 - `dynamics` may depend on `state`.
 - `allocation` may depend on `state`.
 - `guidance` may depend on `state`.
-- `control` may depend on `guidance` and `state`.
+- `control` may depend on `state`.
 
 Forbidden:
 
@@ -380,6 +385,115 @@ checks marine-force composition.
 `//intrinsic_vehicle/intrinsic/vehicle/dynamics:marine_force_analytic_regression_test`
 checks hand-calculated analytic fixtures for that composition.
 
+## Guidance and reference control
+
+`//intrinsic_vehicle/intrinsic/vehicle/guidance:guidance` defines
+`GuidanceStep::Evaluate`. The call accepts a fixed-size `DesiredMotionRt`,
+an optional vehicle-state snapshot, and an update period. It returns a
+`MotionReferenceRt` or a `GuidanceStatus`. A failure returns an empty
+reference. `has_pose` and `has_twist` are false, and every numeric field
+is a finite zero. That empty reference is not a pose and not a command.
+
+`DesiredMotionRt` mirrors the approved `DesiredMotion` fields. This
+package does not parse protobuf. `snapshot_id` is the monotonic stamped
+identity. Callers copy `StampedHeader.sequence` or the world snapshot id.
+The objective is a pose, a body twist, or an opaque trajectory id of at
+most 64 bytes. The id is not a trajectory sample. `horizon_s` and
+`confidence` are optional. A supplied confidence lies in `[0, 1]`. A
+supplied zero is present. An omitted value is not read.
+
+`MotionReferenceRt` is the reference the controller consumes. A pose
+objective copies that pose and leaves the twist unset. A twist objective
+copies that body twist and leaves the pose unset. `snapshot_id` and
+`update_period` are echoed from the intent and the step. On failure the
+update period is zero, including when the supplied period was rejected.
+
+`VehicleStateRt` matches `dynamics::VehicleStateRt` for pose frame,
+position, orientation, and body twist, and appends `snapshot_id`.
+`FrameId` enumerators match `dynamics::FrameId`. Guidance does not
+depend on `dynamics`. Body axes are REP-103. This package does not
+convert ENU and NED.
+
+`EchoGuidance` is the identity-map test double. It applies no guidance
+law. The state pose and twist are validated and then left unused. A
+trajectory id is not sampled: `Evaluate` returns `kInvalid` and an empty
+reference. `ValidateGuidanceInputs` still returns `kOk` for that id.
+`NullGuidance` uses the same input checks. A usable pose or twist then
+returns `kMissingObjective` and an empty reference. An unset objective
+returns `kMissingObjective` with the message `objective is unset`.
+
+`//intrinsic_vehicle/intrinsic/vehicle/control:control` defines
+`ReferenceController::Evaluate`. The call accepts a `MotionReferenceRt`,
+a `VehicleStateRt`, and an update period. It returns a `BodyWrenchRt` or
+a `ControlStatus`.
+
+`BodyWrenchRt` matches `dynamics::BodyWrenchRt`: body frame, force in
+newtons, and torque in newton-meters. Control does not depend on
+`dynamics` or `allocation`, so the type is defined here. `MotionReferenceRt`,
+`VehicleStateRt`, `Duration`, and `FrameId` are the guidance types.
+`ZeroWrenchController` validates inputs and returns that zero wrench with
+`kOk`. That is the neutral wrench. It is not an actuator command. The
+same zero bits with any other status are not a command. ICON remains the
+only actuator writer.
+
+### Status
+
+Both boundaries use the same code names. `kOk` is the only success code.
+
+| Code | Meaning |
+| --- | --- |
+| `kOk` | The reference or the neutral wrench is present. |
+| `kInvalidArgument` | Non-finite value, confidence outside `[0, 1]`, negative horizon, negative update period, or a trajectory id longer than 64 bytes. |
+| `kInvalid` | Bad frame, non-unit quaternion, empty trajectory id, or a trajectory id that `EchoGuidance` does not sample. |
+| `kMissingObjective` | The objective or the reference was not supplied. `NullGuidance` also uses this code when it refuses to echo. |
+| `kStale` | Snapshot ids differ, or a supplied horizon is shorter than the update period. |
+
+The first defect wins. Failure writes finite zeros.
+
+### Update period
+
+Zero is an instantaneous sample. Negative or non-finite is
+`kInvalidArgument`. Soft-real-time guidance runs at 10 to 50 Hz
+(PDR §11). The interface does not reject another non-negative period.
+A horizon equal to the update period still covers that step. A zero
+horizon with a zero update period is not expired. These packages are
+not on the ICON cycle.
+
+### Check order
+
+Guidance: update period; state, when the pointer is non-null (pose
+frame, finiteness, unit quaternion); supplied confidence; supplied
+horizon; objective; snapshot identity, when state is non-null; horizon
+expiry. A null state pointer skips the state and snapshot checks.
+Fields of an objective that was not selected are not read.
+
+Control: update period; state pose frame, finiteness, and unit
+quaternion; reference update period; present pose; present twist;
+missing pose and twist; snapshot identity. A reference field that is
+not present is not read. Stored numbers with `has_pose` and `has_twist`
+both false are not a pose.
+
+### Thread safety and ownership
+
+`Evaluate` is const. `EchoGuidance`, `NullGuidance`, and
+`ZeroWrenchController` have no data members. Concurrent `Evaluate` calls
+on one instance do not share mutable state. The functions do not
+allocate, do not retain arguments, and do not take locks. Status text
+is a static string view. `TrajectoryId::view()` is valid only while that
+object is alive. The caller owns the intent, the state, the reference,
+and the result.
+
+### Dependencies
+
+The guidance library links the C++ standard library only. The control
+library links guidance. Neither links protobuf, Gazebo, a vendor SDK,
+ICON, allocation, or kinematics.
+
+`//intrinsic_vehicle/intrinsic/vehicle/guidance:motion_guidance_test`
+checks this contract and the two guidance fakes.
+`//intrinsic_vehicle/intrinsic/vehicle/control:reference_control_test`
+checks this contract and the neutral-wrench fake.
+
 ## Thruster effectiveness matrix
 
 `//intrinsic_vehicle/intrinsic/vehicle/allocation:allocation` defines
@@ -515,5 +629,6 @@ a single-failure residual, determinism, and rejected inputs.
 
 Slew limiting, efficiency scaling, redistributing a saturated wrench
 onto unsaturated thrusters, mass-matrix acceleration, time integration,
-guidance laws, control laws, Gazebo plugins, and ICON feature wiring
-are later issues.
+guidance laws, control laws, gains, trajectory sampling, Gazebo plugins,
+and ICON feature wiring are later issues. The guidance and control
+interfaces above are not those laws.

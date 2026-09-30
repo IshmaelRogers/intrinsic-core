@@ -14,9 +14,9 @@
 
 load("//bazel:cc_macros.bzl", "cc_library", "cc_test")
 
-# Opt-in vehicle guidance scaffold. Not part of the protected manipulator
-# baseline. Do not add this package to
-# .github/baseline/manipulator_targets.tsv.
+# Opt-in vehicle guidance. GuidanceStep, EchoGuidance, and NullGuidance.
+# Not a guidance law. Not part of the protected manipulator baseline.
+# Do not add this package to .github/baseline/manipulator_targets.tsv.
 
 package(default_visibility = ["//visibility:public"])
 
@@ -24,19 +24,45 @@ filegroup(
     name = "package_files",
     srcs = [
         "BUILD",
+        "echo_guidance.cc",
+        "echo_guidance.h",
         "guidance.h",
+        "guidance_step.cc",
+        "guidance_step.h",
+        "null_guidance.cc",
+        "null_guidance.h",
     ],
 )
 
 cc_library(
     name = "guidance",
-    hdrs = ["guidance.h"],
+    srcs = [
+        "echo_guidance.cc",
+        "guidance_step.cc",
+        "null_guidance.cc",
+    ],
+    hdrs = [
+        "echo_guidance.h",
+        "guidance.h",
+        "guidance_step.h",
+        "null_guidance.h",
+    ],
 )
 
 cc_test(
     name = "guidance_test",
     size = "small",
     srcs = ["guidance_test.cc"],
+    deps = [
+        ":guidance",
+        "@com_google_googletest//:gtest_main",
+    ],
+)
+
+cc_test(
+    name = "motion_guidance_test",
+    size = "small",
+    srcs = ["motion_guidance_test.cc"],
     deps = [
         ":guidance",
         "@com_google_googletest//:gtest_main",

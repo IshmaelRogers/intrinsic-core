@@ -12,22 +12,19 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#ifndef INTRINSIC_VEHICLE_CONTROL_CONTROL_H_
-#define INTRINSIC_VEHICLE_CONTROL_CONTROL_H_
-
-#include <string_view>
+#include "intrinsic/vehicle/control/zero_wrench_controller.h"
 
 namespace intrinsic::vehicle::control {
 
-// Soft-real-time package scaffold. Reference control belongs here,
-// outside the ICON cycle. ReferenceController in reference_control.h
-// is the reference-to-body-wrench boundary. ZeroWrenchController is
-// the deterministic neutral-wrench fake. This header defines no
-// control law and writes no actuator command.
-// Timing and ownership: README.md in this tree.
-inline constexpr std::string_view kPackageName =
-    "intrinsic_vehicle/intrinsic/vehicle/control";
+StatusOr<BodyWrenchRt> ZeroWrenchController::Evaluate(
+    const MotionReferenceRt& reference, const VehicleStateRt& state,
+    Duration update_period) const {
+  const ControlStatus status =
+      ValidateControlInputs(reference, state, update_period);
+  if (!status.ok()) {
+    return StatusOr<BodyWrenchRt>::Failure(status);
+  }
+  return StatusOr<BodyWrenchRt>::Ok(BodyWrenchRt{});
+}
 
 }  // namespace intrinsic::vehicle::control
-
-#endif  // INTRINSIC_VEHICLE_CONTROL_CONTROL_H_
