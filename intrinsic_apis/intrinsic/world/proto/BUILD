@@ -286,6 +286,64 @@ py_proto_library(
 )
 
 proto_library(
+    name = "occupancy_reference_component_proto",
+    srcs = ["occupancy_reference_component.proto"],
+    deps = [":marine_component_validity_proto"],
+)
+
+cc_proto_library(
+    name = "occupancy_reference_component_cc_proto",
+    deps = [":occupancy_reference_component_proto"],
+)
+
+go_proto_library(
+    name = "occupancy_reference_component_go_proto",
+    importpath = "intrinsic/world/proto/occupancy_reference_component_go_proto",
+    importpath_aliases = ["intrinsic/world/public/proto/occupancy_reference_component_go_proto"],
+    protos = [":occupancy_reference_component_proto"],
+    deps = [":marine_component_validity_go_proto"],
+)
+
+py_proto_library(
+    name = "occupancy_reference_component_py_pb2",
+    deps = [":occupancy_reference_component_proto"],
+)
+
+proto_library(
+    name = "semantic_contacts_component_proto",
+    srcs = ["semantic_contacts_component.proto"],
+    deps = [
+        ":marine_component_validity_proto",
+        "@com_google_protobuf//:duration_proto",
+        "@intrinsic_apis//intrinsic/math/proto:pose_proto",
+        "@intrinsic_apis//intrinsic/math/proto:twist_proto",
+    ],
+)
+
+cc_proto_library(
+    name = "semantic_contacts_component_cc_proto",
+    deps = [":semantic_contacts_component_proto"],
+)
+
+go_proto_library(
+    name = "semantic_contacts_component_go_proto",
+    importpath = "intrinsic/world/proto/semantic_contacts_component_go_proto",
+    importpath_aliases = ["intrinsic/world/public/proto/semantic_contacts_component_go_proto"],
+    protos = [":semantic_contacts_component_proto"],
+    deps = [
+        ":marine_component_validity_go_proto",
+        "@intrinsic_apis//intrinsic/math/proto:pose_go_proto",
+        "@intrinsic_apis//intrinsic/math/proto:twist_go_proto",
+        "@org_golang_google_protobuf//types/known/durationpb",
+    ],
+)
+
+py_proto_library(
+    name = "semantic_contacts_component_py_pb2",
+    deps = [":semantic_contacts_component_proto"],
+)
+
+proto_library(
     name = "physics_component_proto",
     srcs = ["physics_component.proto"],
     deps = [

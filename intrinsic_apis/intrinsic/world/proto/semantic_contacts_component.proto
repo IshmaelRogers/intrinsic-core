@@ -1,0 +1,87 @@
+// Copyright 2026 Intrinsic Innovation LLC
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     https://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
+syntax = "proto3";
+
+package intrinsic_proto.world;
+
+import "google/protobuf/duration.proto";
+import "intrinsic/math/proto/pose.proto";
+import "intrinsic/math/proto/twist.proto";
+import "intrinsic/world/proto/marine_component_validity.proto";
+
+option go_package = "intrinsic/world/proto/semantic_contacts_component_go_proto";
+
+// Tracked semantic contacts as a value list for one additive World
+// component. This is not a perception pipeline. It carries no detector,
+// tracker, or learning state.
+//
+// `pose` and `velocity` of every contact are expressed in `frame_id`. This
+// message does not convert between `world_enu` and `world_ned`.
+//
+// Host checks live in intrinsic/world/semantic_contacts_component. See
+// README.md there.
+//
+// An empty message serializes to zero bytes. Callers that never set this
+// message keep the previous World wire image.
+//
+// Next tag: 4
+message SemanticContactsComponent {
+  // One tracked contact.
+  //
+  // Next tag: 7
+  message SemanticContact {
+    // Stable identity within this component. Empty is rejected. A repeated
+    // id in the same component is rejected.
+    string contact_id = 1;
+
+    // Contact pose in `frame_id`. Required when the contact is present. Every
+    // position and quaternion component must be finite. The quaternion is not
+    // renormalized or checked for unit length here.
+    intrinsic_proto.Pose pose = 2;
+
+    // Linear (m/s) and angular (rad/s) rate in `frame_id`. Required when the
+    // contact is present. All six components must be finite.
+    intrinsic_proto.Twist velocity = 3;
+
+    // Opaque semantic class label, for example `buoy`, `dock`, or `unknown`.
+    // Empty is rejected.
+    string classification = 4;
+
+    // Dimensionless confidence in [0, 1] when set. Unset means absent. Zero
+    // is a supplied value. NaN, infinity, and out-of-range values are
+    // rejected.
+    optional double confidence = 5;
+
+    // Non-negative age of this contact track at the observation. Required
+    // when the contact is present. A negative duration or nanos outside
+    // [0, 999999999] is rejected.
+    google.protobuf.Duration age = 6;
+  }
+
+  // Required when this component is present for validation. Reuses
+  // MarineComponentValidity. Host code does not fork its unknown or expired
+  // rules.
+  MarineComponentValidity validity = 1;
+
+  // Exactly `world_enu` or `world_ned`. Empty and any other id are rejected.
+  // `world_enu` is +Z up. `world_ned` is +Z down. Pose and twist of each
+  // contact are expressed in this frame. This message does not convert
+  // between those frames.
+  string frame_id = 2;
+
+  // Zero or more contacts. An empty list is allowed when the component is
+  // present and clears the contact set.
+  repeated SemanticContact contacts = 3;
+}
