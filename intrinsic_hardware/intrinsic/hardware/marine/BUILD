@@ -1008,6 +1008,142 @@ py_test(
     ],
 )
 
+proto_library(
+    name = "thruster_array_proto",
+    srcs = ["thruster_array.proto"],
+    deps = [
+        "@intrinsic_apis//intrinsic/embodiment/proto:stamped_header_proto",
+    ],
+)
+
+cc_proto_library(
+    name = "thruster_array_cc_proto",
+    deps = [":thruster_array_proto"],
+)
+
+py_proto_library(
+    name = "thruster_array_py_pb2",
+    deps = [":thruster_array_proto"],
+)
+
+cc_library(
+    name = "thruster_array_policy",
+    hdrs = ["thruster_array_policy.h"],
+    deps = [
+        "//intrinsic/vehicle:vehicle_contract_policy",
+    ],
+)
+
+cc_library(
+    name = "fake_thruster_array",
+    srcs = ["fake_thruster_array.cc"],
+    hdrs = ["fake_thruster_array.h"],
+    deps = [
+        ":thruster_array_cc_proto",
+        ":thruster_array_policy",
+        "@intrinsic_apis//intrinsic/embodiment/proto:stamped_header_cc_proto",
+    ],
+)
+
+cc_test(
+    name = "thruster_array_policy_test",
+    size = "small",
+    srcs = ["thruster_array_policy_test.cc"],
+    deps = [
+        ":thruster_array_policy",
+        "//intrinsic/embodiment:frame_policy",
+        "//intrinsic/vehicle:vehicle_contract_policy",
+        "@com_google_googletest//:gtest_main",
+    ],
+)
+
+cc_test(
+    name = "thruster_array_serialization_test",
+    size = "small",
+    srcs = ["thruster_array_serialization_test.cc"],
+    data = [":examples"],
+    deps = [
+        ":fake_thruster_array",
+        ":thruster_array_cc_proto",
+        ":thruster_array_policy",
+        "//intrinsic_vehicle/intrinsic/vehicle/parameters:parameters",
+        "@com_google_googletest//:gtest_main",
+        "@intrinsic_apis//intrinsic/embodiment/proto:stamped_header_cc_proto",
+    ],
+)
+
+cc_test(
+    name = "fake_thruster_array_test",
+    size = "small",
+    srcs = ["fake_thruster_array_test.cc"],
+    deps = [
+        ":fake_thruster_array",
+        ":thruster_array_cc_proto",
+        ":thruster_array_policy",
+        "@com_google_googletest//:gtest_main",
+        "@intrinsic_apis//intrinsic/embodiment/proto:stamped_header_cc_proto",
+    ],
+)
+
+py_library(
+    name = "thruster_array_policy_py",
+    srcs = ["thruster_array_policy.py"],
+    deps = [
+        "//intrinsic/embodiment:frame_policy_py",
+        "//intrinsic/vehicle:vehicle_contract_policy_py",
+    ],
+)
+
+py_library(
+    name = "fake_thruster_array_py",
+    srcs = ["fake_thruster_array.py"],
+    deps = [
+        ":thruster_array_policy_py",
+        ":thruster_array_py_pb2",
+        "//intrinsic/embodiment:frame_policy_py",
+        "@intrinsic_apis//intrinsic/embodiment/proto:stamped_header_py_pb2",
+    ],
+)
+
+py_test(
+    name = "thruster_array_policy_test_py",
+    size = "small",
+    srcs = ["thruster_array_policy_test.py"],
+    main = "thruster_array_policy_test.py",
+    deps = [
+        ":thruster_array_policy_py",
+        "//intrinsic/embodiment:frame_policy_py",
+        "//intrinsic/vehicle:vehicle_contract_policy_py",
+    ],
+)
+
+py_test(
+    name = "thruster_array_serialization_test_py",
+    size = "small",
+    srcs = ["thruster_array_serialization_test.py"],
+    data = [":examples"],
+    main = "thruster_array_serialization_test.py",
+    deps = [
+        ":fake_thruster_array_py",
+        ":thruster_array_policy_py",
+        ":thruster_array_py_pb2",
+        "@intrinsic_apis//intrinsic/embodiment/proto:stamped_header_py_pb2",
+    ],
+)
+
+py_test(
+    name = "fake_thruster_array_test_py",
+    size = "small",
+    srcs = ["fake_thruster_array_test.py"],
+    main = "fake_thruster_array_test.py",
+    deps = [
+        ":fake_thruster_array_py",
+        ":thruster_array_policy_py",
+        ":thruster_array_py_pb2",
+        "@intrinsic_apis//intrinsic/embodiment/proto:stamped_header_py_pb2",
+    ],
+)
+
 filegroup(
     name = "examples",
     srcs = [
@@ -1021,5 +1157,7 @@ filegroup(
         "examples/pressure_depth_from_pressure.textproto",
         "examples/surface_fix_acoustic.textproto",
         "examples/surface_fix_gnss.textproto",
+        "examples/thruster_array_command_nominal.textproto",
+        "examples/thruster_array_feedback_nominal.textproto",
     ],
 )

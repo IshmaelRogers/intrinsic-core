@@ -1,0 +1,42 @@
+# Nominal six-slot thrust command. frame_id is body. enable is unset,
+# which the host treats as enabled. Zero thrust is a supplied neutral.
+header {
+  sequence: 42
+  source_time {
+    seconds: 1700000000
+    nanos: 250000000
+  }
+  receive_time {
+    seconds: 1700000001
+  }
+  source_id: "thruster_array"
+  frame_id: "body"
+  clock_domain: "monotonic"
+  validity {
+    state: STATE_VALID
+  }
+}
+thrusters {
+  name: "surge_port"
+  thrust_n: 10
+}
+thrusters {
+  name: "surge_starboard"
+  thrust_n: -5
+}
+thrusters {
+  name: "sway_fore"
+  thrust_n: 0
+}
+thrusters {
+  name: "sway_aft"
+  thrust_n: 4
+}
+thrusters {
+  name: "heave_fore"
+  thrust_n: 8
+}
+thrusters {
+  name: "heave_aft"
+  thrust_n: -2
+}
