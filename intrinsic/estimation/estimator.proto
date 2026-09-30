@@ -1,0 +1,149 @@
+// Copyright 2026 Intrinsic Innovation LLC
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     https://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
+syntax = "proto3";
+
+package intrinsic_proto.estimation;
+
+import "google/protobuf/duration.proto";
+import "google/protobuf/timestamp.proto";
+import "intrinsic/embodiment/proto/stamped_header.proto";
+import "intrinsic/vehicle/proto/vehicle_state.proto";
+
+// Opt-in estimation service contract (#29). Policy: README.md.
+//
+// The published state type is intrinsic_proto.vehicle.VehicleState from #17.
+// Nothing here redefines it, renames its fields, or rewrites its
+// NavigationMode or Validity values. This package has no filter equations.
+
+// Configuration for EstimatorService.Initialize.
+message EstimatorConfig {
+  // Identity of this estimator. Written to the published header source_id.
+  // Empty means "estimator".
+  string estimator_id = 1;
+
+  // Frame of the published pose. Empty means "world_enu" (REP-103 ENU).
+  string world_frame_id = 2;
+
+  // Clock domain shared by measurement stamps and Predict times. Empty means
+  // "monotonic". An envelope whose header carries another clock domain is
+  // rejected.
+  string clock_domain = 3;
+
+  // Largest tolerated `source_time - receive_time`. Unset means zero. Must
+  // not be negative.
+  google.protobuf.Duration max_future_skew = 4;
+
+  // A source becomes unhealthy after this many consecutive rejects. Zero
+  // means 3.
+  uint32 unhealthy_after_consecutive_rejects = 5;
+
+  // Seed for test doubles. Real services ignore it.
+  uint64 seed = 6;
+
+  // Test doubles publish a specified pose covariance when true. False
+  // publishes unknown (unset) covariance, which is not the zero matrix.
+  bool publish_pose_covariance = 7;
+}
+
+// Kind of a measurement. Aiding kinds are DVL, PRESSURE, ALTIMETER and
+// SURFACE_FIX. IMU, INS and THRUSTER_FEEDBACK are propagation-class inputs
+// and never mark the estimator AIDED. Append values.
+enum MeasurementKind {
+  MEASUREMENT_KIND_UNSPECIFIED = 0;
+  MEASUREMENT_KIND_IMU = 1;
+  MEASUREMENT_KIND_INS = 2;
+  MEASUREMENT_KIND_DVL = 3;
+  MEASUREMENT_KIND_PRESSURE = 4;
+  MEASUREMENT_KIND_ALTIMETER = 5;
+  MEASUREMENT_KIND_SURFACE_FIX = 6;
+  MEASUREMENT_KIND_THRUSTER_FEEDBACK = 7;
+}
+
+// Stamped measurement wrapper. The payload is opaque to the service: a type
+// tag plus serialized bytes of an existing HAL message. The service does not
+// re-implement HAL validation.
+message MeasurementEnvelope {
+  // `source_time`, `receive_time` and `clock_domain` are required. An explicit
+  // STATE_INVALID validity rejects the sample. `frame_id` is the frame of the
+  // payload and is not checked against the world frame.
+  intrinsic_proto.embodiment.StampedHeader header = 1;
+
+  // Key of the per-source health and ordering state. Required.
+  string source_id = 2;
+
+  MeasurementKind kind = 3;
+
+  // Fully qualified message name of `payload`. Required when payload is set.
+  string payload_type = 4;
+
+  bytes payload = 5;
+}
+
+// First-defect reject reason. NONE is accept.
+enum RejectReason {
+  REJECT_REASON_NONE = 0;
+  REJECT_REASON_NOT_INITIALIZED = 1;
+  REJECT_REASON_INVALID_CONFIG = 2;
+  REJECT_REASON_INVALID_ENVELOPE = 3;
+  REJECT_REASON_CLOCK_DOMAIN_MISMATCH = 4;
+  REJECT_REASON_INVALID_PAYLOAD = 5;
+  REJECT_REASON_FUTURE_MEASUREMENT = 6;
+  REJECT_REASON_OUT_OF_ORDER = 7;
+  REJECT_REASON_DUPLICATE_TIMESTAMP = 8;
+  REJECT_REASON_ESTIMATOR_FAULTED = 9;
+  REJECT_REASON_INVALID_TIME = 10;
+}
+
+// Result of Initialize, Ingest, Predict and Reset.
+message EstimatorResult {
+  bool ok = 1;
+
+  // NONE when ok.
+  RejectReason reason = 2;
+
+  // Epoch after the call.
+  uint64 estimator_epoch = 3;
+
+  // Reset only: true when the supplied prior passed AssessVehicleState and
+  // became the published body.
+  bool prior_accepted = 4;
+}
+
+// Per-source bookkeeping. `VehicleState.sources` carries the validity part.
+message SourceStatus {
+  string source_id = 1;
+
+  // True after an accept. False after
+  // `unhealthy_after_consecutive_rejects` consecutive rejects, after fault
+  // injection, or before the first accept.
+  bool healthy = 2;
+
+  // Unset until the first accept.
+  google.protobuf.Timestamp last_accept_source_time = 3;
+
+  // Unset until the first reject. Kept after a later accept.
+  optional RejectReason last_reject_reason = 4;
+
+  uint32 consecutive_rejects = 5;
+}
+
+// GetState reply. Unset `state` means the service was never initialized,
+// which is absent and not an error.
+message GetStateResponse {
+  intrinsic_proto.vehicle.VehicleState state = 1;
+
+  // In first-seen order.
+  repeated SourceStatus source_status = 2;
+}

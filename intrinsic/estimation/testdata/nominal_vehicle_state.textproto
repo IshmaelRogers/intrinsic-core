@@ -1,0 +1,83 @@
+# Nominal VehicleState from FakeEstimatorService (seed 29, publish_pose_covariance).
+# Scenario: Initialize -> accepted DVL and PRESSURE ingest -> Predict(1700000001).
+# Twist covariance is omitted, which means unknown, not zero.
+header {
+  sequence: 2
+  source_time {
+    seconds: 1700000001
+  }
+  receive_time {
+    seconds: 1700000001
+  }
+  source_id: "estimator"
+  frame_id: "world_enu"
+  clock_domain: "monotonic"
+  validity {
+    state: STATE_VALID
+  }
+}
+pose_world_from_body {
+  position {
+    x: 46.8125
+    y: 46.5625
+    z: -14.09375
+  }
+  orientation {
+    w: 1.0
+  }
+}
+body_twist {
+  linear_x_m_s: 0.6484375
+}
+pose_covariance {
+  values: 0.25
+  values: 0.0
+  values: 0.0
+  values: 0.0
+  values: 0.0
+  values: 0.0
+  values: 0.0
+  values: 0.25
+  values: 0.0
+  values: 0.0
+  values: 0.0
+  values: 0.0
+  values: 0.0
+  values: 0.0
+  values: 0.25
+  values: 0.0
+  values: 0.0
+  values: 0.0
+  values: 0.0
+  values: 0.0
+  values: 0.0
+  values: 0.0625
+  values: 0.0
+  values: 0.0
+  values: 0.0
+  values: 0.0
+  values: 0.0
+  values: 0.0
+  values: 0.0625
+  values: 0.0
+  values: 0.0
+  values: 0.0
+  values: 0.0
+  values: 0.0
+  values: 0.0
+  values: 0.0625
+}
+mode: NAVIGATION_MODE_AIDED
+sources {
+  source_id: "dvl"
+  validity {
+    state: STATE_VALID
+  }
+}
+sources {
+  source_id: "depth"
+  validity {
+    state: STATE_VALID
+  }
+}
+estimator_epoch: 1
