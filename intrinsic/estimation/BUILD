@@ -227,3 +227,38 @@ py_test(
         ":eskf_state_py",
     ],
 )
+
+cc_library(
+    name = "innovation_gate",
+    srcs = ["innovation_gate.cc"],
+    hdrs = ["innovation_gate.h"],
+    deps = [":eskf_state"],
+)
+
+cc_test(
+    name = "innovation_gate_test",
+    size = "small",
+    srcs = ["innovation_gate_test.cc"],
+    deps = [
+        ":eskf_state",
+        ":innovation_gate",
+        "@com_google_googletest//:gtest_main",
+    ],
+)
+
+py_library(
+    name = "innovation_gate_py",
+    srcs = ["innovation_gate.py"],
+    deps = [":eskf_state_py"],
+)
+
+py_test(
+    name = "innovation_gate_test_py",
+    size = "small",
+    srcs = ["innovation_gate_test.py"],
+    main = "innovation_gate_test.py",
+    deps = [
+        ":eskf_state_py",
+        ":innovation_gate_py",
+    ],
+)
