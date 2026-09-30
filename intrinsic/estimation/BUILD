@@ -348,3 +348,46 @@ py_test(
         ":eskf_state_py",
     ],
 )
+
+cc_library(
+    name = "depth_update",
+    srcs = ["depth_update.cc"],
+    hdrs = ["depth_update.h"],
+    deps = [
+        ":eskf_propagate",
+        ":eskf_state",
+        ":innovation_gate",
+    ],
+)
+
+cc_test(
+    name = "depth_update_test",
+    size = "small",
+    srcs = ["depth_update_test.cc"],
+    deps = [
+        ":depth_update",
+        ":eskf_state",
+        "@com_google_googletest//:gtest_main",
+    ],
+)
+
+py_library(
+    name = "depth_update_py",
+    srcs = ["depth_update.py"],
+    deps = [
+        ":eskf_propagate_py",
+        ":eskf_state_py",
+        ":innovation_gate_py",
+    ],
+)
+
+py_test(
+    name = "depth_update_test_py",
+    size = "small",
+    srcs = ["depth_update_test.py"],
+    main = "depth_update_test.py",
+    deps = [
+        ":depth_update_py",
+        ":eskf_state_py",
+    ],
+)
