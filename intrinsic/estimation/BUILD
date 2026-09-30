@@ -305,3 +305,46 @@ py_test(
         ":eskf_state_py",
     ],
 )
+
+cc_library(
+    name = "dvl_water_track_update",
+    srcs = ["dvl_water_track_update.cc"],
+    hdrs = ["dvl_water_track_update.h"],
+    deps = [
+        ":eskf_propagate",
+        ":eskf_state",
+        ":innovation_gate",
+    ],
+)
+
+cc_test(
+    name = "dvl_water_track_update_test",
+    size = "small",
+    srcs = ["dvl_water_track_update_test.cc"],
+    deps = [
+        ":dvl_water_track_update",
+        ":eskf_state",
+        "@com_google_googletest//:gtest_main",
+    ],
+)
+
+py_library(
+    name = "dvl_water_track_update_py",
+    srcs = ["dvl_water_track_update.py"],
+    deps = [
+        ":eskf_propagate_py",
+        ":eskf_state_py",
+        ":innovation_gate_py",
+    ],
+)
+
+py_test(
+    name = "dvl_water_track_update_test_py",
+    size = "small",
+    srcs = ["dvl_water_track_update_test.py"],
+    main = "dvl_water_track_update_test.py",
+    deps = [
+        ":dvl_water_track_update_py",
+        ":eskf_state_py",
+    ],
+)
