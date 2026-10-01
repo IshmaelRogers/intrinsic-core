@@ -25,13 +25,17 @@ import abc
 import dataclasses
 import enum
 
+from intrinsic.motion_planning.vehicle import vehicle_state_space
 from intrinsic.vehicle import trajectory_contract_policy
 
 # Well-known vehicle planner implementation ids (not the embodiment
 # category id).
 VEHICLE_PLANNER_FAKE = "ai.intrinsic.vehicle_planner.fake"
-# Reserved for later leaves (do not implement algorithms here):
-# "ai.intrinsic.vehicle_planner.kinodynamic_baseline"  # #105+
+# Discrete kinodynamic lattice Dijkstra. Implemented by
+# KinodynamicBaselinePlanner.
+VEHICLE_PLANNER_KINODYNAMIC_BASELINE = (
+    "ai.intrinsic.vehicle_planner.kinodynamic_baseline"
+)
 
 
 class PlannerRegistryError(enum.Enum):
@@ -52,13 +56,25 @@ class VehiclePlanStatus(enum.Enum):
 
 @dataclasses.dataclass(frozen=True)
 class VehiclePlanRequest:
-  """Opaque start and goal labels. Later planners will use world state."""
+  """Start and goal labels, plus optional planning states.
+
+  The fake requires both labels and ignores the planning-state fields.
+  The kinodynamic baseline requires `states_present`.
+  """
 
   start_label: str = ""
   goal_label: str = ""
   # Empty means the planner chooses its own id. The fake uses
-  # "fake-trajectory".
+  # "fake-trajectory". The kinodynamic baseline uses "kinodynamic-baseline".
   trajectory_id: str = ""
+  # Additive planning state. Default false. The fake ignores these fields.
+  states_present: bool = False
+  start_state: vehicle_state_space.VehiclePlanningState = dataclasses.field(
+      default_factory=vehicle_state_space.VehiclePlanningState
+  )
+  goal_state: vehicle_state_space.VehiclePlanningState = dataclasses.field(
+      default_factory=vehicle_state_space.VehiclePlanningState
+  )
 
 
 @dataclasses.dataclass(frozen=True)

@@ -22,6 +22,7 @@
 #include <string_view>
 #include <vector>
 
+#include "intrinsic/motion_planning/vehicle/vehicle_state_space.h"
 #include "intrinsic/vehicle/trajectory_contract_policy.h"
 
 namespace intrinsic::motion_planning::vehicle {
@@ -37,8 +38,10 @@ namespace intrinsic::motion_planning::vehicle {
 // category id).
 inline constexpr std::string_view kVehiclePlannerFake =
     "ai.intrinsic.vehicle_planner.fake";
-// Reserved for later leaves (do not implement algorithms here):
-// "ai.intrinsic.vehicle_planner.kinodynamic_baseline"  // #105+
+// Discrete kinodynamic lattice Dijkstra. Implemented by
+// KinodynamicBaselinePlanner.
+inline constexpr std::string_view kVehiclePlannerKinodynamicBaseline =
+    "ai.intrinsic.vehicle_planner.kinodynamic_baseline";
 
 enum class PlannerRegistryError {
   kOk = 0,
@@ -57,13 +60,20 @@ enum class VehiclePlanStatus {
 };
 
 struct VehiclePlanRequest {
-  // Opaque start/goal labels for the fake. Later planners will use
-  // VehiclePlanningState and World snapshots. Keep plain values.
+  // Opaque start/goal labels for the fake. The fake requires both non-empty
+  // and ignores the planning-state fields below.
   std::string start_label;
   std::string goal_label;
   // Optional id stamped onto a success trajectory. Empty means the planner
-  // chooses its own id. The fake uses "fake-trajectory".
+  // chooses its own id. The fake uses "fake-trajectory". The kinodynamic
+  // baseline uses "kinodynamic-baseline".
   std::string trajectory_id;
+
+  // Additive planning state. Default false. The fake ignores these fields.
+  // The kinodynamic baseline requires states_present == true.
+  bool states_present = false;
+  VehiclePlanningState start_state{};
+  VehiclePlanningState goal_state{};
 };
 
 // Owned plan. A trajectory is present only when status == kOk. Samples and

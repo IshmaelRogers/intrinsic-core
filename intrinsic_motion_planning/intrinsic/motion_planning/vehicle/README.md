@@ -2,12 +2,12 @@
 
 Opt-in `Interpolate`, `Distance`, and `Validate` for a free-body vehicle
 planning sample, plus an exact-match planner registry, a deterministic
-fake planner, a deterministic UUV motion-primitive generator, and a
-current-aware primitive propagator, and a snapshot-backed trajectory validity
-adapter. Plain values only: no protobuf parsing, no World access, no
-voxel or SDF collision queries, no kinodynamic search. Manipulator
-joint StateSpace consumers and the services under `motion_planner/` are
-unchanged.
+fake planner, a deterministic UUV motion-primitive generator, a
+current-aware primitive propagator, a snapshot-backed trajectory validity
+adapter, and a deterministic discrete kinodynamic lattice Dijkstra.
+Plain values only: no protobuf parsing, no World access, no voxel or SDF
+collision queries. Manipulator joint StateSpace consumers and the services
+under `motion_planner/` are unchanged.
 
 [ADR 0001](../../../../docs/adr/0001-multi-embodiment-capability-architecture.md)
 records the additive capability decision. The `VehicleState` wire message and
@@ -31,6 +31,8 @@ This package does not change them.
 | Python | `//intrinsic_motion_planning/intrinsic/motion_planning/vehicle:vehicle_primitive_propagation_py` | `intrinsic.motion_planning.vehicle.vehicle_primitive_propagation` |
 | C++ | `//intrinsic_motion_planning/intrinsic/motion_planning/vehicle:vehicle_trajectory_validity` | `intrinsic/motion_planning/vehicle/vehicle_trajectory_validity.h` |
 | Python | `//intrinsic_motion_planning/intrinsic/motion_planning/vehicle:vehicle_trajectory_validity_py` | `intrinsic.motion_planning.vehicle.vehicle_trajectory_validity` |
+| C++ | `//intrinsic_motion_planning/intrinsic/motion_planning/vehicle:vehicle_kinodynamic_baseline` | `intrinsic/motion_planning/vehicle/vehicle_kinodynamic_baseline.h` |
+| Python | `//intrinsic_motion_planning/intrinsic/motion_planning/vehicle:vehicle_kinodynamic_baseline_py` | `intrinsic.motion_planning.vehicle.vehicle_kinodynamic_baseline` |
 
 C++ names live in `intrinsic::motion_planning::vehicle`. The Python mirror uses
 snake_case functions (`interpolate`, `distance`, `validate`), tuples for
@@ -146,7 +148,7 @@ unknown id returns not-found. The registry does not construct a planner.
 | Id | Meaning |
 | --- | --- |
 | `ai.intrinsic.vehicle_planner.fake` | Deterministic fake. Implemented here. |
-| `ai.intrinsic.vehicle_planner.kinodynamic_baseline` | Reserved. Not implemented. |
+| `ai.intrinsic.vehicle_planner.kinodynamic_baseline` | Discrete lattice Dijkstra. Implemented here. |
 
 C++ names live in `intrinsic::motion_planning::vehicle`. The Python mirror
 uses `PlannerRegistryError.OK`, `EMPTY_ID`, `DUPLICATE_ID`, `NOT_FOUND`, and
@@ -391,7 +393,7 @@ check one propagated trajectory, for example the samples from
 AABB geofence, and an injected minimum clearance. The check is bound to one
 immutable World snapshot. It is a pure adapter: no search, no sampling, no
 trajectory rewriting, no World mutation, and no planner registration. The
-kinodynamic baseline planner id stays reserved and unregistered.
+kinodynamic baseline calls this adapter; it does not live in this file.
 
 It calls only landed APIs:
 
@@ -482,10 +484,95 @@ fixed well-formed snapshot whose `snapshot_id` is
 | bounds | engaged position box, sample outside | `kBounds`, `bounds` |
 | geofence | sample outside the AABB | `kGeofence`, `geofence.aabb` |
 
+## Kinodynamic baseline
+
+`SearchKinodynamicBaseline` (C++) and `search_kinodynamic_baseline` (Python)
+are a deterministic discrete kinodynamic lattice Dijkstra. Cost `g` is the
+sum of applied `primitive.duration_s` values. There is no heuristic, so the
+search is uniform-cost. It expands only with `GenerateUuvMotionPrimitives`
+and `PropagateUuvMotionPrimitive`, and it keeps an edge only when
+`CheckTrajectoryValidity` returns ok. Dynamics are injected. Tests use
+`ZeroForceDynamics`. The search does not smooth, shortcut, or run TOPP.
+
+Registration id: `ai.intrinsic.vehicle_planner.kinodynamic_baseline`
+(`kVehiclePlannerKinodynamicBaseline`,
+`VEHICLE_PLANNER_KINODYNAMIC_BASELINE`). `KinodynamicBaselinePlanner.id()`
+returns that constant. `MakeKinodynamicBaselinePlanner` does not register
+itself. The fake planner ignores the new `VehiclePlanRequest` fields
+`states_present`, `start_state`, and `goal_state`. The baseline requires
+`states_present`.
+
+Clearance is a template copied onto every propagated sample
+(`clearance_template_m`, default `1.0`, source obstacle). The planner does
+not read World occupancy. `pose_frame` empty means `fence.frame_id`.
+
+Tie-break on the open set, all ascending:
+
+1. `g_cost`
+2. `primitive_index` of the edge that created the node (`-1` for the start)
+3. `parent_expand_seq` (the expansion number of the parent; `0` on the start,
+   and `1` for children of the first expanded node)
+4. `node_seq` (monotone counter assigned at push; start is `0`)
+
+The closed set key is `floor(position / position_bin_m)` plus the exact
+orientation and twist bits. The first time a key is dequeued it is settled.
+Later duplicates of a settled key are ignored.
+
+`max_expansions` counts validity-accepted child pushes and must be at least 1.
+The goal test `Distance(state, goal) <= goal_tolerance` runs when a node is
+dequeued, so a push that fills the budget is not dequeued. Cancel is polled
+before deadline, at the start of each iteration and before each propagate.
+`run_options` null skips the mid-run poll. `RunWithDeadline` still applies
+before `Plan`.
+
+Pre-search failures return `kInvalidRequest` with no trajectory. First defect
+wins: missing states, null dynamics, `Validate` on either state, a bad
+tolerance / bin / expansion budget / clearance template, a primitive set that
+is not ok or is empty, then a start probe whose validity result is
+`kBadRequest` or `kStaleSnapshot`. Start equal to the goal after an ok probe
+returns one sample at `t = 0` and does not expand.
+
+A success trajectory uses frame `world_enu`, model id `uuv_planner`, and
+`trajectory_id` from the request or `kinodynamic-baseline`. Samples are the
+propagation samples along the parent chain. The child edge's `t = 0` sample
+is dropped when its absolute time is not strictly later than the previous
+sample. Times are split into seconds and nanos. `AssessVehicleTrajectory`
+accepts the result. Cancel, deadline, no solution, and invalid requests carry
+no trajectory.
+
+| Condition | Status |
+| --- | --- |
+| Success path, or start equal to goal | `kOk` |
+| Open set empty, or the expansion budget is hit | `kNoSolution` |
+| Pre-search validation, null dynamics, bad primitives, or a stale or bad snapshot probe | `kInvalidRequest` |
+| Cancel polled, or harness pre-cancel | `kCancelled` |
+| Deadline polled, or harness pre-deadline | `kDeadlineExceeded` |
+
+Fixtures use `ZeroForceDynamics`, frame `world_enu`, fence region `ops-box`,
+the same snapshot as the validity tests, `assess_skew` false except for the
+stale case, propagation `dt_s = 0.5`, `max_steps = 4`, `mass_diag` all `10`,
+zero gravity, density, and current, `position_bin_m = 0.25`,
+`goal_tolerance = 1e-6`, `max_expansions = 64`, and
+`clearance_template_m = 1.0`.
+
+| Fixture | Result |
+| --- | --- |
+| Reachable custom `Fx = 10`, duration `1`, fence `[-2, 2]` | `kOk`. Samples match propagation (`x = 0.75`, `twist.linear_x = 1`) |
+| Same edge, fence `x` in `[-0.5, 0.3]` | `kNoSolution` |
+| Two equal-cost `Fx = 10` controls | Lower `primitive_index` (`uuv-prim-000`) wins. A reversed near-equal pair still follows index 0 |
+| `run_options` shared with `RunWithDeadline` | Mid-run cancel is `kCancelled`. A past deadline inside the search is `kDeadlineExceeded`. Pre-cancel and pre-deadline skip `Plan` |
+| Start equal to goal | `kOk`, one sample |
+| Custom primitive list empty | `kInvalidRequest` |
+| Non-unit start quaternion | `kInvalidRequest` |
+| `assess_skew` withholds | `kInvalidRequest` |
+| Two identical reachable searches | Same status, id, count, times, poses, and twists |
+| `Register` then `Lookup` | `id()` matches the constant |
+
 ## Out of scope
 
-* Search, sampling, RRT, A*, heuristics, kinodynamic planning, TOPP. The
-  kinodynamic baseline planner id stays reserved and unregistered.
+* Sampling, RRT, SST, PRM, heuristic A*, anytime repair, trajectory
+  smoothing, shortcutting, and TOPP. The lattice Dijkstra above is the only
+  search in this package.
 * Voxel, SDF, or occupancy clearance queries. Clearance is injected as
   `ClearanceSample` values. World service and entity changes, and any World
   mutation.
@@ -498,7 +585,9 @@ fixed well-formed snapshot whose `snapshot_id` is
   implementations, and `DesiredMotion` assembly.
 * ENU and NED conversion.
 * Changes to the trajectory wire, the StateSpace API, the motion-primitive
-  generator API, the propagation API, or manipulator `motion_planner` services.
+  generator API, the propagation API, the validity adapter, or manipulator
+  `motion_planner` services. The registry only adds the baseline id and the
+  optional planning-state fields on `VehiclePlanRequest`.
 * Edits to `.github/baseline/manipulator_targets.tsv`.
 
 ## Build and test
