@@ -19,8 +19,8 @@ Host code lives in this directory. The protobuf contracts in
 | `severity` | 0 | wire severity below |
 | `summary` | empty | short text |
 | `recommended_kind` | `UNSPECIFIED` (0) | `REJECT` (3), or `PROJECT` (2) for envelope clamps |
-| `has_projected_value` | false | true only when `recommended_kind` is `PROJECT`, or for the audit-only `clearance.min` below-min result |
-| `projected_value` | 0.0 | clamped scalar in the rule's unit (meters, m/s, radians, or rad/s) when projected, else 0.0 |
+| `has_projected_value` | false | true only when `recommended_kind` is `PROJECT`, or for the audit-only `clearance.min` and `energy.reserve` below-limit results |
+| `projected_value` | 0.0 | clamped scalar in the rule's unit (meters, m/s, radians, or rad/s) when projected, or the audit value (meters for `clearance.min`, Joules for `energy.reserve`), else 0.0 |
 
 ## Rule ids and severities
 
@@ -38,6 +38,7 @@ Host code lives in this directory. The protobuf contracts in
 | Ascent rate, clamp | `rate.ascent.max` | `SAFETY_FINDING_SEVERITY_ERROR` (3) | `PROJECT` (2) |
 | AABB geofence, hard fence | `geofence.aabb` | `SAFETY_FINDING_SEVERITY_ERROR` (3) outside, `SAFETY_FINDING_SEVERITY_CRITICAL` (4) unusable input | `REJECT` (3), never `PROJECT` |
 | Minimum clearance, hard threshold | `clearance.min` | `SAFETY_FINDING_SEVERITY_ERROR` (3) below min, `SAFETY_FINDING_SEVERITY_CRITICAL` (4) unusable input | `REJECT` (3), never `PROJECT` |
+| Energy reserve, hard threshold | `energy.reserve` | `SAFETY_FINDING_SEVERITY_ERROR` (3) below reserve, `SAFETY_FINDING_SEVERITY_CRITICAL` (4) unknown or unusable input | `REJECT` (3), never `PROJECT` |
 | Envelope unknown or unusable input | every envelope rule above | `SAFETY_FINDING_SEVERITY_CRITICAL` (4) | `REJECT` (3) | `SAFETY_FINDING_SEVERITY_CRITICAL` (4) | `REJECT` (3) |
 
 ## `state.age`
@@ -168,3 +169,31 @@ proto, or aggregation is involved, and no path is rewritten.
   thread-local ring buffer rather than a string literal. It stays valid until
   at least seven further below-min results on the same thread. Copy it to keep
   it longer.
+
+## `energy.reserve`
+
+`EvaluateEnergyReserveRule(sample)` in `energy_reserve_rule` (C++ and Python,
+with paired tests) checks one injected `EnergyReserveSample` (`available_j`,
+`required_j`, `energy_known`, `prediction_horizon_s`, `prediction_usable`).
+Energy is in Joules and the prediction horizon is in seconds. The caller folds
+any configured reserve and fallback energy into `required_j`; the rule only
+compares available against required and validates the sample. There is no
+energy, battery, or state-of-charge predictor, no planner call, no proto, and no
+aggregation, and no path is rewritten.
+
+- `energy_known == false` is CRITICAL `REJECT` (`unknown energy`). Unknown energy
+  fails closed even when the numbers would pass.
+- `prediction_usable == false` is CRITICAL `REJECT` (`prediction unusable`).
+- A non-finite `available_j`, `required_j`, or `prediction_horizon_s`, a negative
+  `available_j` or `required_j`, or `prediction_horizon_s <= 0` is CRITICAL
+  `REJECT` (`energy input is not usable`).
+- `available_j >= required_j` is compliant, so equal is OK.
+- `available_j < required_j` is ERROR `REJECT` with summary
+  `energy below reserve available_j=<a> required_j=<r>`.
+- On that below-reserve result `has_projected_value` is true and
+  `projected_value` is `available_j` in Joules. This is an audit value, not a
+  clamp target: the decision kind is `REJECT`, never `PROJECT`.
+- In C++ the below-reserve summary contains the measured values, so it is kept
+  in a thread-local ring buffer rather than a string literal. It stays valid
+  until at least seven further below-reserve results on the same thread. Copy it
+  to keep it longer.
