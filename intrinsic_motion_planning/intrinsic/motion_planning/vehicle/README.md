@@ -4,7 +4,8 @@ Opt-in `Interpolate`, `Distance`, and `Validate` for a free-body vehicle
 planning sample, plus an exact-match planner registry, a deterministic
 fake planner, a deterministic UUV motion-primitive generator, a
 current-aware primitive propagator, a snapshot-backed trajectory validity
-adapter, and a deterministic discrete kinodynamic lattice Dijkstra.
+adapter, a deterministic discrete kinodynamic lattice Dijkstra, and the
+trajectory reconstruction helper that Dijkstra calls on success.
 Plain values only: no protobuf parsing, no World access, no voxel or SDF
 collision queries. Manipulator joint StateSpace consumers and the services
 under `motion_planner/` are unchanged.
@@ -31,6 +32,8 @@ This package does not change them.
 | Python | `//intrinsic_motion_planning/intrinsic/motion_planning/vehicle:vehicle_primitive_propagation_py` | `intrinsic.motion_planning.vehicle.vehicle_primitive_propagation` |
 | C++ | `//intrinsic_motion_planning/intrinsic/motion_planning/vehicle:vehicle_trajectory_validity` | `intrinsic/motion_planning/vehicle/vehicle_trajectory_validity.h` |
 | Python | `//intrinsic_motion_planning/intrinsic/motion_planning/vehicle:vehicle_trajectory_validity_py` | `intrinsic.motion_planning.vehicle.vehicle_trajectory_validity` |
+| C++ | `//intrinsic_motion_planning/intrinsic/motion_planning/vehicle:vehicle_trajectory_reconstruction` | `intrinsic/motion_planning/vehicle/vehicle_trajectory_reconstruction.h` |
+| Python | `//intrinsic_motion_planning/intrinsic/motion_planning/vehicle:vehicle_trajectory_reconstruction_py` | `intrinsic.motion_planning.vehicle.vehicle_trajectory_reconstruction` |
 | C++ | `//intrinsic_motion_planning/intrinsic/motion_planning/vehicle:vehicle_kinodynamic_baseline` | `intrinsic/motion_planning/vehicle/vehicle_kinodynamic_baseline.h` |
 | Python | `//intrinsic_motion_planning/intrinsic/motion_planning/vehicle:vehicle_kinodynamic_baseline_py` | `intrinsic.motion_planning.vehicle.vehicle_kinodynamic_baseline` |
 
@@ -533,12 +536,15 @@ is not ok or is empty, then a start probe whose validity result is
 returns one sample at `t = 0` and does not expand.
 
 A success trajectory uses frame `world_enu`, model id `uuv_planner`, and
-`trajectory_id` from the request or `kinodynamic-baseline`. Samples are the
-propagation samples along the parent chain. The child edge's `t = 0` sample
-is dropped when its absolute time is not strictly later than the previous
-sample. Times are split into seconds and nanos. `AssessVehicleTrajectory`
-accepts the result. Cancel, deadline, no solution, and invalid requests carry
-no trajectory.
+`trajectory_id` from the request or `kinodynamic-baseline`. It is built by
+`ReconstructVehicleTrajectory` (see [Trajectory reconstruction](#trajectory-reconstruction))
+from the parent chain of the dequeued goal node, and `AssessVehicleTrajectory`
+accepts the result. The search itself is unchanged by that call: cost,
+expansion, tie-break, goal test, and validity gating do not read the
+reconstruction. A reconstruction defect cannot occur for a chain the search
+builds. If one ever did, the search fails closed as `kNoSolution` with no
+trajectory. Cancel, deadline, no solution, and invalid requests carry no
+trajectory.
 
 | Condition | Status |
 | --- | --- |
@@ -567,6 +573,79 @@ zero gravity, density, and current, `position_bin_m = 0.25`,
 | `assess_skew` withholds | `kInvalidRequest` |
 | Two identical reachable searches | Same status, id, count, times, poses, and twists |
 | `Register` then `Lookup` | `id()` matches the constant |
+
+## Trajectory reconstruction
+
+`ReconstructVehicleTrajectory` (C++) and `reconstruct_vehicle_trajectory`
+(Python) turn a parent-linked chain of lattice-Dijkstra nodes into one
+`VehiclePlanResult` trajectory. It is the concatenation step that
+`SearchKinodynamicBaseline` used to inline, extracted without a change in
+output. It does not search, expand, smooth, retime, or read World, it adds no
+registry id, and it never edits a sample. A chain it cannot reconstruct as
+given is rejected, not repaired.
+
+Input is `nodes`, a flat array of `ReconstructionNodeView`, and a
+`goal_index`. Views alias caller storage in C++.
+
+| Field | Meaning |
+| --- | --- |
+| `parent` | Index of the parent node. `-1` marks the root. |
+| `time_s` | Absolute node time in seconds (the search's cumulative cost). The root is exactly `0`. |
+| `state` | State at the end of the edge. The root holds the request start state. |
+| `edge_samples` | `PropagationSample` edge from the parent: times relative to the parent, first sample is the parent state at `t = 0`, last is `state`. Ignored for the root. |
+
+The walk follows `parent` links from `goal_index` to the root, so array order
+and sibling branches do not matter. The result starts with the request start
+state at `t = 0`. For every later edge the first sample repeats the previous
+sample and is dropped. Every other sample is kept at absolute time
+`parent.time_s + sample.time_s`, split into seconds and nanos. A goal that is
+the root yields one sample. The success result has frame `world_enu`, model id
+`uuv_planner`, validity state `1`, and `trajectory_id` from the request, then
+`ReconstructionOptions.default_trajectory_id`, then `reconstructed-trajectory`.
+
+`TrajectoryReconstructionError` (Python: `OK`, `BAD_REQUEST`, `BAD_CHAIN`,
+`START_MISMATCH`, `DISJOINT_EDGE`, `NON_MONOTONIC_TIME`, `REJECTED`) is
+numbered 0 to 6. The result also carries `failed_node`, an index into `nodes`
+or `-1`. The chain is checked root first and the first defect wins.
+
+| Condition | Error |
+| --- | --- |
+| `states_present` false, no nodes, or `goal_index` out of range | `kBadRequest` |
+| Parent index out of range, a loop, or no root | `kBadChain` |
+| Root time is not `0`, or root state is not the request start state exactly | `kStartMismatch` |
+| Empty edge, first sample not the parent state at `t = 0`, or last sample not the node state | `kDisjointEdge` |
+| Non-finite or negative time, edge times not strictly increasing, node time before its parent, or two kept samples that are not strictly increasing at nanosecond resolution | `kNonMonotonicTime` |
+| `AssessVehicleTrajectory` does not accept the result | `kRejected` |
+
+On any error `trajectory.status` is `kInvalidRequest` and no trajectory is
+carried. State comparison is exact (bitwise equal doubles), because the search
+copies the parent state into the first edge sample and the last edge sample
+into the child node.
+
+### Replan fixture
+
+The replan fixture plans twice with the same start, goal, primitives, and
+`ZeroForceDynamics`. Only the snapshot binding changes between plans: the
+`snapshot_id` and descriptor (state epoch `1`, then `2`), plus the validity
+inputs carried with it. The baseline reads no World occupancy. A binding is
+therefore the snapshot id, the clearance template, and the `VehicleStateBounds`
+envelope, not a region-local obstacle map. Fixtures use the custom controls
+`Fx = 10, -10, 5, -5`, duration `1`, the same propagation and fence as the
+baseline fixtures, and a goal equal to the state after `Fx = 10, -10`
+(`x = 1`, at rest).
+
+| Plan | Binding | Result |
+| --- | --- | --- |
+| First | Epoch 1, clearance `1.0`, no speed limit | `kOk`. Edges `Fx = 10, -10`, 5 samples, ends at `t = 2`, peak speed `1.0` |
+| Second, tighter envelope | Epoch 2, same clearance, `max_linear_speed = 0.6` | `kOk`, a different route. Edges `Fx = 5, -5, 5, -5`, 9 samples, ends at `t = 4`, peak speed `0.5`, same final state |
+| Second, new obstacle | Epoch 2, clearance `0.2` (below the `0.5` minimum) | `kNoSolution`, no trajectory |
+
+Both `kOk` plans pass `AssessVehicleTrajectory` and `CheckTrajectoryValidity`
+under their own binding. The first trajectory fails `CheckTrajectoryValidity`
+under the updated binding (`kBounds` for the envelope, `kClearance` for the
+obstacle), which is why the replan picks a different route. A stale
+`snapshot_id` against the updated descriptor is `kInvalidRequest`. Each plan
+is repeated and compared sample for sample.
 
 ## Out of scope
 
