@@ -35,6 +35,8 @@ namespace intrinsic::motion_planning::vehicle {
 // over GenerateUuvMotionPrimitives. Edges are PropagateUuvMotionPrimitive
 // samples accepted by CheckTrajectoryValidity. There is no heuristic, no
 // sampling, no smoothing, and no new dynamics model. Dynamics are injected.
+// A success trajectory is assembled from the parent chain by
+// ReconstructVehicleTrajectory (vehicle_trajectory_reconstruction.h).
 //
 // String views on KinodynamicBaselineConfig (pose_frame, and the fence
 // frame_id / region_id) are borrowed from the caller and must outlive Plan.

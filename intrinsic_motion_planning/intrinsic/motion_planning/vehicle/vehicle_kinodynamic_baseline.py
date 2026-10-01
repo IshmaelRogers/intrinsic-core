@@ -29,7 +29,6 @@ import math
 import struct
 import time
 
-from intrinsic.embodiment import frame_policy
 from intrinsic.motion_planning.vehicle import vehicle_motion_primitives
 from intrinsic.motion_planning.vehicle import vehicle_planner_deadline
 from intrinsic.motion_planning.vehicle import (
@@ -37,14 +36,12 @@ from intrinsic.motion_planning.vehicle import (
 )
 from intrinsic.motion_planning.vehicle import vehicle_primitive_propagation
 from intrinsic.motion_planning.vehicle import vehicle_state_space
+from intrinsic.motion_planning.vehicle import vehicle_trajectory_reconstruction
 from intrinsic.motion_planning.vehicle import vehicle_trajectory_validity
 from intrinsic.safety import clearance_rule
-from intrinsic.vehicle import trajectory_contract_policy
 from intrinsic.world.world_snapshot import world_snapshot_skew_policy
 
 KINODYNAMIC_BASELINE_TRAJECTORY_ID = "kinodynamic-baseline"
-_MODEL_ID = "uuv_planner"
-_NANOS_PER_SECOND = 1_000_000_000
 
 VehicleMotionPrimitiveConfig = (
     vehicle_motion_primitives.VehicleMotionPrimitiveConfig
@@ -128,76 +125,49 @@ def _finite_non_negative(value: float) -> bool:
   )
 
 
-def _llround(value: float) -> int:
-  """Half away from zero, matching C++ llround."""
-  if value >= 0.0:
-    return int(math.floor(value + 0.5))
-  return int(math.ceil(value - 0.5))
+def _reconstructed(reconstructed) -> registry.VehiclePlanResult:
+  """A defect is unreachable for a chain this search builds.
+
+  It fails closed as NO_SOLUTION and never returns a trajectory.
+  """
+  reconstruction = vehicle_trajectory_reconstruction
+  if reconstructed.error is not reconstruction.TrajectoryReconstructionError.OK:
+    return _failure(registry.VehiclePlanStatus.NO_SOLUTION)
+  return reconstructed.trajectory
 
 
-def _split_time(time_s: float) -> tuple[int, int]:
-  whole = math.floor(time_s)
-  nanos = _llround((time_s - whole) * _NANOS_PER_SECOND)
-  seconds = int(whole)
-  if nanos >= _NANOS_PER_SECOND:
-    nanos -= _NANOS_PER_SECOND
-    seconds += 1
-  if nanos < 0:
-    nanos = 0
-  return seconds, nanos
-
-
-def _to_sample(state, time_s: float):
-  seconds, nanos = _split_time(time_s)
-  return trajectory_contract_policy.TrajectorySampleView(
-      time_present=True,
-      seconds=seconds,
-      nanos=nanos,
-      position=tuple(state.position),
-      orientation=tuple(state.orientation),
-      twist_present=True,
-      twist=tuple(state.twist),
-      acceleration_present=False,
+def _reconstruction_options():
+  return vehicle_trajectory_reconstruction.ReconstructionOptions(
+      default_trajectory_id=KINODYNAMIC_BASELINE_TRAJECTORY_ID
   )
 
 
-def _success(request, samples) -> registry.VehiclePlanResult:
-  trajectory_id = request.trajectory_id or KINODYNAMIC_BASELINE_TRAJECTORY_ID
-  return registry.VehiclePlanResult(
-      status=registry.VehiclePlanStatus.OK,
-      header_present=True,
-      validity_present=True,
-      validity_state=1,
-      frame_id=frame_policy.WORLD_ENU_FRAME_ID,
-      trajectory_id=trajectory_id,
-      samples=tuple(samples),
-      provenance_present=True,
-      model_id=_MODEL_ID,
+def _start_goal_success(request) -> registry.VehiclePlanResult:
+  root = vehicle_trajectory_reconstruction.ReconstructionNodeView(
+      state=request.start_state
   )
-
-
-def _time_before(earlier, later) -> bool:
-  return trajectory_contract_policy.sample_time_before(earlier, later)
+  return _reconstructed(
+      vehicle_trajectory_reconstruction.reconstruct_vehicle_trajectory(
+          (root,), 0, request, _reconstruction_options()
+      )
+  )
 
 
 def _success_from_node(nodes: list[_Node], goal_index: int, request):
-  chain: list[int] = []
-  index = goal_index
-  while index >= 0:
-    chain.append(index)
-    index = nodes[index].parent
-  chain.reverse()
-  samples = []
-  for edge in range(1, len(chain)):
-    node = nodes[chain[edge]]
-    time_base = nodes[node.parent].g_cost
-    for sample in node.edge_samples:
-      view = _to_sample(sample.state, time_base + sample.time_s)
-      # Drop the child edge's t=0 joint when it repeats the previous time.
-      if samples and not _time_before(samples[-1], view):
-        continue
-      samples.append(view)
-  return _success(request, samples)
+  views = tuple(
+      vehicle_trajectory_reconstruction.ReconstructionNodeView(
+          parent=node.parent,
+          time_s=node.g_cost,
+          state=node.state,
+          edge_samples=node.edge_samples,
+      )
+      for node in nodes
+  )
+  return _reconstructed(
+      vehicle_trajectory_reconstruction.reconstruct_vehicle_trajectory(
+          views, goal_index, request, _reconstruction_options()
+      )
+  )
 
 
 def _clearance_frame(config: KinodynamicBaselineConfig) -> str:
@@ -330,12 +300,10 @@ def search_kinodynamic_baseline(
     return _failure(invalid)
   if (
       probed.error is bad.OK
-      and vehicle_state_space.distance(
-          request.start_state, request.goal_state
-      )
+      and vehicle_state_space.distance(request.start_state, request.goal_state)
       <= config.goal_tolerance
   ):
-    return _success(request, (_to_sample(request.start_state, 0.0),))
+    return _start_goal_success(request)
 
   nodes: list[_Node] = [
       _Node(
@@ -366,9 +334,11 @@ def search_kinodynamic_baseline(
     settled[key] = nodes[index].g_cost
     # Start==goal with an OK probe already returned. A start node in this
     # loop failed that probe, so it is not a success.
-    if nodes[index].parent >= 0 and vehicle_state_space.distance(
-        nodes[index].state, request.goal_state
-    ) <= config.goal_tolerance:
+    if (
+        nodes[index].parent >= 0
+        and vehicle_state_space.distance(nodes[index].state, request.goal_state)
+        <= config.goal_tolerance
+    ):
       return _success_from_node(nodes, index, request)
 
     this_expand_seq = next_expand_seq

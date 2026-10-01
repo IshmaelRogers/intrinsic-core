@@ -16,9 +16,9 @@ load("//bazel:cc_macros.bzl", "cc_library", "cc_test")
 load("//bazel:python.bzl", "py_library", "py_test")
 
 # Opt-in vehicle StateSpace, planner registry, motion primitives, primitive
-# propagation, snapshot-backed trajectory validity, and the discrete
-# kinodynamic lattice Dijkstra baseline. Not part of the protected manipulator
-# baseline. Do not add these labels to
+# propagation, snapshot-backed trajectory validity, trajectory reconstruction,
+# and the discrete kinodynamic lattice Dijkstra baseline. Not part of the
+# protected manipulator baseline. Do not add these labels to
 # .github/baseline/manipulator_targets.tsv.
 
 package(default_visibility = ["//visibility:public"])
@@ -306,6 +306,70 @@ py_test(
 )
 
 cc_library(
+    name = "vehicle_trajectory_reconstruction",
+    srcs = ["vehicle_trajectory_reconstruction.cc"],
+    hdrs = ["vehicle_trajectory_reconstruction.h"],
+    deps = [
+        ":vehicle_planner_registry",
+        ":vehicle_primitive_propagation",
+        ":vehicle_state_space",
+        "//intrinsic/embodiment:frame_policy",
+        "//intrinsic/vehicle:trajectory_contract_policy",
+    ],
+)
+
+cc_test(
+    name = "vehicle_trajectory_reconstruction_test",
+    size = "small",
+    srcs = ["vehicle_trajectory_reconstruction_test.cc"],
+    deps = [
+        ":vehicle_kinodynamic_baseline",
+        ":vehicle_motion_primitives",
+        ":vehicle_planner_registry",
+        ":vehicle_primitive_propagation",
+        ":vehicle_state_space",
+        ":vehicle_trajectory_reconstruction",
+        ":vehicle_trajectory_validity",
+        "//intrinsic/safety:clearance_rule",
+        "//intrinsic/vehicle:trajectory_contract_policy",
+        "//intrinsic/world/world_snapshot:world_snapshot_policy",
+        "//intrinsic_vehicle/intrinsic/vehicle/dynamics",
+        "@com_google_googletest//:gtest_main",
+    ],
+)
+
+py_library(
+    name = "vehicle_trajectory_reconstruction_py",
+    srcs = ["vehicle_trajectory_reconstruction.py"],
+    deps = [
+        ":vehicle_planner_registry_py",
+        ":vehicle_primitive_propagation_py",
+        ":vehicle_state_space_py",
+        "//intrinsic/embodiment:frame_policy_py",
+        "//intrinsic/vehicle:trajectory_contract_policy_py",
+    ],
+)
+
+py_test(
+    name = "vehicle_trajectory_reconstruction_test_py",
+    size = "small",
+    srcs = ["vehicle_trajectory_reconstruction_test.py"],
+    main = "vehicle_trajectory_reconstruction_test.py",
+    deps = [
+        ":vehicle_kinodynamic_baseline_py",
+        ":vehicle_motion_primitives_py",
+        ":vehicle_planner_registry_py",
+        ":vehicle_primitive_propagation_py",
+        ":vehicle_state_space_py",
+        ":vehicle_trajectory_reconstruction_py",
+        ":vehicle_trajectory_validity_py",
+        "//intrinsic/safety:clearance_rule_py",
+        "//intrinsic/vehicle:trajectory_contract_policy_py",
+        "//intrinsic/world/world_snapshot:world_snapshot_policy_py",
+    ],
+)
+
+cc_library(
     name = "vehicle_kinodynamic_baseline",
     srcs = ["vehicle_kinodynamic_baseline.cc"],
     hdrs = ["vehicle_kinodynamic_baseline.h"],
@@ -315,9 +379,8 @@ cc_library(
         ":vehicle_planner_registry",
         ":vehicle_primitive_propagation",
         ":vehicle_state_space",
+        ":vehicle_trajectory_reconstruction",
         ":vehicle_trajectory_validity",
-        "//intrinsic/embodiment:frame_policy",
-        "//intrinsic/vehicle:trajectory_contract_policy",
         "//intrinsic_vehicle/intrinsic/vehicle/dynamics",
     ],
 )
@@ -351,10 +414,9 @@ py_library(
         ":vehicle_planner_registry_py",
         ":vehicle_primitive_propagation_py",
         ":vehicle_state_space_py",
+        ":vehicle_trajectory_reconstruction_py",
         ":vehicle_trajectory_validity_py",
-        "//intrinsic/embodiment:frame_policy_py",
         "//intrinsic/safety:clearance_rule_py",
-        "//intrinsic/vehicle:trajectory_contract_policy_py",
         "//intrinsic/world/world_snapshot:world_snapshot_policy_py",
         "//intrinsic/world/world_snapshot:world_snapshot_skew_policy_py",
     ],

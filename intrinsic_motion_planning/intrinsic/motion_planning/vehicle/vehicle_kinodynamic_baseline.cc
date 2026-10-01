@@ -14,7 +14,6 @@
 
 #include "intrinsic/motion_planning/vehicle/vehicle_kinodynamic_baseline.h"
 
-#include <algorithm>
 #include <chrono>
 #include <cmath>
 #include <cstdint>
@@ -23,21 +22,17 @@
 #include <map>
 #include <optional>
 #include <queue>
+#include <span>
 #include <tuple>
 #include <utility>
 #include <vector>
 
-#include "intrinsic/embodiment/frame_policy.h"
-#include "intrinsic/embodiment/stamped_header_policy.h"
-#include "intrinsic/vehicle/trajectory_contract_policy.h"
+#include "intrinsic/motion_planning/vehicle/vehicle_trajectory_reconstruction.h"
 
 namespace intrinsic::motion_planning::vehicle {
 namespace {
 
 using ::intrinsic::safety::ClearanceSample;
-using ::intrinsic::vehicle::TrajectorySampleView;
-
-constexpr std::string_view kModelId = "uuv_planner";
 
 struct ClosedKey {
   int64_t bin_x = 0;
@@ -100,84 +95,44 @@ VehiclePlanResult Failure(VehiclePlanStatus status) {
   return result;
 }
 
-void FillSuccessHeader(VehiclePlanResult* result,
-                       const VehiclePlanRequest& request) {
-  result->status = VehiclePlanStatus::kOk;
-  result->header_present = true;
-  result->validity_present = true;
-  result->validity_state = 1;
-  result->frame_id = std::string(embodiment::kWorldEnuFrameId);
-  if (request.trajectory_id.empty()) {
-    result->trajectory_id = std::string(kKinodynamicBaselineTrajectoryId);
-  } else {
-    result->trajectory_id = request.trajectory_id;
+// A reconstruction defect is unreachable for a chain this search builds. It
+// fails closed as kNoSolution and never returns a trajectory.
+VehiclePlanResult Reconstructed(TrajectoryReconstructionResult reconstructed) {
+  if (reconstructed.error != TrajectoryReconstructionError::kOk) {
+    return Failure(VehiclePlanStatus::kNoSolution);
   }
-  result->provenance_present = true;
-  result->model_id = std::string(kModelId);
+  return std::move(reconstructed.trajectory);
 }
 
-void SplitTime(double time_s, int64_t* seconds, int32_t* nanos) {
-  const double whole = std::floor(time_s);
-  int64_t whole64 = static_cast<int64_t>(whole);
-  const double nanos_scale = static_cast<double>(embodiment::kNanosPerSecond);
-  int64_t nanos64 = std::llround((time_s - whole) * nanos_scale);
-  if (nanos64 >= embodiment::kNanosPerSecond) {
-    nanos64 -= embodiment::kNanosPerSecond;
-    ++whole64;
-  }
-  if (nanos64 < 0) {
-    nanos64 = 0;
-  }
-  *seconds = whole64;
-  *nanos = static_cast<int32_t>(nanos64);
-}
-
-TrajectorySampleView ToTrajectorySample(const VehiclePlanningState& state,
-                                        double time_s) {
-  TrajectorySampleView sample;
-  sample.time_present = true;
-  SplitTime(time_s, &sample.seconds, &sample.nanos);
-  sample.position = state.position;
-  sample.orientation = state.orientation;
-  sample.twist_present = true;
-  sample.twist = state.twist;
-  sample.acceleration_present = false;
-  return sample;
+ReconstructionOptions ReconstructionBinding() {
+  ReconstructionOptions options;
+  options.default_trajectory_id = kKinodynamicBaselineTrajectoryId;
+  return options;
 }
 
 VehiclePlanResult StartGoalSuccess(const VehiclePlanRequest& request) {
-  VehiclePlanResult result;
-  FillSuccessHeader(&result, request);
-  result.samples.push_back(ToTrajectorySample(request.start_state, 0.0));
-  return result;
+  ReconstructionNodeView root;
+  root.state = request.start_state;
+  return Reconstructed(ReconstructVehicleTrajectory(
+      std::span<const ReconstructionNodeView>(&root, 1), 0, request,
+      ReconstructionBinding()));
 }
 
 VehiclePlanResult SuccessFromNode(const std::vector<SearchNode>& nodes,
                                   int goal_index,
                                   const VehiclePlanRequest& request) {
-  std::vector<int> chain;
-  for (int index = goal_index; index >= 0; index = nodes[index].parent) {
-    chain.push_back(index);
+  std::vector<ReconstructionNodeView> views;
+  views.reserve(nodes.size());
+  for (const SearchNode& node : nodes) {
+    ReconstructionNodeView view;
+    view.parent = node.parent;
+    view.time_s = node.g_cost;
+    view.state = node.state;
+    view.edge_samples = node.edge_samples;
+    views.push_back(view);
   }
-  std::reverse(chain.begin(), chain.end());
-
-  VehiclePlanResult result;
-  FillSuccessHeader(&result, request);
-  for (std::size_t edge = 1; edge < chain.size(); ++edge) {
-    const SearchNode& node = nodes[chain[edge]];
-    const double time_base = nodes[node.parent].g_cost;
-    for (const PropagationSample& sample : node.edge_samples) {
-      const TrajectorySampleView view =
-          ToTrajectorySample(sample.state, time_base + sample.time_s);
-      // Drop the child edge's t=0 joint when it repeats the previous time.
-      if (!result.samples.empty() && !::intrinsic::vehicle::SampleTimeBefore(
-                                         result.samples.back(), view)) {
-        continue;
-      }
-      result.samples.push_back(view);
-    }
-  }
-  return result;
+  return Reconstructed(ReconstructVehicleTrajectory(views, goal_index, request,
+                                                    ReconstructionBinding()));
 }
 
 std::string_view ClearanceFrame(const KinodynamicBaselineConfig& config) {
