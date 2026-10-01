@@ -123,3 +123,42 @@ py_test(
         "//intrinsic/vehicle:trajectory_contract_policy_py",
     ],
 )
+
+cc_library(
+    name = "vehicle_planner_deadline",
+    srcs = ["vehicle_planner_deadline.cc"],
+    hdrs = ["vehicle_planner_deadline.h"],
+    deps = [":vehicle_planner_registry"],
+)
+
+cc_test(
+    name = "vehicle_planner_deadline_test",
+    size = "small",
+    srcs = ["vehicle_planner_deadline_test.cc"],
+    deps = [
+        ":fake_vehicle_planner",
+        ":vehicle_planner_deadline",
+        ":vehicle_planner_registry",
+        "//intrinsic/vehicle:trajectory_contract_policy",
+        "@com_google_googletest//:gtest_main",
+    ],
+)
+
+py_library(
+    name = "vehicle_planner_deadline_py",
+    srcs = ["vehicle_planner_deadline.py"],
+    deps = [":vehicle_planner_registry_py"],
+)
+
+py_test(
+    name = "vehicle_planner_deadline_test_py",
+    size = "small",
+    srcs = ["vehicle_planner_deadline_test.py"],
+    main = "vehicle_planner_deadline_test.py",
+    deps = [
+        ":fake_vehicle_planner_py",
+        ":vehicle_planner_deadline_py",
+        ":vehicle_planner_registry_py",
+        "//intrinsic/vehicle:trajectory_contract_policy_py",
+    ],
+)
