@@ -40,8 +40,8 @@ struct SafetyRuleResult {
   int recommended_kind = 0;
   // True only when recommended_kind == PROJECT (2).
   bool has_projected_value = false;
-  // Clamped scalar in meters (depth or altitude). 0.0 unless
-  // has_projected_value.
+  // Clamped scalar in the unit of the rule that produced it (meters, m/s,
+  // radians, or rad/s). 0.0 unless has_projected_value.
   double projected_value = 0.0;
 };
 

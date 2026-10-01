@@ -38,7 +38,8 @@ class SafetyRuleResult:
   SafetyDecisionKind wire number: UNSPECIFIED when compliant, REJECT when
   violated, or PROJECT for envelope rules that clamp a scalar to its limit.
   `has_projected_value` is true only for PROJECT, and `projected_value` is
-  the clamped scalar in meters. The state.age and state.non_finite rules only
+  the clamped scalar in the unit of the producing rule (meters, m/s,
+  radians, or rad/s). The state.age and state.non_finite rules only
   REJECT. Rules never recommend ACCEPT, ABORT, or SURFACE.
   """
 
