@@ -15,8 +15,9 @@
 load("//bazel:cc_macros.bzl", "cc_library", "cc_test")
 load("//bazel:python.bzl", "py_library", "py_test")
 
-# Opt-in sonar frame contract helpers (forward-looking and side-scan). Not part
-# of the protected manipulator baseline. Do not add these labels to
+# Opt-in sonar frame contract helpers (forward-looking and side-scan) and the
+# multimodal observation bundle. Not part of the protected manipulator
+# baseline. Do not add these labels to
 # .github/baseline/manipulator_targets.tsv.
 
 package(default_visibility = ["//visibility:public"])
@@ -144,5 +145,85 @@ py_test(
         "@intrinsic_apis//intrinsic/embodiment/proto:stamped_header_py_pb2",
         "@intrinsic_apis//intrinsic/perception/proto/sonar:fls_frame_py_pb2",
         "@intrinsic_apis//intrinsic/perception/proto/sonar:sss_frame_py_pb2",
+    ],
+)
+
+cc_library(
+    name = "observation_bundle_contract_policy",
+    hdrs = ["observation_bundle_contract_policy.h"],
+    deps = ["//intrinsic/embodiment:frame_policy"],
+)
+
+cc_library(
+    name = "observation_bundle_builder",
+    hdrs = ["observation_bundle_builder.h"],
+    deps = [
+        "@intrinsic_apis//intrinsic/perception/proto/sonar:observation_bundle_cc_proto",
+    ],
+)
+
+cc_test(
+    name = "observation_bundle_contract_test",
+    size = "small",
+    srcs = ["observation_bundle_contract_test.cc"],
+    deps = [
+        ":observation_bundle_contract_policy",
+        "//intrinsic/embodiment:frame_policy",
+        "@com_google_googletest//:gtest_main",
+    ],
+)
+
+cc_test(
+    name = "observation_bundle_contract_serialization_test",
+    size = "small",
+    srcs = ["observation_bundle_contract_serialization_test.cc"],
+    data = ["@intrinsic_apis//intrinsic/perception/proto/sonar:examples"],
+    deps = [
+        ":observation_bundle_builder",
+        ":observation_bundle_contract_policy",
+        "//intrinsic/embodiment:frame_policy",
+        "@com_google_googletest//:gtest_main",
+        "@intrinsic_apis//intrinsic/embodiment/proto:stamped_header_cc_proto",
+        "@intrinsic_apis//intrinsic/perception/proto/sonar:observation_bundle_cc_proto",
+    ],
+)
+
+py_library(
+    name = "observation_bundle_contract_policy_py",
+    srcs = ["observation_bundle_contract_policy.py"],
+    deps = ["//intrinsic/embodiment:frame_policy_py"],
+)
+
+py_library(
+    name = "observation_bundle_builder_py",
+    srcs = ["observation_bundle_builder.py"],
+    deps = [
+        "@intrinsic_apis//intrinsic/perception/proto/sonar:observation_bundle_py_pb2",
+    ],
+)
+
+py_test(
+    name = "observation_bundle_contract_test_py",
+    size = "small",
+    srcs = ["observation_bundle_contract_test.py"],
+    main = "observation_bundle_contract_test.py",
+    deps = [
+        ":observation_bundle_contract_policy_py",
+        "//intrinsic/embodiment:frame_policy_py",
+    ],
+)
+
+py_test(
+    name = "observation_bundle_contract_serialization_test_py",
+    size = "small",
+    srcs = ["observation_bundle_contract_serialization_test.py"],
+    data = ["@intrinsic_apis//intrinsic/perception/proto/sonar:examples"],
+    main = "observation_bundle_contract_serialization_test.py",
+    deps = [
+        ":observation_bundle_builder_py",
+        ":observation_bundle_contract_policy_py",
+        "//intrinsic/embodiment:frame_policy_py",
+        "@intrinsic_apis//intrinsic/embodiment/proto:stamped_header_py_pb2",
+        "@intrinsic_apis//intrinsic/perception/proto/sonar:observation_bundle_py_pb2",
     ],
 )
