@@ -639,3 +639,39 @@ py_test(
         ":safety_rule_result_py",
     ],
 )
+
+cc_library(
+    name = "energy_reserve_rule",
+    srcs = ["energy_reserve_rule.cc"],
+    hdrs = ["energy_reserve_rule.h"],
+    deps = [":safety_rule_result"],
+)
+
+cc_test(
+    name = "energy_reserve_rule_test",
+    size = "small",
+    srcs = ["energy_reserve_rule_test.cc"],
+    deps = [
+        ":energy_reserve_rule",
+        ":safety_decision_policy",
+        "@com_google_googletest//:gtest_main",
+    ],
+)
+
+py_library(
+    name = "energy_reserve_rule_py",
+    srcs = ["energy_reserve_rule.py"],
+    deps = [":safety_rule_result_py"],
+)
+
+py_test(
+    name = "energy_reserve_rule_test_py",
+    size = "small",
+    srcs = ["energy_reserve_rule_test.py"],
+    main = "energy_reserve_rule_test.py",
+    deps = [
+        ":energy_reserve_rule_py",
+        ":safety_decision_policy_py",
+        ":safety_rule_result_py",
+    ],
+)
