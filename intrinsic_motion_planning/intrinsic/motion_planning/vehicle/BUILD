@@ -15,9 +15,10 @@
 load("//bazel:cc_macros.bzl", "cc_library", "cc_test")
 load("//bazel:python.bzl", "py_library", "py_test")
 
-# Opt-in vehicle StateSpace and planner registry. No search, sampling, or
-# collision checking. Not part of the protected manipulator baseline. Do not
-# add these labels to .github/baseline/manipulator_targets.tsv.
+# Opt-in vehicle StateSpace, planner registry, motion primitives, and
+# primitive propagation. No search, sampling, or collision checking. Not part
+# of the protected manipulator baseline. Do not add these labels to
+# .github/baseline/manipulator_targets.tsv.
 
 package(default_visibility = ["//visibility:public"])
 
@@ -193,4 +194,48 @@ py_test(
     srcs = ["vehicle_motion_primitives_test.py"],
     main = "vehicle_motion_primitives_test.py",
     deps = [":vehicle_motion_primitives_py"],
+)
+
+cc_library(
+    name = "vehicle_primitive_propagation",
+    srcs = ["vehicle_primitive_propagation.cc"],
+    hdrs = ["vehicle_primitive_propagation.h"],
+    deps = [
+        ":vehicle_motion_primitives",
+        ":vehicle_state_space",
+        "//intrinsic/embodiment:frame_policy",
+        "//intrinsic/vehicle:vehicle_contract_policy",
+        "//intrinsic_vehicle/intrinsic/vehicle/dynamics",
+    ],
+)
+
+cc_test(
+    name = "vehicle_primitive_propagation_test",
+    size = "small",
+    srcs = ["vehicle_primitive_propagation_test.cc"],
+    deps = [
+        ":vehicle_primitive_propagation",
+        "//intrinsic/embodiment:frame_policy",
+        "//intrinsic/vehicle:vehicle_contract_policy",
+        "//intrinsic_vehicle/intrinsic/vehicle/dynamics",
+        "@com_google_googletest//:gtest_main",
+    ],
+)
+
+py_library(
+    name = "vehicle_primitive_propagation_py",
+    srcs = ["vehicle_primitive_propagation.py"],
+    deps = [
+        ":vehicle_motion_primitives_py",
+        ":vehicle_state_space_py",
+        "//intrinsic/embodiment:frame_policy_py",
+    ],
+)
+
+py_test(
+    name = "vehicle_primitive_propagation_test_py",
+    size = "small",
+    srcs = ["vehicle_primitive_propagation_test.py"],
+    main = "vehicle_primitive_propagation_test.py",
+    deps = [":vehicle_primitive_propagation_py"],
 )
