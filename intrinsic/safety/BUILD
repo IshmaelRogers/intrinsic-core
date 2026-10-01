@@ -327,3 +327,81 @@ py_test(
         "//intrinsic/vehicle:vehicle_contract_policy_py",
     ],
 )
+
+cc_library(
+    name = "depth_max_rule",
+    srcs = ["depth_max_rule.cc"],
+    hdrs = ["depth_max_rule.h"],
+    deps = [
+        ":safety_rule_result",
+        "//intrinsic/embodiment:frame_policy",
+    ],
+)
+
+cc_test(
+    name = "depth_max_rule_test",
+    size = "small",
+    srcs = ["depth_max_rule_test.cc"],
+    deps = [
+        ":depth_max_rule",
+        ":safety_decision_policy",
+        "@com_google_googletest//:gtest_main",
+    ],
+)
+
+py_library(
+    name = "depth_max_rule_py",
+    srcs = ["depth_max_rule.py"],
+    deps = [":safety_rule_result_py"],
+)
+
+py_test(
+    name = "depth_max_rule_test_py",
+    size = "small",
+    srcs = ["depth_max_rule_test.py"],
+    main = "depth_max_rule_test.py",
+    deps = [
+        ":depth_max_rule_py",
+        ":safety_decision_policy_py",
+        ":safety_rule_result_py",
+    ],
+)
+
+cc_library(
+    name = "altitude_min_rule",
+    srcs = ["altitude_min_rule.cc"],
+    hdrs = ["altitude_min_rule.h"],
+    deps = [
+        ":safety_rule_result",
+        "//intrinsic/embodiment:frame_policy",
+    ],
+)
+
+cc_test(
+    name = "altitude_min_rule_test",
+    size = "small",
+    srcs = ["altitude_min_rule_test.cc"],
+    deps = [
+        ":altitude_min_rule",
+        ":safety_decision_policy",
+        "@com_google_googletest//:gtest_main",
+    ],
+)
+
+py_library(
+    name = "altitude_min_rule_py",
+    srcs = ["altitude_min_rule.py"],
+    deps = [":safety_rule_result_py"],
+)
+
+py_test(
+    name = "altitude_min_rule_test_py",
+    size = "small",
+    srcs = ["altitude_min_rule_test.py"],
+    main = "altitude_min_rule_test.py",
+    deps = [
+        ":altitude_min_rule_py",
+        ":safety_decision_policy_py",
+        ":safety_rule_result_py",
+    ],
+)

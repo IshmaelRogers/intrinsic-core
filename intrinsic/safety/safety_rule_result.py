@@ -24,6 +24,7 @@ SEVERITY_UNSPECIFIED = 0
 SEVERITY_ERROR = 3
 SEVERITY_CRITICAL = 4
 DECISION_KIND_UNSPECIFIED = 0
+DECISION_KIND_PROJECT = 2
 DECISION_KIND_REJECT = 3
 
 
@@ -34,8 +35,11 @@ class SafetyRuleResult:
   `violated` false means the input is compliant and no finding is produced.
   `rule_id` and `summary` are empty when the input is compliant. `severity`
   is a raw SafetyFindingSeverity wire number. `recommended_kind` is a raw
-  SafetyDecisionKind wire number: REJECT when violated, UNSPECIFIED otherwise.
-  These rules never recommend PROJECT, ACCEPT, ABORT, or SURFACE.
+  SafetyDecisionKind wire number: UNSPECIFIED when compliant, REJECT when
+  violated, or PROJECT for envelope rules that clamp a scalar to its limit.
+  `has_projected_value` is true only for PROJECT, and `projected_value` is
+  the clamped scalar in meters. The state.age and state.non_finite rules only
+  REJECT. Rules never recommend ACCEPT, ABORT, or SURFACE.
   """
 
   violated: bool = False
@@ -43,3 +47,5 @@ class SafetyRuleResult:
   severity: int = 0
   summary: str = ""
   recommended_kind: int = 0
+  has_projected_value: bool = False
+  projected_value: float = 0.0

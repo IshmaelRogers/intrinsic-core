@@ -20,7 +20,8 @@
 namespace intrinsic::safety {
 
 // Plain-value result of one pure safety rule. This is not a SafetyDecision
-// and it does not aggregate findings. `rule_id` and `summary` point at
+// and it does not aggregate findings. The state.age and state.non_finite rules
+// only REJECT. `rule_id` and `summary` point at
 // static string literals when they are non-empty.
 
 struct SafetyRuleResult {
@@ -32,9 +33,16 @@ struct SafetyRuleResult {
   int severity = 0;
   // Short human text when violated. Empty when !violated.
   std::string_view summary;
-  // Raw SafetyDecisionKind wire number. REJECT (3) when violated.
-  // UNSPECIFIED (0) when !violated. Never PROJECT, ACCEPT, ABORT, or SURFACE.
+  // Raw SafetyDecisionKind wire number. UNSPECIFIED (0) when !violated.
+  // When violated it is REJECT (3), or PROJECT (2) for the envelope rules that
+  // clamp a scalar to its limit. Rules never recommend ACCEPT, ABORT, or
+  // SURFACE.
   int recommended_kind = 0;
+  // True only when recommended_kind == PROJECT (2).
+  bool has_projected_value = false;
+  // Clamped scalar in meters (depth or altitude). 0.0 unless
+  // has_projected_value.
+  double projected_value = 0.0;
 };
 
 // Locked wire numbers from SafetyFindingSeverity and SafetyDecisionKind.
@@ -42,6 +50,7 @@ inline constexpr int kSeverityUnspecified = 0;
 inline constexpr int kSeverityError = 3;
 inline constexpr int kSeverityCritical = 4;
 inline constexpr int kDecisionKindUnspecified = 0;
+inline constexpr int kDecisionKindProject = 2;
 inline constexpr int kDecisionKindReject = 3;
 
 }  // namespace intrinsic::safety
