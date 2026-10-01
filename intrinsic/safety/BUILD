@@ -600,3 +600,42 @@ py_test(
         ":safety_rule_result_py",
     ],
 )
+
+cc_library(
+    name = "clearance_rule",
+    srcs = ["clearance_rule.cc"],
+    hdrs = ["clearance_rule.h"],
+    deps = [
+        ":safety_rule_result",
+        "//intrinsic/embodiment:frame_policy",
+    ],
+)
+
+cc_test(
+    name = "clearance_rule_test",
+    size = "small",
+    srcs = ["clearance_rule_test.cc"],
+    deps = [
+        ":clearance_rule",
+        ":safety_decision_policy",
+        "@com_google_googletest//:gtest_main",
+    ],
+)
+
+py_library(
+    name = "clearance_rule_py",
+    srcs = ["clearance_rule.py"],
+    deps = [":safety_rule_result_py"],
+)
+
+py_test(
+    name = "clearance_rule_test_py",
+    size = "small",
+    srcs = ["clearance_rule_test.py"],
+    main = "clearance_rule_test.py",
+    deps = [
+        ":clearance_rule_py",
+        ":safety_decision_policy_py",
+        ":safety_rule_result_py",
+    ],
+)
