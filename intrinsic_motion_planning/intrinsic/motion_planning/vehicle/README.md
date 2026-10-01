@@ -3,8 +3,9 @@
 Opt-in `Interpolate`, `Distance`, and `Validate` for a free-body vehicle
 planning sample, plus an exact-match planner registry, a deterministic
 fake planner, a deterministic UUV motion-primitive generator, and a
-current-aware primitive propagator. Plain values only: no protobuf parsing,
-no World access, no collision checking, no kinodynamic search. Manipulator
+current-aware primitive propagator, and a snapshot-backed trajectory validity
+adapter. Plain values only: no protobuf parsing, no World access, no
+voxel or SDF collision queries, no kinodynamic search. Manipulator
 joint StateSpace consumers and the services under `motion_planner/` are
 unchanged.
 
@@ -28,6 +29,8 @@ This package does not change them.
 | Python | `//intrinsic_motion_planning/intrinsic/motion_planning/vehicle:vehicle_motion_primitives_py` | `intrinsic.motion_planning.vehicle.vehicle_motion_primitives` |
 | C++ | `//intrinsic_motion_planning/intrinsic/motion_planning/vehicle:vehicle_primitive_propagation` | `intrinsic/motion_planning/vehicle/vehicle_primitive_propagation.h` |
 | Python | `//intrinsic_motion_planning/intrinsic/motion_planning/vehicle:vehicle_primitive_propagation_py` | `intrinsic.motion_planning.vehicle.vehicle_primitive_propagation` |
+| C++ | `//intrinsic_motion_planning/intrinsic/motion_planning/vehicle:vehicle_trajectory_validity` | `intrinsic/motion_planning/vehicle/vehicle_trajectory_validity.h` |
+| Python | `//intrinsic_motion_planning/intrinsic/motion_planning/vehicle:vehicle_trajectory_validity_py` | `intrinsic.motion_planning.vehicle.vehicle_trajectory_validity` |
 
 C++ names live in `intrinsic::motion_planning::vehicle`. The Python mirror uses
 snake_case functions (`interpolate`, `distance`, `validate`), tuples for
@@ -380,19 +383,123 @@ and adds `0.2 * t` to `position.x`: `0.35` at `t = 0.5` and `0.95` at
 `t = 1`. Orientation stays identity. Other position and twist components
 stay 0.
 
+## Trajectory validity
+
+`CheckTrajectoryValidity` (C++) and `check_trajectory_validity` (Python)
+check one propagated trajectory, for example the samples from
+`PropagateUuvMotionPrimitive` or a fixture, against approved bounds, a hard
+AABB geofence, and an injected minimum clearance. The check is bound to one
+immutable World snapshot. It is a pure adapter: no search, no sampling, no
+trajectory rewriting, no World mutation, and no planner registration. The
+kinodynamic baseline planner id stays reserved and unregistered.
+
+It calls only landed APIs:
+
+| Need | API |
+| --- | --- |
+| Snapshot identity and structure | `WorldSnapshotView`, `AssessWorldSnapshot` (`intrinsic/world/world_snapshot/world_snapshot_policy.h`) |
+| Stale or withheld snapshot | `AssessWorldSnapshotSkew` (`world_snapshot_skew_policy.h`) |
+| Approved bounds | `Validate` and `VehicleStateBounds` (`vehicle_state_space.h`) |
+| Geofence, rule id `geofence.aabb` | `EvaluateGeofenceAabbRule`, `AabbGeofence`, `GeofencePose` (`intrinsic/safety/geofence_rule.h`) |
+| Clearance, rule id `clearance.min` | `EvaluateClearanceRule`, `ClearanceSample`, `ClearanceSource` (`intrinsic/safety/clearance_rule.h`) |
+| Trajectory samples | `PropagationSample` (`vehicle_primitive_propagation.h`) |
+
+### Snapshot-id binding
+
+`snapshot_id` is required. It must be non-empty and byte-wise equal to
+`descriptor.snapshot_id`, and `descriptor` must be present and pass
+`AssessWorldSnapshot`. Prefer the 64-character lowercase hex digest of the
+`WorldSnapshotDescriptor`. The id is not recomputed here. When `assess_skew`
+is true, `AssessWorldSnapshotSkew(descriptor, timings, query_time,
+skew_policy)` also runs, and `withhold == true` means the snapshot must not
+reach planning. A fresh or permitted partial snapshot continues.
+
+### Injected clearance
+
+There is no landed voxel, SDF, or occupancy query API. Occupancy is only an
+opaque `asset_reference` in the snapshot. `clearance_samples` therefore holds
+one caller-supplied `ClearanceSample` per trajectory sample, in the same
+order. The adapter never reads World. `frame_id` on a clearance sample is an
+audit tag. `snapshot_usable == false` on a sample is a stale snapshot, and
+`kUnknownMap` always fails closed.
+
+### Request and result
+
+`pose_frame` is the frame id attached to each sample position before the
+geofence check. Empty (the default) means `fence.frame_id`. Setting a
+different value, such as `world_ned` against a `world_enu` fence, is the seam
+that exercises the frame mismatch path. The adapter never converts ENU and NED
+and never clamps or projects a pose.
+
+`min_clearance_m` defaults to `0.5`.
+
+`TrajectoryValidityError` (Python: `OK`, `BAD_REQUEST`, `STALE_SNAPSHOT`,
+`FRAME_ERROR`, `BOUNDS`, `GEOFENCE`, `CLEARANCE`) is numbered 0 to 6 in that
+order. The result also carries `first_invalid_sample`, an index into `samples`
+or `-1` for pre-sample defects and for `kOk`, and `failed_rule`, one of
+`snapshot`, `bounds`, `geofence.aabb`, `clearance.min`. `failed_rule` is empty
+for `kOk` and for the two shape defects (empty samples, clearance length
+mismatch).
+
+Check order, first defect wins. The same request always gives the same error,
+index, and rule.
+
+| Step | Condition | Error | `failed_rule` | Index |
+| --- | --- | --- | --- | --- |
+| 1 | `samples` empty | `kBadRequest` | empty | -1 |
+| 2 | `clearance_samples.size() != samples.size()` | `kBadRequest` | empty | -1 |
+| 3 | `snapshot_id` empty, descriptor not present, or id mismatch | `kBadRequest` | `snapshot` | -1 |
+| 4 | `AssessWorldSnapshot` not accepted | `kBadRequest` | `snapshot` | -1 |
+| 5 | `assess_skew` and `withhold` | `kStaleSnapshot` | `snapshot` | -1 |
+| 6 | `Validate(state, bounds) != kOk` | `kBounds` | `bounds` | `i` |
+| 7 | geofence CRITICAL, frame mismatch | `kFrameError` | `geofence.aabb` | `i` |
+| 7 | geofence CRITICAL, other (bad fence or pose) | `kBadRequest` | `geofence.aabb` | `i` |
+| 7 | geofence outside the AABB | `kGeofence` | `geofence.aabb` | `i` |
+| 8 | clearance CRITICAL, `snapshot_usable == false` | `kStaleSnapshot` | `clearance.min` | `i` |
+| 8 | clearance below minimum, unknown map, or bad config | `kClearance` | `clearance.min` | `i` |
+| 9 | every sample passes | `kOk` | empty | -1 |
+
+Steps 6 to 8 run per sample in order and stop at the first failing sample, so
+later and worse samples never change the reported index. The frame mismatch
+and snapshot-unusable cases are recognized from the rule summaries `frame
+mismatch` and `snapshot unusable`.
+
+### Fixtures
+
+Tests share the world frame `world_enu`, the fence region `ops-box`, and a
+fixed well-formed snapshot whose `snapshot_id` is
+`ComputeSnapshotId(state_epoch = 1, {occupancy_reference = 1})`.
+
+| Fixture | Setup | Result |
+| --- | --- | --- |
+| free | 3 samples inside bounds and AABB, obstacle clearance `>= 0.5`, no skew or FRESH skew | `kOk` |
+| collision | sample 1 obstacle `clearance_m = 0.4`, later worse samples | `kClearance`, index 1, `clearance.min` |
+| low altitude | sample 0 seafloor `clearance_m = 0.1` | `kClearance`, index 0, `clearance.min` |
+| stale snapshot | skew assessment withholds (expired validity horizon) | `kStaleSnapshot`, index -1, `snapshot` |
+| stale sample | sample with `snapshot_usable = false` | `kStaleSnapshot`, that index, `clearance.min` |
+| frame error | `pose_frame = world_ned` against a `world_enu` fence | `kFrameError`, index 0, `geofence.aabb` |
+| bad request | empty samples, length mismatch, empty or mismatched id | `kBadRequest` |
+| bounds | engaged position box, sample outside | `kBounds`, `bounds` |
+| geofence | sample outside the AABB | `kGeofence`, `geofence.aabb` |
+
 ## Out of scope
 
 * Search, sampling, RRT, A*, heuristics, kinodynamic planning, TOPP. The
   kinodynamic baseline planner id stays reserved and unregistered.
-* Collision checking and World snapshots.
+* Voxel, SDF, or occupancy clearance queries. Clearance is injected as
+  `ClearanceSample` values. World service and entity changes, and any World
+  mutation.
+* Rewriting, clamping, or projecting a trajectory that fails validity.
 * A true mass-matrix inverse. `mass_diag` is only the planning surrogate.
   This package does not form `M` and does not edit vehicle dynamics sources.
 * Asynchronous planning, worker pools, and preemption of a planner that does
   not poll the options.
-* ICON, HAL, Gazebo, safety rules, and `DesiredMotion` assembly.
+* ICON, HAL, Gazebo, changes to the safety rules or World snapshot
+  implementations, and `DesiredMotion` assembly.
 * ENU and NED conversion.
 * Changes to the trajectory wire, the StateSpace API, the motion-primitive
-  generator API, or manipulator `motion_planner` services.
+  generator API, the propagation API, or manipulator `motion_planner` services.
+* Edits to `.github/baseline/manipulator_targets.tsv`.
 
 ## Build and test
 
