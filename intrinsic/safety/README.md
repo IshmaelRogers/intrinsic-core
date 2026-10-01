@@ -36,6 +36,7 @@ Host code lives in this directory. The protobuf contracts in
 | Angular rate, clamp | `rate.angular.max` | `SAFETY_FINDING_SEVERITY_ERROR` (3) | `PROJECT` (2) |
 | Descent rate, clamp | `rate.descent.max` | `SAFETY_FINDING_SEVERITY_ERROR` (3) | `PROJECT` (2) |
 | Ascent rate, clamp | `rate.ascent.max` | `SAFETY_FINDING_SEVERITY_ERROR` (3) | `PROJECT` (2) |
+| AABB geofence, hard fence | `geofence.aabb` | `SAFETY_FINDING_SEVERITY_ERROR` (3) outside, `SAFETY_FINDING_SEVERITY_CRITICAL` (4) unusable input | `REJECT` (3), never `PROJECT` |
 | Envelope unknown or unusable input | every envelope rule above | `SAFETY_FINDING_SEVERITY_CRITICAL` (4) | `REJECT` (3) | `SAFETY_FINDING_SEVERITY_CRITICAL` (4) | `REJECT` (3) |
 
 ## `state.age`
@@ -113,3 +114,32 @@ is built, and the results are not aggregated into a `SafetyDecision`.
   depth rate. For bad input the `rule_id` is `rate.ascent.max` only when the
   ascent maximum is the sole unusable input. Otherwise it is
   `rate.descent.max`, including a non-finite `depth_rate`.
+
+## `geofence.aabb`
+
+`EvaluateGeofenceAabbRule(fence, pose)` and
+`EvaluateGeofenceAabbSegmentRule(fence, start, end)` in `geofence_rule` (C++
+and Python, with paired tests) check an injected pose against a closed
+axis-aligned box. The inputs are plain structs: `AabbGeofence` (`frame_id`,
+`region_id`, `min_x/y/z`, `max_x/y/z`) and `GeofencePose` (`frame_id`, `x`,
+`y`, `z`). No World read, collision map, proto, or aggregation is involved.
+This rule is a hard fence, not an envelope clamp: an outside pose is `REJECT`
+and is never projected or clamped to the nearest point, so
+`has_projected_value` is always false.
+
+- Boundary is inclusive: `min_i <= p_i <= max_i` on every axis is compliant,
+  including faces, edges, and corners.
+- `pose.frame_id` must match `fence.frame_id` exactly (case-sensitive). A
+  mismatch is CRITICAL `REJECT` and is never treated as inside.
+- Empty `frame_id`, `region_id`, or pose `frame_id`, a non-finite bound or
+  coordinate, or any `min_i > max_i` is CRITICAL `REJECT`.
+- Outside is ERROR `REJECT` with summary `geofence outside region=<region_id>`.
+  For a segment the summary is
+  `geofence segment outside region=<region_id> end=<start|end|both>`.
+- The segment check tests the two endpoints only. The box is convex, so a
+  segment is inside exactly when both endpoints are. A segment that crosses
+  the box but starts and ends outside is rejected. There is no edge clipping.
+- In C++ the outside summary contains the caller's region id, so it is kept in
+  a thread-local ring buffer rather than a string literal. It stays valid
+  until at least seven further outside results on the same thread. Copy it to
+  keep it longer.
