@@ -15,9 +15,9 @@
 load("//bazel:cc_macros.bzl", "cc_library", "cc_test")
 load("//bazel:python.bzl", "py_library", "py_test")
 
-# Opt-in vehicle StateSpace, planner registry, motion primitives, and
-# primitive propagation. No search, sampling, or collision checking. Not part
-# of the protected manipulator baseline. Do not add these labels to
+# Opt-in vehicle StateSpace, planner registry, motion primitives, primitive
+# propagation, and snapshot-backed trajectory validity. No search or sampling.
+# Not part of the protected manipulator baseline. Do not add these labels to
 # .github/baseline/manipulator_targets.tsv.
 
 package(default_visibility = ["//visibility:public"])
@@ -238,4 +238,62 @@ py_test(
     srcs = ["vehicle_primitive_propagation_test.py"],
     main = "vehicle_primitive_propagation_test.py",
     deps = [":vehicle_primitive_propagation_py"],
+)
+
+cc_library(
+    name = "vehicle_trajectory_validity",
+    srcs = ["vehicle_trajectory_validity.cc"],
+    hdrs = ["vehicle_trajectory_validity.h"],
+    deps = [
+        ":vehicle_primitive_propagation",
+        ":vehicle_state_space",
+        "//intrinsic/safety:clearance_rule",
+        "//intrinsic/safety:geofence_rule",
+        "//intrinsic/safety:safety_rule_result",
+        "//intrinsic/world/marine_component_validity:marine_component_validity_policy",
+        "//intrinsic/world/world_snapshot:world_snapshot_policy",
+        "//intrinsic/world/world_snapshot:world_snapshot_skew_policy",
+    ],
+)
+
+cc_test(
+    name = "vehicle_trajectory_validity_test",
+    size = "small",
+    srcs = ["vehicle_trajectory_validity_test.cc"],
+    deps = [
+        ":vehicle_primitive_propagation",
+        ":vehicle_state_space",
+        ":vehicle_trajectory_validity",
+        "//intrinsic/safety:clearance_rule",
+        "//intrinsic/safety:geofence_rule",
+        "//intrinsic/world/world_snapshot:world_snapshot_policy",
+        "//intrinsic/world/world_snapshot:world_snapshot_skew_policy",
+        "@com_google_googletest//:gtest_main",
+    ],
+)
+
+py_library(
+    name = "vehicle_trajectory_validity_py",
+    srcs = ["vehicle_trajectory_validity.py"],
+    deps = [
+        ":vehicle_primitive_propagation_py",
+        ":vehicle_state_space_py",
+        "//intrinsic/safety:clearance_rule_py",
+        "//intrinsic/safety:geofence_rule_py",
+        "//intrinsic/safety:safety_rule_result_py",
+        "//intrinsic/world/world_snapshot:world_snapshot_policy_py",
+        "//intrinsic/world/world_snapshot:world_snapshot_skew_policy_py",
+    ],
+)
+
+py_test(
+    name = "vehicle_trajectory_validity_test_py",
+    size = "small",
+    srcs = ["vehicle_trajectory_validity_test.py"],
+    main = "vehicle_trajectory_validity_test.py",
+    deps = [
+        ":vehicle_state_space_py",
+        ":vehicle_trajectory_validity_py",
+        "//intrinsic/world/world_snapshot:world_snapshot_policy_py",
+    ],
 )
