@@ -15,10 +15,9 @@
 load("//bazel:cc_macros.bzl", "cc_library", "cc_test")
 load("//bazel:python.bzl", "py_library", "py_test")
 
-# Opt-in vehicle StateSpace: Interpolate, Distance, and Validate on plain
-# values. No search, sampling, or collision checking. Not part of the
-# protected manipulator baseline. Do not add these labels to
-# .github/baseline/manipulator_targets.tsv.
+# Opt-in vehicle StateSpace and planner registry. No search, sampling, or
+# collision checking. Not part of the protected manipulator baseline. Do not
+# add these labels to .github/baseline/manipulator_targets.tsv.
 
 package(default_visibility = ["//visibility:public"])
 
@@ -64,5 +63,63 @@ py_test(
     deps = [
         ":vehicle_state_space_py",
         "//intrinsic/embodiment:frame_policy_py",
+    ],
+)
+
+cc_library(
+    name = "vehicle_planner_registry",
+    srcs = ["vehicle_planner_registry.cc"],
+    hdrs = ["vehicle_planner_registry.h"],
+    deps = ["//intrinsic/vehicle:trajectory_contract_policy"],
+)
+
+cc_library(
+    name = "fake_vehicle_planner",
+    srcs = ["fake_vehicle_planner.cc"],
+    hdrs = ["fake_vehicle_planner.h"],
+    deps = [
+        ":vehicle_planner_registry",
+        "//intrinsic/embodiment:frame_policy",
+        "//intrinsic/vehicle:trajectory_contract_policy",
+    ],
+)
+
+cc_test(
+    name = "vehicle_planner_registry_test",
+    size = "small",
+    srcs = ["vehicle_planner_registry_test.cc"],
+    deps = [
+        ":fake_vehicle_planner",
+        ":vehicle_planner_registry",
+        "//intrinsic/vehicle:trajectory_contract_policy",
+        "@com_google_googletest//:gtest_main",
+    ],
+)
+
+py_library(
+    name = "vehicle_planner_registry_py",
+    srcs = ["vehicle_planner_registry.py"],
+    deps = ["//intrinsic/vehicle:trajectory_contract_policy_py"],
+)
+
+py_library(
+    name = "fake_vehicle_planner_py",
+    srcs = ["fake_vehicle_planner.py"],
+    deps = [
+        ":vehicle_planner_registry_py",
+        "//intrinsic/embodiment:frame_policy_py",
+        "//intrinsic/vehicle:trajectory_contract_policy_py",
+    ],
+)
+
+py_test(
+    name = "vehicle_planner_registry_test_py",
+    size = "small",
+    srcs = ["vehicle_planner_registry_test.py"],
+    main = "vehicle_planner_registry_test.py",
+    deps = [
+        ":fake_vehicle_planner_py",
+        ":vehicle_planner_registry_py",
+        "//intrinsic/vehicle:trajectory_contract_policy_py",
     ],
 )
