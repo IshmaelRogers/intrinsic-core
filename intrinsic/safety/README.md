@@ -19,8 +19,8 @@ Host code lives in this directory. The protobuf contracts in
 | `severity` | 0 | wire severity below |
 | `summary` | empty | short text |
 | `recommended_kind` | `UNSPECIFIED` (0) | `REJECT` (3), or `PROJECT` (2) for envelope clamps |
-| `has_projected_value` | false | true only when `recommended_kind` is `PROJECT`, or for the audit-only `clearance.min` and `energy.reserve` below-limit results |
-| `projected_value` | 0.0 | clamped scalar in the rule's unit (meters, m/s, radians, or rad/s) when projected, or the audit value (meters for `clearance.min`, Joules for `energy.reserve`), else 0.0 |
+| `has_projected_value` | false | true only when `recommended_kind` is `PROJECT`, or for the audit-only `clearance.min`, `energy.reserve`, and `nav.covariance` results |
+| `projected_value` | 0.0 | clamped scalar in the rule's unit (meters, m/s, radians, or rad/s) when projected, or the audit value (meters for `clearance.min`, Joules for `energy.reserve`, observed sigma for `nav.covariance`), else 0.0 |
 
 ## Rule ids and severities
 
@@ -39,6 +39,7 @@ Host code lives in this directory. The protobuf contracts in
 | AABB geofence, hard fence | `geofence.aabb` | `SAFETY_FINDING_SEVERITY_ERROR` (3) outside, `SAFETY_FINDING_SEVERITY_CRITICAL` (4) unusable input | `REJECT` (3), never `PROJECT` |
 | Minimum clearance, hard threshold | `clearance.min` | `SAFETY_FINDING_SEVERITY_ERROR` (3) below min, `SAFETY_FINDING_SEVERITY_CRITICAL` (4) unusable input | `REJECT` (3), never `PROJECT` |
 | Energy reserve, hard threshold | `energy.reserve` | `SAFETY_FINDING_SEVERITY_ERROR` (3) below reserve, `SAFETY_FINDING_SEVERITY_CRITICAL` (4) unknown or unusable input | `REJECT` (3), never `PROJECT` |
+| Navigation covariance, hard threshold | `nav.covariance` | `SAFETY_FINDING_SEVERITY_ERROR` (3) sigma exceeded, `SAFETY_FINDING_SEVERITY_CRITICAL` (4) unknown or unusable input | `REJECT` (3), never `PROJECT` |
 | Envelope unknown or unusable input | every envelope rule above | `SAFETY_FINDING_SEVERITY_CRITICAL` (4) | `REJECT` (3) | `SAFETY_FINDING_SEVERITY_CRITICAL` (4) | `REJECT` (3) |
 
 ## `state.age`
@@ -197,3 +198,39 @@ aggregation, and no path is rewritten.
   in a thread-local ring buffer rather than a string literal. It stays valid
   until at least seven further below-reserve results on the same thread. Copy it
   to keep it longer.
+
+## `nav.covariance`
+
+`EvaluateNavCovarianceRule(sample, max_position_sigma_m = 1.0,
+max_velocity_sigma_mps = 0.5)` in `nav_covariance_rule` (C++ and Python, with
+paired tests) checks one injected `NavCovarianceSample` (`position_known`,
+`velocity_known`, and row-major 3x3 `position_cov[9]` and `velocity_cov[9]`).
+Units are m^2 for position and (m/s)^2 for velocity. The rule only validates
+the matrices and compares sigma against limits. It does not read, run, or
+modify an estimator, ESKF, or filter, and there is no proto and no aggregation.
+
+- Sigma of a matrix is the square root of its largest diagonal entry
+  (`sqrt(max(C00, C11, C22))`). There is no eigen-decomposition.
+- A matrix is usable when all nine entries are finite, `|C[i][j] - C[j][i]| <=
+  1e-9` for `i < j`, and it is positive semi-definite by its leading principal
+  minors (`C00`, the leading 2x2 determinant, and `det(C)`, each `>= -1e-12`).
+- A non-finite or non-positive threshold is CRITICAL `REJECT`
+  (`nav covariance bad config`).
+- `position_known == false` or `velocity_known == false` is CRITICAL `REJECT`
+  (`unknown covariance`). Unknown covariance fails closed even when the numbers
+  would pass.
+- An unusable position matrix is CRITICAL `REJECT`
+  (`position covariance not usable`); an unusable velocity matrix is CRITICAL
+  `REJECT` (`velocity covariance not usable`).
+- Position sigma `> max_position_sigma_m` is ERROR `REJECT` with summary
+  `nav covariance exceeded metric=position sigma=<v>`. Otherwise velocity sigma
+  `> max_velocity_sigma_mps` is ERROR `REJECT` with `metric=velocity`. When both
+  are exceeded, position is reported (one finding per call).
+- A sigma equal to its limit is compliant.
+- On an exceeded result `has_projected_value` is true and `projected_value` is
+  the observed sigma. This is an audit value, not a clamp target: the decision
+  kind is `REJECT`, never `PROJECT`.
+- In C++ the exceeded summary contains the measured value, so it is kept in a
+  thread-local ring buffer rather than a string literal. It stays valid until at
+  least seven further exceeded results on the same thread. Copy it to keep it
+  longer.
