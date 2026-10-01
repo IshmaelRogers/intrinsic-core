@@ -1,0 +1,107 @@
+// Copyright 2026 Intrinsic Innovation LLC
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     https://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
+syntax = "proto3";
+
+package intrinsic_proto.vehicle;
+
+import "google/protobuf/timestamp.proto";
+import "intrinsic/embodiment/proto/model_provenance.proto";
+import "intrinsic/embodiment/proto/stamped_header.proto";
+import "intrinsic/math/proto/pose.proto";
+import "intrinsic/vehicle/proto/vehicle_state.proto";
+
+option go_package = "intrinsic/vehicle/proto/vehicle_trajectory_go_proto";
+
+// One timed sample. The pose frame is VehicleTrajectory.header.frame_id.
+//
+// Twist and acceleration are body-frame (REP-103), the same as
+// VehicleState. This message does not interpolate. See README.md.
+message TrajectorySample {
+  // Required when this sample is present. Compared as (seconds, nanos).
+  google.protobuf.Timestamp time = 1;
+
+  // Pose of the body origin in VehicleTrajectory.header.frame_id.
+  // Position is meters. Orientation is a Hamilton quaternion stored
+  // x, y, z, w. Identity is w = 1. Helpers do not renormalize.
+  intrinsic_proto.Pose pose_world_from_body = 2;
+
+  // Body-frame velocity. Unset means no twist, which is not a zero twist.
+  BodyTwist body_twist = 3;
+
+  // Body-frame acceleration. Unset means no acceleration.
+  BodyAcceleration body_acceleration = 4;
+}
+
+// Non-negative SI tolerances. An unset parent is not a tolerance judgment.
+//
+// Once this message is present, each double is set. Proto3 zero is a
+// supplied value. Each value must be finite and >= 0. See README.md.
+message TrajectoryTolerances {
+  // Meters.
+  double position_m = 1;
+
+  // Radians.
+  double orientation_rad = 2;
+
+  // Meters per second.
+  double linear_velocity_m_s = 3;
+
+  // Radians per second.
+  double angular_velocity_rad_s = 4;
+}
+
+// Approved time-parameterized vehicle trajectory. Not a real-time command.
+//
+// A default message serializes to zero bytes. `trajectory_id` is the
+// exact-match id for DesiredMotion.TrajectoryReference. This message does
+// not contain a state space, an interpolator, or a planner search.
+//
+// Any NaN or infinity in a present numeric field is invalid. STATE_VALID
+// does not repair it, and host checks do not rewrite the stamp.
+//
+// Append fields. Reserve removed tags and names. There is no robot-type
+// field. See README.md.
+message VehicleTrajectory {
+  intrinsic_proto.embodiment.StampedHeader header = 1;
+
+  // Exact-match id for DesiredMotion.TrajectoryReference. Empty is
+  // rejected when this message is engaged.
+  string trajectory_id = 2;
+
+  // Time-ordered samples. Times must strictly increase.
+  repeated TrajectorySample samples = 3;
+
+  // Unset means no tolerance judgment.
+  TrajectoryTolerances tolerances = 4;
+
+  // Dimensionless. Unset means not supplied. A present value must be
+  // finite. Zero is a supplied cost, not absence.
+  optional double cost = 5;
+
+  // Dimensionless value in [0, 1] when set. Unset means not supplied.
+  optional double risk = 6;
+
+  // Optional aggregate Matrix6. Unset means unknown, which is not a zero
+  // matrix. A present matrix uses the same shape, finiteness, and
+  // symmetry rules as VehicleState covariance.
+  Matrix6 uncertainty = 7;
+
+  // Unset means no provenance was supplied.
+  intrinsic_proto.embodiment.ModelProvenance provenance = 8;
+
+  // Opaque metadata. Host checks never interpret keys or values.
+  // Unknown protobuf fields elsewhere must also be preserved.
+  map<string, string> metadata = 100;
+}

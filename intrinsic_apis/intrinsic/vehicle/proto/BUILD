@@ -85,6 +85,41 @@ go_proto_library(
     ],
 )
 
+proto_library(
+    name = "vehicle_trajectory_proto",
+    srcs = ["vehicle_trajectory.proto"],
+    deps = [
+        ":vehicle_state_proto",
+        "//intrinsic/embodiment/proto:model_provenance_proto",
+        "//intrinsic/embodiment/proto:stamped_header_proto",
+        "//intrinsic/math/proto:pose_proto",
+        "@com_google_protobuf//:timestamp_proto",
+    ],
+)
+
+cc_proto_library(
+    name = "vehicle_trajectory_cc_proto",
+    deps = [":vehicle_trajectory_proto"],
+)
+
+py_proto_library(
+    name = "vehicle_trajectory_py_pb2",
+    deps = [":vehicle_trajectory_proto"],
+)
+
+go_proto_library(
+    name = "vehicle_trajectory_go_proto",
+    importpath = "intrinsic/vehicle/proto/vehicle_trajectory_go_proto",
+    protos = [":vehicle_trajectory_proto"],
+    deps = [
+        ":vehicle_state_go_proto",
+        "//intrinsic/embodiment/proto:model_provenance_go_proto",
+        "//intrinsic/embodiment/proto:stamped_header_go_proto",
+        "//intrinsic/math/proto:pose_go_proto",
+        "@org_golang_google_protobuf//types/known/timestamppb",
+    ],
+)
+
 filegroup(
     name = "examples",
     srcs = [
@@ -93,5 +128,11 @@ filegroup(
         "examples/desired_motion_twist.textproto",
         "examples/vehicle_state.textproto",
         "examples/vehicle_state_unknown_covariance.textproto",
+        "examples/vehicle_trajectory_bad_frame.textproto",
+        "examples/vehicle_trajectory_empty_id.textproto",
+        "examples/vehicle_trajectory_non_finite.textproto",
+        "examples/vehicle_trajectory_non_monotonic.textproto",
+        "examples/vehicle_trajectory_two_sample.textproto",
+        "examples/vehicle_trajectory_with_metadata.textproto",
     ],
 )

@@ -1,0 +1,69 @@
+# Valid trajectory plus opaque metadata. Uncertainty is unset.
+header {
+  sequence: 11
+  source_time {
+    seconds: 1700000010
+    nanos: 250000000
+  }
+  receive_time {
+    seconds: 1700000011
+  }
+  source_id: "planner"
+  frame_id: "world_enu"
+  clock_domain: "monotonic"
+  validity {
+    state: STATE_VALID
+  }
+}
+trajectory_id: "traj_alpha"
+samples {
+  time {
+    seconds: 1700000010
+  }
+  pose_world_from_body {
+    position {
+      x: 1
+      y: 2
+      z: -3
+    }
+    orientation {
+      w: 1
+    }
+  }
+  body_twist {
+    linear_x_m_s: 0.5
+    angular_z_rad_s: 0.125
+  }
+}
+samples {
+  time {
+    seconds: 1700000011
+    nanos: 500000000
+  }
+  pose_world_from_body {
+    position {
+      x: 1.5
+      y: 2
+      z: -3
+    }
+    orientation {
+      w: 1
+    }
+  }
+  body_twist {
+    linear_x_m_s: 0.5
+  }
+}
+provenance {
+  model_id: "uuv_planner"
+  model_version: "v1"
+  digest: "sha256:traj"
+}
+metadata {
+  key: "note"
+  value: ""
+}
+metadata {
+  key: "planner"
+  value: "direct"
+}

@@ -83,3 +83,69 @@ py_test(
         "@intrinsic_apis//intrinsic/vehicle/proto:vehicle_state_py_pb2",
     ],
 )
+
+cc_library(
+    name = "trajectory_contract_policy",
+    hdrs = ["trajectory_contract_policy.h"],
+    deps = [
+        ":vehicle_contract_policy",
+        "//intrinsic/embodiment:frame_policy",
+    ],
+)
+
+cc_test(
+    name = "trajectory_contract_test",
+    size = "small",
+    srcs = ["trajectory_contract_test.cc"],
+    deps = [
+        ":trajectory_contract_policy",
+        "//intrinsic/embodiment:frame_policy",
+        "@com_google_googletest//:gtest_main",
+    ],
+)
+
+cc_test(
+    name = "trajectory_contract_serialization_test",
+    size = "small",
+    srcs = ["trajectory_contract_serialization_test.cc"],
+    data = ["@intrinsic_apis//intrinsic/vehicle/proto:examples"],
+    deps = [
+        ":trajectory_contract_policy",
+        "@com_google_googletest//:gtest_main",
+        "@intrinsic_apis//intrinsic/embodiment/proto:stamped_header_cc_proto",
+        "@intrinsic_apis//intrinsic/vehicle/proto:vehicle_trajectory_cc_proto",
+    ],
+)
+
+py_library(
+    name = "trajectory_contract_policy_py",
+    srcs = ["trajectory_contract_policy.py"],
+    deps = [
+        ":vehicle_contract_policy_py",
+        "//intrinsic/embodiment:frame_policy_py",
+    ],
+)
+
+py_test(
+    name = "trajectory_contract_test_py",
+    size = "small",
+    srcs = ["trajectory_contract_test.py"],
+    main = "trajectory_contract_test.py",
+    deps = [
+        ":trajectory_contract_policy_py",
+        "//intrinsic/embodiment:frame_policy_py",
+    ],
+)
+
+py_test(
+    name = "trajectory_contract_serialization_test_py",
+    size = "small",
+    srcs = ["trajectory_contract_serialization_test.py"],
+    data = ["@intrinsic_apis//intrinsic/vehicle/proto:examples"],
+    main = "trajectory_contract_serialization_test.py",
+    deps = [
+        ":trajectory_contract_policy_py",
+        "@intrinsic_apis//intrinsic/embodiment/proto:stamped_header_py_pb2",
+        "@intrinsic_apis//intrinsic/vehicle/proto:vehicle_trajectory_py_pb2",
+    ],
+)
