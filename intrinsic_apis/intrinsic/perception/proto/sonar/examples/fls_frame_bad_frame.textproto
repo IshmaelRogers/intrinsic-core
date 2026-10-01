@@ -1,0 +1,30 @@
+# Rejected: empty header.frame_id (kMissingFrame). The stamp is still STATE_VALID.
+header {
+  sequence: 21
+  source_time {
+    seconds: 1700000020
+    nanos: 250000000
+  }
+  receive_time {
+    seconds: 1700000021
+  }
+  source_id: "fls_0"
+  clock_domain: "monotonic"
+  validity {
+    state: STATE_VALID
+  }
+}
+geometry {
+  num_beams: 4
+  num_range_bins: 8
+  min_range_m: 0.5
+  max_range_m: 40
+  min_bearing_rad: -0.5
+  max_bearing_rad: 0.5
+}
+sound_speed_m_s: 1500
+blob_reference {
+  blob_id: "fls-blob-0001"
+  content_type: "application/octet-stream"
+  byte_size: 128
+}

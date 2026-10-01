@@ -1,0 +1,33 @@
+# Rejected: 5 inline samples for 2 beams x 3 bins (kPayloadMismatch). The stamp is still STATE_VALID.
+header {
+  sequence: 21
+  source_time {
+    seconds: 1700000020
+    nanos: 250000000
+  }
+  receive_time {
+    seconds: 1700000021
+  }
+  source_id: "fls_0"
+  frame_id: "fls_sonar"
+  clock_domain: "monotonic"
+  validity {
+    state: STATE_VALID
+  }
+}
+geometry {
+  num_beams: 2
+  num_range_bins: 3
+  min_range_m: 0.5
+  max_range_m: 10
+  min_bearing_rad: -0.25
+  max_bearing_rad: 0.25
+}
+sound_speed_m_s: 1500
+inline_samples {
+  intensity: 0.5
+  intensity: 1
+  intensity: 1.5
+  intensity: 2
+  intensity: 2.5
+}
