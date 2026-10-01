@@ -1,0 +1,20 @@
+# Engaged by the header and a sample. trajectory_id is empty.
+header {
+  sequence: 11
+  source_id: "planner"
+  frame_id: "world_enu"
+  clock_domain: "monotonic"
+  validity {
+    state: STATE_VALID
+  }
+}
+samples {
+  time {
+    seconds: 1700000010
+  }
+  pose_world_from_body {
+    orientation {
+      w: 1
+    }
+  }
+}

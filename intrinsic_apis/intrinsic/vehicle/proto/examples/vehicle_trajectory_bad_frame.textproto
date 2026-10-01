@@ -1,0 +1,23 @@
+# Engaged trajectory with an empty frame_id.
+header {
+  sequence: 11
+  source_id: "planner"
+  clock_domain: "monotonic"
+  validity {
+    state: STATE_VALID
+  }
+}
+trajectory_id: "traj_alpha"
+samples {
+  time {
+    seconds: 1700000010
+  }
+  pose_world_from_body {
+    orientation {
+      w: 1
+    }
+  }
+  body_twist {
+    linear_x_m_s: 0.5
+  }
+}

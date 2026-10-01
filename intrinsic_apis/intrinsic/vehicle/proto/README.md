@@ -5,7 +5,7 @@ consumer is a UUV. They implement the `VehicleState` and `DesiredMotion`
 sketches in
 [ADR 0001](../../../../docs/adr/0001-multi-embodiment-capability-architecture.md)
 and PDR §5, plus `BodyTwist`, `BodyAcceleration`, `BodyWrench`, covariance,
-and source health.
+source health, and `VehicleTrajectory`.
 
 PDR §15 places these messages in this package. Common validity stays on
 `StampedHeader`. Common provenance is `ModelProvenance` in the embodiment
@@ -19,7 +19,8 @@ list these targets. A default message serializes to zero bytes. Callers that
 never set these messages keep the previous manipulator behavior.
 
 Host checks live in `intrinsic/vehicle` (`vehicle_contract_policy.h`,
-`vehicle_contract_policy.py`). They do not parse protobuf and they do not
+`vehicle_contract_policy.py`, `trajectory_contract_policy.h`,
+`trajectory_contract_policy.py`). They do not parse protobuf and they do not
 convert frames.
 
 ## Messages
@@ -34,6 +35,9 @@ convert frames.
 | `NavigationMode` | Estimator mode. Not a robot class. |
 | `BodyWrench` | Body-frame force and torque. Not a thruster command. |
 | `DesiredMotion` | Timestamped intent. Not an actuator command. |
+| `TrajectorySample` | One timed pose. Twist and acceleration are optional. |
+| `TrajectoryTolerances` | Non-negative SI tolerances. Unset parent means no judgment. |
+| `VehicleTrajectory` | Approved timed trajectory. Not a real-time command. |
 
 `DesiredMotion.objective` is a oneof: `PoseTarget` (tag 2), `TwistTarget`
 (tag 3), `TrajectoryReference` (tag 4). `TrajectoryReference` stores an
@@ -56,6 +60,13 @@ be ambiguous.
 | `BodyWrench.torque_*_n_m` | newton-meters |
 | `DesiredMotion.confidence` | dimensionless, closed interval [0, 1] |
 | `DesiredMotion.horizon` | non-negative `google.protobuf.Duration` |
+| `TrajectorySample.time` | `google.protobuf.Timestamp`, compared as `(seconds, nanos)` |
+| `TrajectoryTolerances.position_m` | meters, finite and `>= 0` when the parent is present |
+| `TrajectoryTolerances.orientation_rad` | radians, finite and `>= 0` when the parent is present |
+| `TrajectoryTolerances.linear_velocity_m_s` | meters per second, finite and `>= 0` when the parent is present |
+| `TrajectoryTolerances.angular_velocity_rad_s` | radians per second, finite and `>= 0` when the parent is present |
+| `VehicleTrajectory.cost` | dimensionless, finite when set |
+| `VehicleTrajectory.risk` | dimensionless, closed interval [0, 1] when set |
 
 `intrinsic_proto.Pose` is reused and is not widened. Identity orientation
 is `w = 1`. The zero quaternion `(0, 0, 0, 0)` is not a rotation. Helpers
@@ -76,7 +87,9 @@ message type. This package does not call the ENU↔NED helper.
 | `BodyWrench.header.frame_id` | Must be `body` when the wrench message is present. |
 | `DesiredMotion` pose objective | `header.frame_id` is the pose frame and must be non-empty. |
 | `DesiredMotion` twist objective | `header.frame_id` must be `body`. |
-| `DesiredMotion` trajectory objective | Frame is not interpreted here. |
+| `DesiredMotion` trajectory objective | Frame is not interpreted here. The id names a `VehicleTrajectory`. |
+| `VehicleTrajectory.header.frame_id` | Frame of every sample pose. Required and non-empty when the trajectory is engaged. |
+| `VehicleTrajectory` sample twist and acceleration | Body frame, REP-103. Not `header.frame_id`. |
 
 `body` is the explicit body frame id for these contracts. It is not a
 manipulator base frame, and it is not a world id. The ENU↔NED helper does
@@ -197,13 +210,53 @@ and is not an error. A present pose requires a non-empty frame id, a
 finite position, and a normalized quaternion. A present wrench or twist
 objective requires frame id `body`.
 
+## Trajectory
+
+`VehicleTrajectory` is the non-real-time wire shape of an approved
+time-parameterized trajectory (PDR §9 and §15). It lives in this package.
+`DesiredMotion.TrajectoryReference` stays an opaque id. This message does
+not interpolate, measure distance, or apply bounds. Those `StateSpace`
+operations are #102 and are not implemented here. This package
+does not search, sample, or build a `DesiredMotion`.
+
+| Field | Rule |
+| --- | --- |
+| `header.frame_id` | Frame of every sample pose. Required and non-empty when the trajectory is engaged. `world_enu` and `world_ned` are well-known. The id is never inferred from the message type. |
+| `trajectory_id` | Non-empty when the message is engaged. Exact string for `TrajectoryReference`. |
+| `samples` | At least one when engaged. Each sample carries a timestamp and a pose. |
+| `samples.time` | Present, with `nanos` in `[0, 1000000000)`. Times strictly increase by `(seconds, nanos)`. Equal times are rejected. |
+| `samples.pose_world_from_body` | Meters and a Hamilton quaternion. Finite position. Finite, normalized quaternion. Helpers do not renormalize. |
+| `samples.body_twist`, `samples.body_acceleration` | Optional. Body frame, REP-103. Present components must be finite. |
+| `tolerances` | Optional. When the message is present, each double is finite and `>= 0`. |
+| `cost` | Optional, dimensionless, finite when set. |
+| `risk` | Optional, dimensionless, in `[0, 1]` when set. |
+| `uncertainty` | Optional `Matrix6`. Unset means unknown. A present matrix uses the covariance shape, finiteness, and symmetry rules. |
+| `provenance` | Optional. A present message needs a non-empty `model_id`. |
+| `metadata` | Opaque `map<string, string>` at field 100. Keys and values are not interpreted. |
+
+An empty message is not engaged: no error, and not accepted. Engagement is
+any of a present header, a non-empty `trajectory_id`, any sample, or a
+present tolerance, cost, risk, uncertainty, provenance, or metadata entry.
+The first defect wins. Check order is trajectory id, sample count, sample
+times, strict increase, frame id, then each sample's pose, twist, and
+acceleration, then tolerances, cost, risk, uncertainty, and provenance.
+`STATE_VALID` does not repair a non-finite value, and these checks do not
+rewrite the stamp. Host checks do not call World, ICON, or a HAL, and they
+do not convert ENU and NED.
+
+Host entry points are `AssessVehicleTrajectory` in
+`trajectory_contract_policy.h` and `assess_vehicle_trajectory` in
+`trajectory_contract_policy.py`.
+
 ## Evolution
 
 Append fields and enum values. Reserve removed tags and names. Preserve
 unknown fields and unknown enum numbers. Golden bytes for one populated
-`VehicleState`, `DesiredMotion`, and `BodyWrench` are fixed in the C++
-and Python serialization tests. Clearing `estimator_epoch` leaves a
-prefix of the vehicle-state golden. Field 100 is preserved.
+`VehicleState`, `DesiredMotion`, `BodyWrench`, and `VehicleTrajectory`
+are fixed in the C++ and Python serialization tests. Clearing
+`estimator_epoch` leaves a prefix of the vehicle-state golden. Unknown
+fields are preserved. On `VehicleTrajectory`, field 100 is the metadata
+map, so the unknown-field check uses a tag past that map.
 
 ## Examples
 
@@ -215,6 +268,18 @@ Text format examples:
   omits both covariance fields.
 - [`examples/desired_motion_pose.textproto`](examples/desired_motion_pose.textproto)
 - [`examples/desired_motion_twist.textproto`](examples/desired_motion_twist.textproto)
+- [`examples/vehicle_trajectory_two_sample.textproto`](examples/vehicle_trajectory_two_sample.textproto)
+  is a valid two-sample trajectory.
+- [`examples/vehicle_trajectory_with_metadata.textproto`](examples/vehicle_trajectory_with_metadata.textproto)
+  adds opaque metadata and leaves uncertainty unset.
+- [`examples/vehicle_trajectory_non_monotonic.textproto`](examples/vehicle_trajectory_non_monotonic.textproto)
+  has equal sample times.
+- [`examples/vehicle_trajectory_bad_frame.textproto`](examples/vehicle_trajectory_bad_frame.textproto)
+  has an empty frame id.
+- [`examples/vehicle_trajectory_non_finite.textproto`](examples/vehicle_trajectory_non_finite.textproto)
+  has a non-finite pose.
+- [`examples/vehicle_trajectory_empty_id.textproto`](examples/vehicle_trajectory_empty_id.textproto)
+  is engaged with an empty trajectory id.
 - [`examples/body_wrench.textproto`](examples/body_wrench.textproto)
 
 ## Targets
@@ -229,6 +294,10 @@ These targets are separate from the protected manipulator baseline:
 - `@intrinsic_apis//intrinsic/vehicle/proto:vehicle_command_cc_proto`
 - `@intrinsic_apis//intrinsic/vehicle/proto:vehicle_command_py_pb2`
 - `@intrinsic_apis//intrinsic/vehicle/proto:vehicle_command_go_proto`
+- `@intrinsic_apis//intrinsic/vehicle/proto:vehicle_trajectory_proto`
+- `@intrinsic_apis//intrinsic/vehicle/proto:vehicle_trajectory_cc_proto`
+- `@intrinsic_apis//intrinsic/vehicle/proto:vehicle_trajectory_py_pb2`
+- `@intrinsic_apis//intrinsic/vehicle/proto:vehicle_trajectory_go_proto`
 - `@intrinsic_apis//intrinsic/vehicle/proto:examples`
 - `//intrinsic/vehicle:vehicle_contract_policy`
 - `//intrinsic/vehicle:vehicle_contract_policy_py`
@@ -236,3 +305,9 @@ These targets are separate from the protected manipulator baseline:
 - `//intrinsic/vehicle:vehicle_contract_test_py`
 - `//intrinsic/vehicle:vehicle_contract_serialization_test`
 - `//intrinsic/vehicle:vehicle_contract_serialization_test_py`
+- `//intrinsic/vehicle:trajectory_contract_policy`
+- `//intrinsic/vehicle:trajectory_contract_policy_py`
+- `//intrinsic/vehicle:trajectory_contract_test`
+- `//intrinsic/vehicle:trajectory_contract_test_py`
+- `//intrinsic/vehicle:trajectory_contract_serialization_test`
+- `//intrinsic/vehicle:trajectory_contract_serialization_test_py`

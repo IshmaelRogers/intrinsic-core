@@ -1,0 +1,29 @@
+# NaN in the pose. STATE_VALID does not repair it.
+header {
+  sequence: 11
+  source_id: "planner"
+  frame_id: "world_enu"
+  clock_domain: "monotonic"
+  validity {
+    state: STATE_VALID
+  }
+}
+trajectory_id: "traj_alpha"
+samples {
+  time {
+    seconds: 1700000010
+  }
+  pose_world_from_body {
+    position {
+      x: nan
+      y: 2
+      z: -3
+    }
+    orientation {
+      w: 1
+    }
+  }
+  body_twist {
+    linear_x_m_s: 0.5
+  }
+}
