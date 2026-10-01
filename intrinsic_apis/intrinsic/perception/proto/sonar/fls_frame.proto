@@ -1,0 +1,114 @@
+// Copyright 2026 Intrinsic Innovation LLC
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     https://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
+syntax = "proto3";
+
+package intrinsic_proto.perception.sonar;
+
+import "intrinsic/embodiment/proto/stamped_header.proto";
+import "intrinsic/math/proto/pose.proto";
+
+option go_package = "intrinsic/perception/proto/sonar/fls_frame_go_proto";
+
+// Polar beam grid describing one FLS ping / frame.
+// Beams are ordered from min_bearing_rad to max_bearing_rad inclusive of the
+// first/last beam centers when num_beams >= 1.
+// Range bins are ordered from min_range_m to max_range_m.
+// Bearings are sensor-local polar (sensor-forward = 0). No ENU/NED conversion
+// happens in this package. See README.md.
+message FlsGeometry {
+  // Required when engaged; must be >= 1.
+  uint32 num_beams = 1;
+
+  // Required when engaged; must be >= 1.
+  uint32 num_range_bins = 2;
+
+  // Meters. Finite; >= 0; < max_range_m.
+  double min_range_m = 3;
+
+  // Meters. Finite; > min_range_m.
+  double max_range_m = 4;
+
+  // Radians. Finite; <= max_bearing_rad.
+  double min_bearing_rad = 5;
+
+  // Radians. Finite; >= min_bearing_rad.
+  double max_bearing_rad = 6;
+}
+
+// Mounting / extrinsic calibration. Pose is parent_from_sensor.
+// Never infer frames from message type: both frame ids are required when the
+// calibration message is present.
+message FlsCalibration {
+  // E.g. body. Non-empty when calibration is present.
+  string parent_frame_id = 1;
+
+  // Sensor optical/acoustic frame. Non-empty and different from
+  // parent_frame_id when calibration is present.
+  string sensor_frame_id = 2;
+
+  // Required when calibration is present. Position is meters. Orientation is
+  // a Hamilton quaternion stored x, y, z, w. Identity is w = 1. Helpers do
+  // not renormalize.
+  intrinsic_proto.Pose pose_parent_from_sensor = 3;
+}
+
+// Inline intensity samples for the polar grid.
+// Layout: beam-major, then range-bin (index = beam * num_range_bins + bin).
+// Size MUST equal num_beams * num_range_bins. Values are dimensionless
+// intensity (finite; may be zero). Not beamformed ranges; not detections.
+message FlsInlineSamples {
+  repeated float intensity = 1;
+}
+
+// Opaque storage / blob reference for off-wire payload bytes.
+// Not logging BlobReference (no workcell/org). Not a covariance. Empty
+// blob_id is rejected when this oneof arm is selected. Host does not fetch
+// bytes.
+message SonarPayloadBlobReference {
+  // Required non-empty in blob mode.
+  string blob_id = 1;
+
+  // Optional hint, e.g. application/octet-stream. May be empty.
+  string content_type = 2;
+
+  // When set: > 0.
+  optional uint64 byte_size = 3;
+}
+
+// Approved forward-looking sonar frame (non-real-time observation contract).
+// Default message serializes to zero bytes (opt-in).
+// Capability consumers may later advertise RangeObservation; this message is
+// the FLS frame payload only. There is no robot-type enum.
+message ForwardLookingSonarFrame {
+  // Frame and time semantics are StampedHeader (see embodiment README.md).
+  // header.frame_id is the frame of this FLS observation.
+  intrinsic_proto.embodiment.StampedHeader header = 1;
+
+  FlsGeometry geometry = 2;
+
+  // Optional. When present it is fully validated.
+  FlsCalibration calibration = 3;
+
+  // SI m/s. Finite and > 0 when engaged.
+  double sound_speed_m_s = 4;
+
+  oneof payload {
+    FlsInlineSamples inline_samples = 5;
+    SonarPayloadBlobReference blob_reference = 6;
+  }
+
+  // Optional opaque metadata. Validator never interprets keys/values.
+  map<string, string> metadata = 100;
+}

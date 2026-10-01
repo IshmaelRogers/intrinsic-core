@@ -1,0 +1,44 @@
+# Nominal FLS frame: same geometry, blob reference instead of inline samples.
+header {
+  sequence: 21
+  source_time {
+    seconds: 1700000020
+    nanos: 250000000
+  }
+  receive_time {
+    seconds: 1700000021
+  }
+  source_id: "fls_0"
+  frame_id: "fls_sonar"
+  clock_domain: "monotonic"
+  validity {
+    state: STATE_VALID
+  }
+}
+geometry {
+  num_beams: 4
+  num_range_bins: 8
+  min_range_m: 0.5
+  max_range_m: 40
+  min_bearing_rad: -0.5
+  max_bearing_rad: 0.5
+}
+calibration {
+  parent_frame_id: "body"
+  sensor_frame_id: "fls_sonar"
+  pose_parent_from_sensor {
+    position {
+      x: 1.5
+      z: -0.25
+    }
+    orientation {
+      w: 1
+    }
+  }
+}
+sound_speed_m_s: 1500
+blob_reference {
+  blob_id: "fls-blob-0001"
+  content_type: "application/octet-stream"
+  byte_size: 128
+}

@@ -1,0 +1,77 @@
+# Nominal FLS frame: 4 beams x 8 range bins, 32 inline samples, 1500 m/s, calibration, metadata.
+header {
+  sequence: 21
+  source_time {
+    seconds: 1700000020
+    nanos: 250000000
+  }
+  receive_time {
+    seconds: 1700000021
+  }
+  source_id: "fls_0"
+  frame_id: "fls_sonar"
+  clock_domain: "monotonic"
+  validity {
+    state: STATE_VALID
+  }
+}
+geometry {
+  num_beams: 4
+  num_range_bins: 8
+  min_range_m: 0.5
+  max_range_m: 40
+  min_bearing_rad: -0.5
+  max_bearing_rad: 0.5
+}
+calibration {
+  parent_frame_id: "body"
+  sensor_frame_id: "fls_sonar"
+  pose_parent_from_sensor {
+    position {
+      x: 1.5
+      z: -0.25
+    }
+    orientation {
+      w: 1
+    }
+  }
+}
+sound_speed_m_s: 1500
+inline_samples {
+  intensity: 0.0
+  intensity: 0.125
+  intensity: 0.25
+  intensity: 0.375
+  intensity: 0.5
+  intensity: 0.625
+  intensity: 0.75
+  intensity: 0.875
+  intensity: 1.0
+  intensity: 1.125
+  intensity: 1.25
+  intensity: 1.375
+  intensity: 1.5
+  intensity: 1.625
+  intensity: 1.75
+  intensity: 1.875
+  intensity: 2.0
+  intensity: 2.125
+  intensity: 2.25
+  intensity: 2.375
+  intensity: 2.5
+  intensity: 2.625
+  intensity: 2.75
+  intensity: 2.875
+  intensity: 3.0
+  intensity: 3.125
+  intensity: 3.25
+  intensity: 3.375
+  intensity: 3.5
+  intensity: 3.625
+  intensity: 3.75
+  intensity: 3.875
+}
+metadata {
+  key: "sonar_model"
+  value: "fixture"
+}
