@@ -2,10 +2,11 @@
 
 Opt-in `Interpolate`, `Distance`, and `Validate` for a free-body vehicle
 planning sample, plus an exact-match planner registry, a deterministic
-fake planner, and a deterministic UUV motion-primitive generator. Plain
-values only: no protobuf parsing, no World access, no collision checking, no
-kinodynamic search. Manipulator joint StateSpace
-consumers and the services under `motion_planner/` are unchanged.
+fake planner, a deterministic UUV motion-primitive generator, and a
+current-aware primitive propagator. Plain values only: no protobuf parsing,
+no World access, no collision checking, no kinodynamic search. Manipulator
+joint StateSpace consumers and the services under `motion_planner/` are
+unchanged.
 
 [ADR 0001](../../../../docs/adr/0001-multi-embodiment-capability-architecture.md)
 records the additive capability decision. The `VehicleState` wire message and
@@ -25,6 +26,8 @@ This package does not change them.
 | Python | `//intrinsic_motion_planning/intrinsic/motion_planning/vehicle:vehicle_planner_deadline_py` | `intrinsic.motion_planning.vehicle.vehicle_planner_deadline` |
 | C++ | `//intrinsic_motion_planning/intrinsic/motion_planning/vehicle:vehicle_motion_primitives` | `intrinsic/motion_planning/vehicle/vehicle_motion_primitives.h` |
 | Python | `//intrinsic_motion_planning/intrinsic/motion_planning/vehicle:vehicle_motion_primitives_py` | `intrinsic.motion_planning.vehicle.vehicle_motion_primitives` |
+| C++ | `//intrinsic_motion_planning/intrinsic/motion_planning/vehicle:vehicle_primitive_propagation` | `intrinsic/motion_planning/vehicle/vehicle_primitive_propagation.h` |
+| Python | `//intrinsic_motion_planning/intrinsic/motion_planning/vehicle:vehicle_primitive_propagation_py` | `intrinsic.motion_planning.vehicle.vehicle_primitive_propagation` |
 
 C++ names live in `intrinsic::motion_planning::vehicle`. The Python mirror uses
 snake_case functions (`interpolate`, `distance`, `validate`), tuples for
@@ -243,8 +246,8 @@ return without the caller waiting on the inner planner.
 
 `GenerateUuvMotionPrimitives` (C++) and `generate_uuv_motion_primitives`
 (Python) build a deterministic list of constant body-frame wrench controls.
-A primitive is a control plus a shared duration. It is not propagated: no
-dynamics, currents, or integrators run here.
+A primitive is a control plus a shared duration. The generator does not
+integrate. Propagation is the separate adapter below.
 
 Controls are `BodyVector` in the `intrinsic/vehicle` layout: linear x, y, z
 are force in N, then angular x, y, z are torque in N*m, body frame.
@@ -291,20 +294,105 @@ Ids are `uuv-prim-` plus a zero-padded index in generation order
 (`uuv-prim-000`, `uuv-prim-001`, ...). The same config always gives the same
 error, ids, controls, and durations.
 
+## Primitive propagation
+
+`PropagateUuvMotionPrimitive` (C++) and `propagate_uuv_motion_primitive`
+(Python) integrate one constant body wrench for `duration_s`. Dynamics are
+injected. Tests use `ZeroForceDynamics`. This adapter does not own a planner
+and does not reimplement the marine force model.
+
+`VehicleDynamics::Evaluate` returns an instantaneous derivative. It does not
+integrate, and `#24` leaves `body_acceleration` at zero. Planning therefore
+owns a diagonal mass surrogate until a later true M⁻¹ leaf exists.
+
+Integration, per substep of size `dt_i = min(dt_s, duration_s - elapsed)`:
+
+1. Call `Evaluate` on the current state. A failed status stops the step.
+2. Planning wrench `W` is `diagnostics.total_wrench` when
+   `input_wrench_used` is true. Otherwise `W` is the primitive body wrench,
+   force then torque, surge through yaw.
+3. `a_i = W_i / mass_diag[i]`.
+4. Semi-implicit Euler: `twist' = twist + dt_i * a`. Call `Evaluate` again
+   with the same pose and `twist'` and integrate the pose with that
+   derivative. The first call's pose rate is not the one that is integrated.
+5. Add `current_world_enu_m_s` to `position_dot` after the kinematic map.
+   Angular current is zero. The same loop is used when the injected model is
+   `MarineForceDynamics`: hydrodynamic force enters `W` only when
+   `input_wrench_used` is true.
+
+`mass_diag` has six entries, order surge, sway, heave, roll, pitch, yaw.
+Each entry must be finite and `> 0`. It maps force to linear acceleration
+and torque to angular acceleration. It is not `M_RB + M_A` and it is not a
+matrix inverse.
+
+The state passed to `Evaluate` uses `pose_frame = world_enu`, body twist from
+the planning state, a body-frame wrench from the primitive, and an
+environment whose current frame is `world_enu`. Gravity and density come
+from the config. Zero gravity and zero density are valid.
+
+After the pose update the orientation is renormalized to unit length
+(Hamilton, sign preserved). A non-finite renormalized quaternion is
+`kDynamicsFailed`.
+
+The result includes the start sample at `t = 0` on success. Sample times are
+monotonic. The final sample time equals `duration_s` within `1e-12`. The
+same inputs produce the same sample times and state components. Samples are
+empty unless the error is `kOk`.
+
+`PropagationError` (Python: `OK`, `BAD_CONFIG`, `BAD_START`, `BAD_PRIMITIVE`,
+`DYNAMICS_FAILED`, `STEP_BUDGET`):
+
+| Check | Condition | Error |
+| --- | --- | --- |
+| `dt_s` | non-finite or `<= 0` | `kBadConfig` |
+| `max_steps` | `< 1` | `kBadConfig` |
+| `mass_diag` | any entry non-finite or `<= 0` | `kBadConfig` |
+| gravity, density | non-finite or `< 0` | `kBadConfig` |
+| current | any component non-finite | `kBadConfig` |
+| start | non-finite position, orientation, or twist | `kBadStart` |
+| start | `abs(norm(q) - 1) > 1e-9` | `kBadStart` |
+| primitive | `duration_s` non-finite or `<= 0` | `kBadPrimitive` |
+| primitive | any control component non-finite | `kBadPrimitive` |
+| step budget | required steps `> max_steps` | `kStepBudget` |
+| dynamics | `Evaluate` is not ok, or quaternion renormalize is non-finite | `kDynamicsFailed` |
+
+The first defect wins, in that table order. Within config, `dt_s` is checked
+before `max_steps`, then `mass_diag` in surge-to-yaw order, then gravity,
+density, and current.
+
+Step budget, before any integration: `n = floor(duration_s / dt_s)`,
+`rem = duration_s - n * dt_s`, required steps `= n + (rem > 0 ? 1 : 0)`.
+The count includes a shorter remainder step. If the count exceeds
+`max_steps`, the result is `kStepBudget` and no sample is emitted.
+
+Locked zero-current fixture, `ZeroForceDynamics`, origin and identity
+orientation, zero twist, body force `Fx = 10`, `duration_s = 1`, `dt_s =
+0.5`, `max_steps = 4`, every `mass_diag` entry `10`, gravity 0, density 0,
+current 0:
+
+| t | `twist.linear_x` | `position.x` |
+| --- | --- | --- |
+| 0.5 | 0.5 | 0.25 |
+| 1.0 | 1.0 | 0.75 |
+
+The same fixture with `current_world_enu_m_s = (0.2, 0, 0)` keeps the twist
+and adds `0.2 * t` to `position.x`: `0.35` at `t = 0.5` and `0.95` at
+`t = 1`. Orientation stays identity. Other position and twist components
+stay 0.
+
 ## Out of scope
 
-* Search, sampling, RRT, A*, kinodynamic planning, TOPP. The kinodynamic
-  baseline planner id stays reserved and unregistered.
-* Propagating motion primitives through dynamics, currents, or integrators
-  (#106).
+* Search, sampling, RRT, A*, heuristics, kinodynamic planning, TOPP. The
+  kinodynamic baseline planner id stays reserved and unregistered.
 * Collision checking and World snapshots.
+* A true mass-matrix inverse. `mass_diag` is only the planning surrogate.
+  This package does not form `M` and does not edit vehicle dynamics sources.
 * Asynchronous planning, worker pools, and preemption of a planner that does
   not poll the options.
-* Dynamics coupling, ICON, HAL, Gazebo, safety rules, `DesiredMotion`
-  assembly.
+* ICON, HAL, Gazebo, safety rules, and `DesiredMotion` assembly.
 * ENU and NED conversion.
-* Changes to the trajectory wire, the StateSpace API, or manipulator
-  `motion_planner` services.
+* Changes to the trajectory wire, the StateSpace API, the motion-primitive
+  generator API, or manipulator `motion_planner` services.
 
 ## Build and test
 
