@@ -231,3 +231,99 @@ py_test(
         "@intrinsic_apis//intrinsic/safety/proto:safety_decision_py_pb2",
     ],
 )
+
+cc_library(
+    name = "safety_rule_result",
+    hdrs = ["safety_rule_result.h"],
+)
+
+cc_library(
+    name = "state_age_rule",
+    srcs = ["state_age_rule.cc"],
+    hdrs = ["state_age_rule.h"],
+    deps = [
+        ":safety_rule_result",
+        "//intrinsic/embodiment:frame_policy",
+    ],
+)
+
+cc_library(
+    name = "non_finite_rule",
+    srcs = ["non_finite_rule.cc"],
+    hdrs = ["non_finite_rule.h"],
+    deps = [
+        ":safety_rule_result",
+        "//intrinsic/embodiment:frame_policy",
+        "//intrinsic/vehicle:vehicle_contract_policy",
+    ],
+)
+
+cc_test(
+    name = "state_age_rule_test",
+    size = "small",
+    srcs = ["state_age_rule_test.cc"],
+    deps = [
+        ":safety_decision_policy",
+        ":state_age_rule",
+        "@com_google_googletest//:gtest_main",
+    ],
+)
+
+cc_test(
+    name = "non_finite_rule_test",
+    size = "small",
+    srcs = ["non_finite_rule_test.cc"],
+    deps = [
+        ":non_finite_rule",
+        ":safety_decision_policy",
+        "//intrinsic/vehicle:vehicle_contract_policy",
+        "@com_google_googletest//:gtest_main",
+    ],
+)
+
+py_library(
+    name = "safety_rule_result_py",
+    srcs = ["safety_rule_result.py"],
+)
+
+py_library(
+    name = "state_age_rule_py",
+    srcs = ["state_age_rule.py"],
+    deps = [
+        ":safety_rule_result_py",
+        "//intrinsic/embodiment:frame_policy_py",
+    ],
+)
+
+py_library(
+    name = "non_finite_rule_py",
+    srcs = ["non_finite_rule.py"],
+    deps = [
+        ":safety_rule_result_py",
+        "//intrinsic/vehicle:vehicle_contract_policy_py",
+    ],
+)
+
+py_test(
+    name = "state_age_rule_test_py",
+    size = "small",
+    srcs = ["state_age_rule_test.py"],
+    main = "state_age_rule_test.py",
+    deps = [
+        ":safety_decision_policy_py",
+        ":safety_rule_result_py",
+        ":state_age_rule_py",
+    ],
+)
+
+py_test(
+    name = "non_finite_rule_test_py",
+    size = "small",
+    srcs = ["non_finite_rule_test.py"],
+    main = "non_finite_rule_test.py",
+    deps = [
+        ":non_finite_rule_py",
+        ":safety_decision_policy_py",
+        "//intrinsic/vehicle:vehicle_contract_policy_py",
+    ],
+)
