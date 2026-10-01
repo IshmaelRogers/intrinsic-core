@@ -1,0 +1,99 @@
+// Copyright 2026 Intrinsic Innovation LLC
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     https://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
+syntax = "proto3";
+
+package intrinsic_proto.perception.sonar;
+
+import "intrinsic/embodiment/proto/stamped_header.proto";
+import "intrinsic/math/proto/pose.proto";
+// Imported only for SonarPayloadBlobReference. Do not redefine it here.
+import "intrinsic/perception/proto/sonar/fls_frame.proto";
+
+option go_package = "intrinsic/perception/proto/sonar/sss_frame_go_proto";
+
+// Across-track sample window for one SSS channel (port or starboard).
+// Samples are ordered from min_range_m to max_range_m.
+message SssChannelGeometry {
+  // Required when engaged; must be >= 1.
+  uint32 num_samples = 1;
+
+  // Meters. Finite; >= 0; < max_range_m.
+  double min_range_m = 2;
+
+  // Meters. Finite; > min_range_m.
+  double max_range_m = 3;
+}
+
+// Port and starboard acquisition geometry. Both channels are required when
+// the geometry (or frame) is engaged. Ranges are sensor-local across-track
+// (meters). No ENU/NED conversion happens in this package.
+message SssGeometry {
+  SssChannelGeometry port = 1;
+  SssChannelGeometry starboard = 2;
+}
+
+// Mounting / extrinsic calibration. Pose is parent_from_sensor.
+// Never infer frames from message type: both frame ids are required when the
+// calibration message is present. Unset pose while calibration is present is
+// kCalibration (structural; before finiteness / quaternion checks).
+message SssCalibration {
+  // E.g. body. Non-empty when calibration is present.
+  string parent_frame_id = 1;
+
+  // Sensor acoustic frame. Non-empty and different from parent_frame_id when
+  // calibration is present.
+  string sensor_frame_id = 2;
+
+  // Required when calibration is present. Position is meters. Orientation is
+  // a Hamilton quaternion stored x, y, z, w. Identity is w = 1. Helpers do
+  // not renormalize.
+  intrinsic_proto.Pose pose_parent_from_sensor = 3;
+}
+
+// Inline intensity samples for port and starboard channels.
+// Size of port_intensity MUST equal geometry.port.num_samples.
+// Size of starboard_intensity MUST equal geometry.starboard.num_samples.
+// Values are dimensionless intensity (finite; may be zero). Not mosaics;
+// not detections; not georeferenced pixels.
+message SssInlineSamples {
+  repeated float port_intensity = 1;
+  repeated float starboard_intensity = 2;
+}
+
+// Approved side-scan sonar frame (non-real-time observation contract).
+// Default message serializes to zero bytes (opt-in).
+// Reuses SonarPayloadBlobReference from fls_frame.proto (do not redefine).
+// No robot-type enum. No FLS fields. No multimodal wrapper.
+message SideScanSonarFrame {
+  // Frame and time semantics are StampedHeader (see embodiment README.md).
+  // header.frame_id is the frame of this SSS observation.
+  intrinsic_proto.embodiment.StampedHeader header = 1;
+
+  SssGeometry geometry = 2;
+
+  // Optional. When present it is fully validated.
+  SssCalibration calibration = 3;
+
+  // SI m/s. Finite and > 0 when engaged.
+  double sound_speed_m_s = 4;
+
+  oneof payload {
+    SssInlineSamples inline_samples = 5;
+    SonarPayloadBlobReference blob_reference = 6;
+  }
+
+  // Optional opaque metadata. Validator never interprets keys/values.
+  map<string, string> metadata = 100;
+}

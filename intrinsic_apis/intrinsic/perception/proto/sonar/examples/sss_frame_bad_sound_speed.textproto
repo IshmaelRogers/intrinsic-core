@@ -1,0 +1,64 @@
+# Rejected: sound_speed_m_s <= 0 (kSoundSpeed). The stamp is still STATE_VALID.
+header {
+  sequence: 31
+  source_time {
+    seconds: 1700000030
+    nanos: 250000000
+  }
+  receive_time {
+    seconds: 1700000031
+  }
+  source_id: "sss_0"
+  frame_id: "sss_sonar"
+  clock_domain: "monotonic"
+  validity {
+    state: STATE_VALID
+  }
+}
+geometry {
+  port {
+    num_samples: 16
+    min_range_m: 1
+    max_range_m: 75
+  }
+  starboard {
+    num_samples: 16
+    min_range_m: 1
+    max_range_m: 75
+  }
+}
+sound_speed_m_s: 0
+inline_samples {
+  port_intensity: 0.0
+  port_intensity: 0.125
+  port_intensity: 0.25
+  port_intensity: 0.375
+  port_intensity: 0.5
+  port_intensity: 0.625
+  port_intensity: 0.75
+  port_intensity: 0.875
+  port_intensity: 1.0
+  port_intensity: 1.125
+  port_intensity: 1.25
+  port_intensity: 1.375
+  port_intensity: 1.5
+  port_intensity: 1.625
+  port_intensity: 1.75
+  port_intensity: 1.875
+  starboard_intensity: 0.25
+  starboard_intensity: 0.375
+  starboard_intensity: 0.5
+  starboard_intensity: 0.625
+  starboard_intensity: 0.75
+  starboard_intensity: 0.875
+  starboard_intensity: 1.0
+  starboard_intensity: 1.125
+  starboard_intensity: 1.25
+  starboard_intensity: 1.375
+  starboard_intensity: 1.5
+  starboard_intensity: 1.625
+  starboard_intensity: 1.75
+  starboard_intensity: 1.875
+  starboard_intensity: 2.0
+  starboard_intensity: 2.125
+}

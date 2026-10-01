@@ -1,0 +1,48 @@
+# Nominal SSS frame: same geometry, blob reference, no inline samples.
+header {
+  sequence: 31
+  source_time {
+    seconds: 1700000030
+    nanos: 250000000
+  }
+  receive_time {
+    seconds: 1700000031
+  }
+  source_id: "sss_0"
+  frame_id: "sss_sonar"
+  clock_domain: "monotonic"
+  validity {
+    state: STATE_VALID
+  }
+}
+geometry {
+  port {
+    num_samples: 16
+    min_range_m: 1
+    max_range_m: 75
+  }
+  starboard {
+    num_samples: 16
+    min_range_m: 1
+    max_range_m: 75
+  }
+}
+calibration {
+  parent_frame_id: "body"
+  sensor_frame_id: "sss_sonar"
+  pose_parent_from_sensor {
+    position {
+      x: 0.75
+      z: -0.5
+    }
+    orientation {
+      w: 1
+    }
+  }
+}
+sound_speed_m_s: 1500
+blob_reference {
+  blob_id: "sss-blob-0001"
+  content_type: "application/octet-stream"
+  byte_size: 256
+}

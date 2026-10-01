@@ -15,8 +15,8 @@
 load("//bazel:cc_macros.bzl", "cc_library", "cc_test")
 load("//bazel:python.bzl", "py_library", "py_test")
 
-# Opt-in forward-looking sonar frame contract helpers. Not part of the
-# protected manipulator baseline. Do not add these labels to
+# Opt-in sonar frame contract helpers (forward-looking and side-scan). Not part
+# of the protected manipulator baseline. Do not add these labels to
 # .github/baseline/manipulator_targets.tsv.
 
 package(default_visibility = ["//visibility:public"])
@@ -80,5 +80,69 @@ py_test(
         "//intrinsic/embodiment:frame_policy_py",
         "@intrinsic_apis//intrinsic/embodiment/proto:stamped_header_py_pb2",
         "@intrinsic_apis//intrinsic/perception/proto/sonar:fls_frame_py_pb2",
+    ],
+)
+
+cc_library(
+    name = "sss_frame_contract_policy",
+    hdrs = ["sss_frame_contract_policy.h"],
+    deps = ["//intrinsic/embodiment:frame_policy"],
+)
+
+cc_test(
+    name = "sss_frame_contract_test",
+    size = "small",
+    srcs = ["sss_frame_contract_test.cc"],
+    deps = [
+        ":sss_frame_contract_policy",
+        "//intrinsic/embodiment:frame_policy",
+        "@com_google_googletest//:gtest_main",
+    ],
+)
+
+cc_test(
+    name = "sss_frame_contract_serialization_test",
+    size = "small",
+    srcs = ["sss_frame_contract_serialization_test.cc"],
+    data = ["@intrinsic_apis//intrinsic/perception/proto/sonar:examples"],
+    deps = [
+        ":sss_frame_contract_policy",
+        "//intrinsic/embodiment:frame_policy",
+        "@com_google_googletest//:gtest_main",
+        "@intrinsic_apis//intrinsic/embodiment/proto:stamped_header_cc_proto",
+        "@intrinsic_apis//intrinsic/perception/proto/sonar:fls_frame_cc_proto",
+        "@intrinsic_apis//intrinsic/perception/proto/sonar:sss_frame_cc_proto",
+    ],
+)
+
+py_library(
+    name = "sss_frame_contract_policy_py",
+    srcs = ["sss_frame_contract_policy.py"],
+    deps = ["//intrinsic/embodiment:frame_policy_py"],
+)
+
+py_test(
+    name = "sss_frame_contract_test_py",
+    size = "small",
+    srcs = ["sss_frame_contract_test.py"],
+    main = "sss_frame_contract_test.py",
+    deps = [
+        ":sss_frame_contract_policy_py",
+        "//intrinsic/embodiment:frame_policy_py",
+    ],
+)
+
+py_test(
+    name = "sss_frame_contract_serialization_test_py",
+    size = "small",
+    srcs = ["sss_frame_contract_serialization_test.py"],
+    data = ["@intrinsic_apis//intrinsic/perception/proto/sonar:examples"],
+    main = "sss_frame_contract_serialization_test.py",
+    deps = [
+        ":sss_frame_contract_policy_py",
+        "//intrinsic/embodiment:frame_policy_py",
+        "@intrinsic_apis//intrinsic/embodiment/proto:stamped_header_py_pb2",
+        "@intrinsic_apis//intrinsic/perception/proto/sonar:fls_frame_py_pb2",
+        "@intrinsic_apis//intrinsic/perception/proto/sonar:sss_frame_py_pb2",
     ],
 )
