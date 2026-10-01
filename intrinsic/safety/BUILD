@@ -561,3 +561,42 @@ py_test(
         ":safety_rule_result_py",
     ],
 )
+
+cc_library(
+    name = "geofence_rule",
+    srcs = ["geofence_rule.cc"],
+    hdrs = ["geofence_rule.h"],
+    deps = [
+        ":safety_rule_result",
+        "//intrinsic/embodiment:frame_policy",
+    ],
+)
+
+cc_test(
+    name = "geofence_rule_test",
+    size = "small",
+    srcs = ["geofence_rule_test.cc"],
+    deps = [
+        ":geofence_rule",
+        ":safety_decision_policy",
+        "@com_google_googletest//:gtest_main",
+    ],
+)
+
+py_library(
+    name = "geofence_rule_py",
+    srcs = ["geofence_rule.py"],
+    deps = [":safety_rule_result_py"],
+)
+
+py_test(
+    name = "geofence_rule_test_py",
+    size = "small",
+    srcs = ["geofence_rule_test.py"],
+    main = "geofence_rule_test.py",
+    deps = [
+        ":geofence_rule_py",
+        ":safety_decision_policy_py",
+        ":safety_rule_result_py",
+    ],
+)
