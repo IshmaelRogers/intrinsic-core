@@ -46,7 +46,8 @@ class VehiclePlanStatus(enum.Enum):
   OK = 0
   NO_SOLUTION = 1
   INVALID_REQUEST = 2
-  # #104 will add cancelled / deadline; do not invent them here.
+  CANCELLED = 3
+  DEADLINE_EXCEEDED = 4
 
 
 @dataclasses.dataclass(frozen=True)

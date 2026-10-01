@@ -20,6 +20,8 @@ This package does not change them.
 | Python | `//intrinsic_motion_planning/intrinsic/motion_planning/vehicle:vehicle_planner_registry_py` | `intrinsic.motion_planning.vehicle.vehicle_planner_registry` |
 | C++ | `//intrinsic_motion_planning/intrinsic/motion_planning/vehicle:fake_vehicle_planner` | `intrinsic/motion_planning/vehicle/fake_vehicle_planner.h` |
 | Python | `//intrinsic_motion_planning/intrinsic/motion_planning/vehicle:fake_vehicle_planner_py` | `intrinsic.motion_planning.vehicle.fake_vehicle_planner` |
+| C++ | `//intrinsic_motion_planning/intrinsic/motion_planning/vehicle:vehicle_planner_deadline` | `intrinsic/motion_planning/vehicle/vehicle_planner_deadline.h` |
+| Python | `//intrinsic_motion_planning/intrinsic/motion_planning/vehicle:vehicle_planner_deadline_py` | `intrinsic.motion_planning.vehicle.vehicle_planner_deadline` |
 
 C++ names live in `intrinsic::motion_planning::vehicle`. The Python mirror uses
 snake_case functions (`interpolate`, `distance`, `validate`), tuples for
@@ -139,8 +141,10 @@ unknown id returns not-found. The registry does not construct a planner.
 
 C++ names live in `intrinsic::motion_planning::vehicle`. The Python mirror
 uses `PlannerRegistryError.OK`, `EMPTY_ID`, `DUPLICATE_ID`, `NOT_FOUND`, and
-`NULL_PLANNER`. Plan statuses are `OK`, `NO_SOLUTION`, and
-`INVALID_REQUEST`. Cancelled and deadline statuses are not defined here.
+`NULL_PLANNER`. Plan statuses are `OK`, `NO_SOLUTION`,
+`INVALID_REQUEST`, `CANCELLED`, and `DEADLINE_EXCEEDED`. The last two are
+produced by the deadline harness below; the fake planner never returns them
+unless configured to.
 
 `Register` checks, first defect wins:
 
@@ -182,11 +186,63 @@ with the failure switch off use that same fixture. An empty request
 the same status, id, and sample times and poses. `AssessVehicleTrajectory`
 accepts the success view.
 
+## Deadline and cancellation
+
+`RunWithDeadline` (C++) and `run_with_deadline` (Python) wrap an existing
+`VehiclePlanner` with a deadline and a cooperative cancel flag. The wrapper
+adds no search and creates no thread.
+
+`VehiclePlanStatus` gains two values appended after the existing ones. Existing
+values keep their numbers.
+
+| Status | Value |
+| --- | --- |
+| `kOk` | 0 |
+| `kNoSolution` | 1 |
+| `kInvalidRequest` | 2 |
+| `kCancelled` | 3 |
+| `kDeadlineExceeded` | 4 |
+
+`VehiclePlanRunOptions` holds:
+
+| Field | C++ | Python | Meaning |
+| --- | --- | --- | --- |
+| deadline | `deadline_present`, `std::chrono::steady_clock::time_point deadline` | `deadline_present`, `deadline` in `time.monotonic()` seconds | Absolute deadline. Ignored unless present. |
+| cancel | `std::atomic<bool>* cancel` | `threading.Event` | Not owned. Null or `None` means not cancelable. |
+
+First applicable wins:
+
+1. Cancel set before start returns `kCancelled`. The inner planner is not
+   called.
+2. Deadline present and `now >= deadline` before start returns
+   `kDeadlineExceeded`. The inner planner is not called.
+3. Otherwise the inner `Plan` result is returned unchanged. A non-ok status
+   such as `kNoSolution` or `kInvalidRequest` is forwarded as is, and a `kOk`
+   result keeps its trajectory.
+
+Cancelled, deadline exceeded, and no solution are three different outcomes.
+A cancelled or expired result never carries a trajectory;
+`AsVehicleTrajectoryView` yields an empty view for it.
+
+Mid-run cancel and timeout are cooperative. The harness itself only checks
+before the inner call. A planner that is given the same cancel flag and
+deadline can poll them while it works and return `kCancelled` or
+`kDeadlineExceeded`, and the harness forwards that. The tests use a test-only
+`CooperativeVehiclePlanner` that polls between steps. Its clock and step hook
+are injectable, so the mid-run timeout and cancel cases do not depend on wall
+time. It is not registered under any id and is not part of the fake planner.
+
+The call is synchronous and bounded by the options. It does not
+busy-spin and does not sleep. Tests assert that the cancel and deadline paths
+return without the caller waiting on the inner planner.
+
 ## Out of scope
 
 * Search, sampling, RRT, A*, primitive sets, kinodynamic planning, TOPP.
+  The kinodynamic baseline is #105 and later.
 * Collision checking and World snapshots.
-* Deadline and cancellation.
+* Asynchronous planning, worker pools, and preemption of a planner that does
+  not poll the options.
 * Dynamics coupling, ICON, HAL, Gazebo, safety rules, `DesiredMotion`
   assembly.
 * ENU and NED conversion.

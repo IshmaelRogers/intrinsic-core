@@ -52,7 +52,8 @@ enum class VehiclePlanStatus {
   kOk = 0,
   kNoSolution = 1,
   kInvalidRequest = 2,
-  // #104 will add cancelled / deadline; do not invent them here.
+  kCancelled = 3,
+  kDeadlineExceeded = 4,
 };
 
 struct VehiclePlanRequest {
