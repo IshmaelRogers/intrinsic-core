@@ -17,8 +17,8 @@ load("@com_google_protobuf//bazel:proto_library.bzl", "proto_library")
 load("@com_google_protobuf//bazel:py_proto_library.bzl", "py_proto_library")
 load("@io_bazel_rules_go//proto:def.bzl", "go_proto_library")
 
-# Opt-in forward-looking sonar frame contract. Not part of the protected
-# manipulator baseline. Do not add these labels to
+# Opt-in sonar frame contracts (forward-looking and side-scan). Not part of
+# the protected manipulator baseline. Do not add these labels to
 # .github/baseline/manipulator_targets.tsv.
 
 package(default_visibility = ["//visibility:public"])
@@ -52,6 +52,37 @@ go_proto_library(
     ],
 )
 
+proto_library(
+    name = "sss_frame_proto",
+    srcs = ["sss_frame.proto"],
+    deps = [
+        ":fls_frame_proto",
+        "//intrinsic/embodiment/proto:stamped_header_proto",
+        "//intrinsic/math/proto:pose_proto",
+    ],
+)
+
+cc_proto_library(
+    name = "sss_frame_cc_proto",
+    deps = [":sss_frame_proto"],
+)
+
+py_proto_library(
+    name = "sss_frame_py_pb2",
+    deps = [":sss_frame_proto"],
+)
+
+go_proto_library(
+    name = "sss_frame_go_proto",
+    importpath = "intrinsic/perception/proto/sonar/sss_frame_go_proto",
+    protos = [":sss_frame_proto"],
+    deps = [
+        ":fls_frame_go_proto",
+        "//intrinsic/embodiment/proto:stamped_header_go_proto",
+        "//intrinsic/math/proto:pose_go_proto",
+    ],
+)
+
 filegroup(
     name = "examples",
     srcs = [
@@ -61,5 +92,11 @@ filegroup(
         "examples/fls_frame_empty_blob_id.textproto",
         "examples/fls_frame_inline_nominal.textproto",
         "examples/fls_frame_payload_mismatch.textproto",
+        "examples/sss_frame_bad_frame.textproto",
+        "examples/sss_frame_bad_sound_speed.textproto",
+        "examples/sss_frame_blob_nominal.textproto",
+        "examples/sss_frame_empty_blob_id.textproto",
+        "examples/sss_frame_inline_nominal.textproto",
+        "examples/sss_frame_payload_mismatch.textproto",
     ],
 )
