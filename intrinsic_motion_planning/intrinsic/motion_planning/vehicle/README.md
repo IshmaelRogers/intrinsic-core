@@ -1,9 +1,10 @@
 # Vehicle planning
 
 Opt-in `Interpolate`, `Distance`, and `Validate` for a free-body vehicle
-planning sample, plus an exact-match planner registry and a deterministic
-fake planner. Plain values only: no protobuf parsing, no World access, no
-collision checking, no kinodynamic search. Manipulator joint StateSpace
+planning sample, plus an exact-match planner registry, a deterministic
+fake planner, and a deterministic UUV motion-primitive generator. Plain
+values only: no protobuf parsing, no World access, no collision checking, no
+kinodynamic search. Manipulator joint StateSpace
 consumers and the services under `motion_planner/` are unchanged.
 
 [ADR 0001](../../../../docs/adr/0001-multi-embodiment-capability-architecture.md)
@@ -22,6 +23,8 @@ This package does not change them.
 | Python | `//intrinsic_motion_planning/intrinsic/motion_planning/vehicle:fake_vehicle_planner_py` | `intrinsic.motion_planning.vehicle.fake_vehicle_planner` |
 | C++ | `//intrinsic_motion_planning/intrinsic/motion_planning/vehicle:vehicle_planner_deadline` | `intrinsic/motion_planning/vehicle/vehicle_planner_deadline.h` |
 | Python | `//intrinsic_motion_planning/intrinsic/motion_planning/vehicle:vehicle_planner_deadline_py` | `intrinsic.motion_planning.vehicle.vehicle_planner_deadline` |
+| C++ | `//intrinsic_motion_planning/intrinsic/motion_planning/vehicle:vehicle_motion_primitives` | `intrinsic/motion_planning/vehicle/vehicle_motion_primitives.h` |
+| Python | `//intrinsic_motion_planning/intrinsic/motion_planning/vehicle:vehicle_motion_primitives_py` | `intrinsic.motion_planning.vehicle.vehicle_motion_primitives` |
 
 C++ names live in `intrinsic::motion_planning::vehicle`. The Python mirror uses
 snake_case functions (`interpolate`, `distance`, `validate`), tuples for
@@ -236,10 +239,64 @@ The call is synchronous and bounded by the options. It does not
 busy-spin and does not sleep. Tests assert that the cancel and deadline paths
 return without the caller waiting on the inner planner.
 
+## Motion primitives
+
+`GenerateUuvMotionPrimitives` (C++) and `generate_uuv_motion_primitives`
+(Python) build a deterministic list of constant body-frame wrench controls.
+A primitive is a control plus a shared duration. It is not propagated: no
+dynamics, currents, or integrators run here.
+
+Controls are `BodyVector` in the `intrinsic/vehicle` layout: linear x, y, z
+are force in N, then angular x, y, z are torque in N*m, body frame.
+
+`VehicleMotionPrimitiveConfig`:
+
+| Field | Rule |
+| --- | --- |
+| `mode` | `kAxisAligned` (default) or `kCustom`. Python: `AXIS_ALIGNED`, `CUSTOM`. |
+| `max_force_torque` | Inclusive per-axis magnitude limit. Every component finite and `>= 0`. |
+| `duration_s` | Shared by every primitive. Finite and `> 0`. |
+| `custom_controls` | Read only for `kCustom`. Each entry finite with `abs(u) <= max` per axis. |
+
+`PrimitiveSetError` is `kOk`, `kBadConfig`, or `kEmpty` (Python `OK`,
+`BAD_CONFIG`, `EMPTY`). `primitives` is empty unless the error is `kOk`.
+
+Check order, first defect wins:
+
+1. A `max_force_torque` component is non-finite or negative: `kBadConfig`.
+2. `duration_s` is non-finite or `<= 0`: `kBadConfig`.
+3. `kCustom` and a control is non-finite or exceeds the max on any axis
+   (`abs(u) > max`, exact comparison): `kBadConfig`. Controls are rejected,
+   never clamped.
+4. `kCustom` with no controls: `kEmpty`.
+
+Axis-aligned set, 13 primitives, positive before negative in each pair:
+
+| Index | Control |
+| --- | --- |
+| 0 | all zero |
+| 1, 2 | `+max.linear_x`, `-max.linear_x` on Fx only |
+| 3, 4 | `+max.linear_y`, `-max.linear_y` on Fy only |
+| 5, 6 | `+max.linear_z`, `-max.linear_z` on Fz only |
+| 7, 8 | `+max.angular_x`, `-max.angular_x` on Tx only |
+| 9, 10 | `+max.angular_y`, `-max.angular_y` on Ty only |
+| 11, 12 | `+max.angular_z`, `-max.angular_z` on Tz only |
+
+Other components are 0. An axis with a zero bound still emits both entries
+of its pair, as all-zero controls (positive zero, so they compare equal bit
+for bit); the set stays 13 long. `kCustom` keeps the order of
+`custom_controls`.
+
+Ids are `uuv-prim-` plus a zero-padded index in generation order
+(`uuv-prim-000`, `uuv-prim-001`, ...). The same config always gives the same
+error, ids, controls, and durations.
+
 ## Out of scope
 
-* Search, sampling, RRT, A*, primitive sets, kinodynamic planning, TOPP.
-  The kinodynamic baseline is #105 and later.
+* Search, sampling, RRT, A*, kinodynamic planning, TOPP. The kinodynamic
+  baseline planner id stays reserved and unregistered.
+* Propagating motion primitives through dynamics, currents, or integrators
+  (#106).
 * Collision checking and World snapshots.
 * Asynchronous planning, worker pools, and preemption of a planner that does
   not poll the options.
