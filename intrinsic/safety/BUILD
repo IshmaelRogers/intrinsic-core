@@ -405,3 +405,159 @@ py_test(
         ":safety_rule_result_py",
     ],
 )
+
+cc_library(
+    name = "speed_max_rule",
+    srcs = ["speed_max_rule.cc"],
+    hdrs = ["speed_max_rule.h"],
+    deps = [
+        ":safety_rule_result",
+        "//intrinsic/embodiment:frame_policy",
+    ],
+)
+
+cc_test(
+    name = "speed_max_rule_test",
+    size = "small",
+    srcs = ["speed_max_rule_test.cc"],
+    deps = [
+        ":speed_max_rule",
+        ":safety_decision_policy",
+        "@com_google_googletest//:gtest_main",
+    ],
+)
+
+py_library(
+    name = "speed_max_rule_py",
+    srcs = ["speed_max_rule.py"],
+    deps = [":safety_rule_result_py"],
+)
+
+py_test(
+    name = "speed_max_rule_test_py",
+    size = "small",
+    srcs = ["speed_max_rule_test.py"],
+    main = "speed_max_rule_test.py",
+    deps = [
+        ":speed_max_rule_py",
+        ":safety_decision_policy_py",
+        ":safety_rule_result_py",
+    ],
+)
+
+cc_library(
+    name = "attitude_bound_rule",
+    srcs = ["attitude_bound_rule.cc"],
+    hdrs = ["attitude_bound_rule.h"],
+    deps = [
+        ":safety_rule_result",
+        "//intrinsic/embodiment:frame_policy",
+    ],
+)
+
+cc_test(
+    name = "attitude_bound_rule_test",
+    size = "small",
+    srcs = ["attitude_bound_rule_test.cc"],
+    deps = [
+        ":attitude_bound_rule",
+        ":safety_decision_policy",
+        "@com_google_googletest//:gtest_main",
+    ],
+)
+
+py_library(
+    name = "attitude_bound_rule_py",
+    srcs = ["attitude_bound_rule.py"],
+    deps = [":safety_rule_result_py"],
+)
+
+py_test(
+    name = "attitude_bound_rule_test_py",
+    size = "small",
+    srcs = ["attitude_bound_rule_test.py"],
+    main = "attitude_bound_rule_test.py",
+    deps = [
+        ":attitude_bound_rule_py",
+        ":safety_decision_policy_py",
+        ":safety_rule_result_py",
+    ],
+)
+
+cc_library(
+    name = "angular_rate_max_rule",
+    srcs = ["angular_rate_max_rule.cc"],
+    hdrs = ["angular_rate_max_rule.h"],
+    deps = [
+        ":safety_rule_result",
+        "//intrinsic/embodiment:frame_policy",
+    ],
+)
+
+cc_test(
+    name = "angular_rate_max_rule_test",
+    size = "small",
+    srcs = ["angular_rate_max_rule_test.cc"],
+    deps = [
+        ":angular_rate_max_rule",
+        ":safety_decision_policy",
+        "@com_google_googletest//:gtest_main",
+    ],
+)
+
+py_library(
+    name = "angular_rate_max_rule_py",
+    srcs = ["angular_rate_max_rule.py"],
+    deps = [":safety_rule_result_py"],
+)
+
+py_test(
+    name = "angular_rate_max_rule_test_py",
+    size = "small",
+    srcs = ["angular_rate_max_rule_test.py"],
+    main = "angular_rate_max_rule_test.py",
+    deps = [
+        ":angular_rate_max_rule_py",
+        ":safety_decision_policy_py",
+        ":safety_rule_result_py",
+    ],
+)
+
+cc_library(
+    name = "heave_rate_bound_rule",
+    srcs = ["heave_rate_bound_rule.cc"],
+    hdrs = ["heave_rate_bound_rule.h"],
+    deps = [
+        ":safety_rule_result",
+        "//intrinsic/embodiment:frame_policy",
+    ],
+)
+
+cc_test(
+    name = "heave_rate_bound_rule_test",
+    size = "small",
+    srcs = ["heave_rate_bound_rule_test.cc"],
+    deps = [
+        ":heave_rate_bound_rule",
+        ":safety_decision_policy",
+        "@com_google_googletest//:gtest_main",
+    ],
+)
+
+py_library(
+    name = "heave_rate_bound_rule_py",
+    srcs = ["heave_rate_bound_rule.py"],
+    deps = [":safety_rule_result_py"],
+)
+
+py_test(
+    name = "heave_rate_bound_rule_test_py",
+    size = "small",
+    srcs = ["heave_rate_bound_rule_test.py"],
+    main = "heave_rate_bound_rule_test.py",
+    deps = [
+        ":heave_rate_bound_rule_py",
+        ":safety_decision_policy_py",
+        ":safety_rule_result_py",
+    ],
+)
