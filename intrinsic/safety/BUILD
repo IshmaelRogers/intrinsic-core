@@ -711,3 +711,40 @@ py_test(
         ":safety_rule_result_py",
     ],
 )
+
+cc_library(
+    name = "rule_aggregation",
+    srcs = ["rule_aggregation.cc"],
+    hdrs = ["rule_aggregation.h"],
+    deps = [":safety_rule_result"],
+)
+
+cc_test(
+    name = "rule_aggregation_test",
+    size = "small",
+    srcs = ["rule_aggregation_test.cc"],
+    deps = [
+        ":rule_aggregation",
+        ":safety_decision_policy",
+        ":safety_rule_result",
+        "@com_google_googletest//:gtest_main",
+    ],
+)
+
+py_library(
+    name = "rule_aggregation_py",
+    srcs = ["rule_aggregation.py"],
+    deps = [":safety_rule_result_py"],
+)
+
+py_test(
+    name = "rule_aggregation_test_py",
+    size = "small",
+    srcs = ["rule_aggregation_test.py"],
+    main = "rule_aggregation_test.py",
+    deps = [
+        ":rule_aggregation_py",
+        ":safety_decision_policy_py",
+        ":safety_rule_result_py",
+    ],
+)

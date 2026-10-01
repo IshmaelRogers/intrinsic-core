@@ -234,3 +234,37 @@ modify an estimator, ESKF, or filter, and there is no proto and no aggregation.
   thread-local ring buffer rather than a string literal. It stays valid until at
   least seven further exceeded results on the same thread. Copy it to keep it
   longer.
+
+## Rule aggregation
+
+`AggregateSafetyRuleResults(results)` in `rule_aggregation` (C++ takes a
+`std::span<const SafetyRuleResult>`; Python `aggregate_safety_rule_results` takes
+a sequence, with paired tests) combines already-evaluated `SafetyRuleResult`s
+into one `AggregatedSafetyResult` (`violated`, `primary_rule_id`, `severity`,
+`summary`, `recommended_kind`, `has_projected_value`, `projected_value`,
+`violated_count`, `projection_conflict`). It is pure and does not mutate its
+inputs. It adds no leaf rule, builds no `SafetyDecision`, and calls no assessor
+or authority transition; there is no proto and no estimator, World, ICON, or HAL
+access.
+
+- Only inputs with `violated == true` count. An empty span, or one with no
+  violated input, is a compliant aggregate (`violated == false`, all other
+  fields zero or empty). That is the allow / pass-through outcome;
+  `recommended_kind` is never set to `ACCEPT`.
+- The violated subset is sorted by `rule_id` ascending (byte order), so input
+  order never changes the result.
+- `severity` is the maximum severity of the violated subset. The primary is the
+  first finding in sorted order at that severity; its `rule_id` and `summary`
+  are copied.
+- Decision precedence: any `REJECT` finding, or any `recommended_kind` other
+  than `PROJECT` or `REJECT` (fail closed), makes the aggregate `REJECT`, and
+  `has_projected_value` / `projected_value` are copied from the primary finding
+  only. Otherwise two or more `PROJECT` findings make the aggregate `REJECT`
+  with `projection_conflict == true`, no projected value, and summary
+  `conflicting projections`. Otherwise exactly one `PROJECT` finding makes the
+  aggregate `PROJECT` with that finding's projected value.
+- Audit-only `has_projected_value` on `REJECT` findings (`clearance.min`,
+  `energy.reserve`, `nav.covariance`) never counts as a hard projection, so it
+  cannot cause or contribute to a projection conflict.
+- In C++, `primary_rule_id` and `summary` are views of the inputs' views (or of
+  a static literal), so they are valid only as long as the inputs' views are.
