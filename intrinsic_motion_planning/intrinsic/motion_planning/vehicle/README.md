@@ -1,10 +1,11 @@
 # Vehicle planning
 
 Opt-in `Interpolate`, `Distance`, and `Validate` for a free-body vehicle
-planning sample, plus an exact-match planner registry and a deterministic
-fake planner. Plain values only: no protobuf parsing, no World access, no
-collision checking, no kinodynamic search. Manipulator joint StateSpace
-consumers and the services under `motion_planner/` are unchanged.
+planning sample, plus an exact-match planner registry, a deterministic fake
+planner, a deadline harness, and a config-driven motion-primitive generator.
+Plain values only: no protobuf parsing, no World access, no collision
+checking, no kinodynamic search. Manipulator joint StateSpace consumers and
+the services under `motion_planner/` are unchanged.
 
 [ADR 0001](../../../../docs/adr/0001-multi-embodiment-capability-architecture.md)
 records the additive capability decision. The `VehicleState` wire message and
@@ -22,6 +23,8 @@ This package does not change them.
 | Python | `//intrinsic_motion_planning/intrinsic/motion_planning/vehicle:fake_vehicle_planner_py` | `intrinsic.motion_planning.vehicle.fake_vehicle_planner` |
 | C++ | `//intrinsic_motion_planning/intrinsic/motion_planning/vehicle:vehicle_planner_deadline` | `intrinsic/motion_planning/vehicle/vehicle_planner_deadline.h` |
 | Python | `//intrinsic_motion_planning/intrinsic/motion_planning/vehicle:vehicle_planner_deadline_py` | `intrinsic.motion_planning.vehicle.vehicle_planner_deadline` |
+| C++ | `//intrinsic_motion_planning/intrinsic/motion_planning/vehicle:vehicle_motion_primitives` | `intrinsic/motion_planning/vehicle/vehicle_motion_primitives.h` |
+| Python | `//intrinsic_motion_planning/intrinsic/motion_planning/vehicle:vehicle_motion_primitives_py` | `intrinsic.motion_planning.vehicle.vehicle_motion_primitives` |
 
 C++ names live in `intrinsic::motion_planning::vehicle`. The Python mirror uses
 snake_case functions (`interpolate`, `distance`, `validate`), tuples for
@@ -236,10 +239,72 @@ The call is synchronous and bounded by the options. It does not
 busy-spin and does not sleep. Tests assert that the cancel and deadline paths
 return without the caller waiting on the inner planner.
 
+## Motion primitives
+
+`GenerateMotionPrimitives` (Python `generate_motion_primitives`) turns a
+`VehicleMotionPrimitiveSetConfig` into an ordered set of body-frame twist
+commands. It is a pure function of that config. It does not search, sample,
+query collision or World, integrate dynamics, or register a planner. The
+reserved id `ai.intrinsic.vehicle_planner.kinodynamic_baseline` stays
+unregistered.
+
+Control uses the `BodyVector` layout of `VehiclePlanningState.twist`: linear
+x, y, z in m/s, then angular x, y, z in rad/s. It is not a wrench. Unused
+components are zero. `MotionPrimitiveAxis` stores the component index.
+
+| Axis | Token | Component |
+| --- | --- | --- |
+| surge | `surge` | linear x |
+| sway | `sway` | linear y |
+| heave | `heave` | linear z |
+| roll | `roll` | angular x |
+| pitch | `pitch` | angular y |
+| yaw | `yaw` | angular z |
+
+An axis is emitted only when its `*_present` flag is true and its level is
+finite and `> 0`. A present flag with any other level is `kBadConfig`.
+
+Config checks, first defect wins, return `kBadConfig` and no primitives:
+
+1. `duration_s` is non-finite or `<= 0`.
+2. A present speed limit is non-finite or `< 0`. Linear is checked before
+   angular. Disengaged limit fields are ignored.
+3. A `*_present` axis level is non-finite or `<= 0`, in the axis order
+   surge, sway, heave, roll, pitch, yaw.
+
+A valid config emits primitives in this order. Every primitive uses
+`duration_s`.
+
+1. If `include_hover`: id `hover`, control all zeros.
+2. For each engaged axis, in the order above: id `<axis>_pos` with that
+   component set to `+level`, then id `<axis>_neg` with that component set
+   to `-level`.
+
+`include_hover` false and no present axis is `kOk` with an empty set.
+
+After the set is built, every control, including hover, must satisfy the
+engaged bounds. Comparison is inclusive:
+
+* `max_linear_speed_present`: `||v_lin|| <= max_linear_speed_m_s`
+* `max_angular_speed_present`: `||w|| <= max_angular_speed_rad_s`
+
+A level exactly equal to the engaged max is accepted. A zero control is
+accepted against a zero max. If any primitive fails, the result is
+`kBoundsViolation` and `primitives` is empty. There is no partial set and no
+clamping. A linear axis is not checked against the angular limit, and an
+angular axis is not checked against the linear limit.
+
+The same config produces the same error, ids, control components, and
+durations.
+
+Python names are `generate_motion_primitives`, `OK`, `BAD_CONFIG`, and
+`BOUNDS_VIOLATION`. Controls are 6-tuples. The primitive sequence is a tuple.
+
 ## Out of scope
 
-* Search, sampling, RRT, A*, primitive sets, kinodynamic planning, TOPP.
-  The kinodynamic baseline is #105 and later.
+* Search, sampling, RRT, A*, kinodynamic planning, TOPP. The kinodynamic
+  baseline id stays reserved and is not registered by the primitive generator.
+* Propagating primitives through dynamics, currents, or integrators (#106).
 * Collision checking and World snapshots.
 * Asynchronous planning, worker pools, and preemption of a planner that does
   not poll the options.

@@ -162,3 +162,34 @@ py_test(
         "//intrinsic/vehicle:trajectory_contract_policy_py",
     ],
 )
+
+cc_library(
+    name = "vehicle_motion_primitives",
+    srcs = ["vehicle_motion_primitives.cc"],
+    hdrs = ["vehicle_motion_primitives.h"],
+    deps = ["//intrinsic/vehicle:vehicle_contract_policy"],
+)
+
+cc_test(
+    name = "vehicle_motion_primitives_test",
+    size = "small",
+    srcs = ["vehicle_motion_primitives_test.cc"],
+    deps = [
+        ":vehicle_motion_primitives",
+        "@com_google_googletest//:gtest_main",
+    ],
+)
+
+py_library(
+    name = "vehicle_motion_primitives_py",
+    srcs = ["vehicle_motion_primitives.py"],
+    deps = ["//intrinsic/vehicle:vehicle_contract_policy_py"],
+)
+
+py_test(
+    name = "vehicle_motion_primitives_test_py",
+    size = "small",
+    srcs = ["vehicle_motion_primitives_test.py"],
+    main = "vehicle_motion_primitives_test.py",
+    deps = [":vehicle_motion_primitives_py"],
+)
