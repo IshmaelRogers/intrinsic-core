@@ -1,0 +1,55 @@
+# Vehicle state is present with a snapshot id that is not 64 lowercase hex.
+# The other modalities are absent with approved reasons. STATE_VALID does
+# not repair the id.
+header {
+  sequence: 7
+  source_time {
+    seconds: 1700000000
+  }
+  receive_time {
+    seconds: 1700000000
+    nanos: 100000000
+  }
+  source_id: "bundle_0"
+  frame_id: "sync"
+  clock_domain: "monotonic"
+  validity {
+    state: STATE_VALID
+  }
+}
+max_skew {
+  nanos: 200000000
+}
+vehicle_state {
+  header {
+    sequence: 15
+    source_time {
+      seconds: 1700000000
+    }
+    receive_time {
+      seconds: 1700000000
+      nanos: 1000000
+    }
+    source_id: "estimator_0"
+    frame_id: "body"
+    clock_domain: "monotonic"
+  }
+  state_epoch: 42
+  world_snapshot_id: "not-a-hex"
+}
+absent {
+  modality: OBSERVATION_MODALITY_SONAR_FLS
+  reason: ABSENT_MODALITY_REASON_NOT_CONFIGURED
+}
+absent {
+  modality: OBSERVATION_MODALITY_SONAR_SSS
+  reason: ABSENT_MODALITY_REASON_NOT_CONFIGURED
+}
+absent {
+  modality: OBSERVATION_MODALITY_OPTICAL
+  reason: ABSENT_MODALITY_REASON_SENSOR_OFFLINE
+}
+absent {
+  modality: OBSERVATION_MODALITY_POINT_CLOUD
+  reason: ABSENT_MODALITY_REASON_OUT_OF_RANGE
+}

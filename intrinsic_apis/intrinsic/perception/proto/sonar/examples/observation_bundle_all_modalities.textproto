@@ -1,0 +1,112 @@
+# All modalities present. Measured skew is 180ms, inside the 200ms window.
+# world_snapshot_id is 64 lowercase hex. No modality is absent.
+header {
+  sequence: 7
+  source_time {
+    seconds: 1700000000
+  }
+  receive_time {
+    seconds: 1700000000
+    nanos: 200000000
+  }
+  source_id: "bundle_0"
+  frame_id: "sync"
+  clock_domain: "monotonic"
+  validity {
+    state: STATE_VALID
+  }
+}
+max_skew {
+  nanos: 200000000
+}
+fls {
+  header {
+    sequence: 11
+    source_time {
+      seconds: 1700000000
+    }
+    receive_time {
+      seconds: 1700000000
+      nanos: 10000000
+    }
+    source_id: "fls_0"
+    frame_id: "fls_sonar"
+    clock_domain: "monotonic"
+  }
+  reference_id: "fls-frame-0001"
+  byte_size: 128
+}
+sss {
+  header {
+    sequence: 12
+    source_time {
+      seconds: 1700000000
+      nanos: 50000000
+    }
+    receive_time {
+      seconds: 1700000000
+      nanos: 60000000
+    }
+    source_id: "sss_0"
+    frame_id: "sss_sonar"
+    clock_domain: "monotonic"
+  }
+  reference_id: "sss-frame-0001"
+  byte_size: 256
+}
+optical {
+  header {
+    sequence: 13
+    source_time {
+      seconds: 1700000000
+      nanos: 100000000
+    }
+    receive_time {
+      seconds: 1700000000
+      nanos: 110000000
+    }
+    source_id: "cam_0"
+    frame_id: "optical_cam"
+    clock_domain: "monotonic"
+  }
+  reference_id: "optical-frame-0001"
+  content_type: "image/png"
+  byte_size: 4096
+}
+point_cloud {
+  header {
+    sequence: 14
+    source_time {
+      seconds: 1700000000
+      nanos: 150000000
+    }
+    receive_time {
+      seconds: 1700000000
+      nanos: 160000000
+    }
+    source_id: "lidar_0"
+    frame_id: "points"
+    clock_domain: "monotonic"
+  }
+  reference_id: "points-0001"
+  content_type: "application/octet-stream"
+  byte_size: 8192
+}
+vehicle_state {
+  header {
+    sequence: 15
+    source_time {
+      seconds: 1700000000
+      nanos: 180000000
+    }
+    receive_time {
+      seconds: 1700000000
+      nanos: 190000000
+    }
+    source_id: "estimator_0"
+    frame_id: "body"
+    clock_domain: "monotonic"
+  }
+  state_epoch: 42
+  world_snapshot_id: "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+}

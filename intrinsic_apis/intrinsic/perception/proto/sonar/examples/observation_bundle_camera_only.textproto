@@ -1,0 +1,59 @@
+# Camera-only bundle. Optical is present. FLS, SSS, point cloud, and vehicle
+# state are absent with approved reasons. Skew is inside the 200ms window.
+header {
+  sequence: 7
+  source_time {
+    seconds: 1700000000
+  }
+  receive_time {
+    seconds: 1700000000
+    nanos: 100000000
+  }
+  source_id: "bundle_0"
+  frame_id: "sync"
+  clock_domain: "monotonic"
+  validity {
+    state: STATE_VALID
+  }
+}
+max_skew {
+  nanos: 200000000
+}
+optical {
+  header {
+    sequence: 13
+    source_time {
+      seconds: 1700000000
+      nanos: 50000000
+    }
+    receive_time {
+      seconds: 1700000000
+      nanos: 80000000
+    }
+    source_id: "cam_0"
+    frame_id: "optical_cam"
+    clock_domain: "monotonic"
+    validity {
+      state: STATE_VALID
+    }
+  }
+  reference_id: "optical-frame-0001"
+  content_type: "image/png"
+  byte_size: 4096
+}
+absent {
+  modality: OBSERVATION_MODALITY_SONAR_FLS
+  reason: ABSENT_MODALITY_REASON_NOT_CONFIGURED
+}
+absent {
+  modality: OBSERVATION_MODALITY_SONAR_SSS
+  reason: ABSENT_MODALITY_REASON_SENSOR_OFFLINE
+}
+absent {
+  modality: OBSERVATION_MODALITY_POINT_CLOUD
+  reason: ABSENT_MODALITY_REASON_DROPPED_FOR_SKEW
+}
+absent {
+  modality: OBSERVATION_MODALITY_VEHICLE_STATE
+  reason: ABSENT_MODALITY_REASON_INTENTIONALLY_OMITTED
+}
