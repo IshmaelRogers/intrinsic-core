@@ -19,7 +19,7 @@ Host code lives in this directory. The protobuf contracts in
 | `severity` | 0 | wire severity below |
 | `summary` | empty | short text |
 | `recommended_kind` | `UNSPECIFIED` (0) | `REJECT` (3), or `PROJECT` (2) for envelope clamps |
-| `has_projected_value` | false | true only when `recommended_kind` is `PROJECT` |
+| `has_projected_value` | false | true only when `recommended_kind` is `PROJECT`, or for the audit-only `clearance.min` below-min result |
 | `projected_value` | 0.0 | clamped scalar in the rule's unit (meters, m/s, radians, or rad/s) when projected, else 0.0 |
 
 ## Rule ids and severities
@@ -37,6 +37,7 @@ Host code lives in this directory. The protobuf contracts in
 | Descent rate, clamp | `rate.descent.max` | `SAFETY_FINDING_SEVERITY_ERROR` (3) | `PROJECT` (2) |
 | Ascent rate, clamp | `rate.ascent.max` | `SAFETY_FINDING_SEVERITY_ERROR` (3) | `PROJECT` (2) |
 | AABB geofence, hard fence | `geofence.aabb` | `SAFETY_FINDING_SEVERITY_ERROR` (3) outside, `SAFETY_FINDING_SEVERITY_CRITICAL` (4) unusable input | `REJECT` (3), never `PROJECT` |
+| Minimum clearance, hard threshold | `clearance.min` | `SAFETY_FINDING_SEVERITY_ERROR` (3) below min, `SAFETY_FINDING_SEVERITY_CRITICAL` (4) unusable input | `REJECT` (3), never `PROJECT` |
 | Envelope unknown or unusable input | every envelope rule above | `SAFETY_FINDING_SEVERITY_CRITICAL` (4) | `REJECT` (3) | `SAFETY_FINDING_SEVERITY_CRITICAL` (4) | `REJECT` (3) |
 
 ## `state.age`
@@ -143,3 +144,27 @@ and is never projected or clamped to the nearest point, so
   a thread-local ring buffer rather than a string literal. It stays valid
   until at least seven further outside results on the same thread. Copy it to
   keep it longer.
+
+## `clearance.min`
+
+`EvaluateClearanceRule(sample, min_clearance_m = 0.5)` in `clearance_rule` (C++
+and Python, with paired tests) checks one injected `ClearanceSample`
+(`frame_id`, `source`, `clearance_m`, `snapshot_usable`). `source` is
+`kObstacle`, `kSeafloor`, or `kUnknownMap`. The caller supplies the minimum
+predicted clearance in meters. No World, occupancy, or SDF read, planner call,
+proto, or aggregation is involved, and no path is rewritten.
+
+- `kUnknownMap`, `snapshot_usable == false`, an empty `frame_id`, a non-finite
+  `clearance_m` or `min_clearance_m`, or `min_clearance_m <= 0` is CRITICAL
+  `REJECT`. An unknown map fails closed even when `clearance_m` would pass.
+- `clearance_m >= min_clearance_m` is compliant, so equal to the limit is OK.
+- `clearance_m < min_clearance_m` is ERROR `REJECT` with summary
+  `clearance below min source=<obstacle|seafloor> clearance_m=<value>`.
+- On that below-min result `has_projected_value` is true and `projected_value`
+  is the observed `clearance_m`. This is an audit value for the finding, not a
+  clamp target: the decision kind is `REJECT`, never `PROJECT`. This is the one
+  rule where `has_projected_value` is set without `PROJECT`.
+- In C++ the below-min summary contains the measured value, so it is kept in a
+  thread-local ring buffer rather than a string literal. It stays valid until
+  at least seven further below-min results on the same thread. Copy it to keep
+  it longer.
