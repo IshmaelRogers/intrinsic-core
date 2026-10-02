@@ -1,0 +1,46 @@
+# Deadline is strictly before header.source_time. Rejected as kDeadline.
+# STATE_VALID does not repair it.
+header {
+  sequence: 21
+  source_time {
+    seconds: 1700000000
+  }
+  receive_time {
+    seconds: 1700000000
+    nanos: 1000000
+  }
+  source_id: "planner_0"
+  frame_id: "world_enu"
+  clock_domain: "monotonic"
+  validity {
+    state: STATE_VALID
+  }
+}
+oip_request {
+  model {
+    model_name: "pose_estimator"
+    model_version: "3"
+  }
+  request_id: "req-0001"
+}
+state_epoch: 42
+world_snapshot_id: "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+deadline {
+  seconds: 1699999999
+  nanos: 999999999
+}
+validity_horizon {
+  seconds: 2
+}
+confidence: 0.9
+uncertainty: 0.05
+input_digest: "sha256:abababababababababababababababababababababababababababababababab"
+provenance {
+  model_id: "pose_estimator"
+  model_version: "3"
+  digest: "sha256:efefefefefefefefefefefefefefefefefefefefefefefefefefefefefefefef"
+}
+metadata {
+  key: "producer"
+  value: "fixture"
+}

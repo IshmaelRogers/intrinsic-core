@@ -1,0 +1,139 @@
+// Copyright 2026 Intrinsic Innovation LLC
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     https://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
+syntax = "proto3";
+
+package intrinsic_proto.inference;
+
+import "google/protobuf/duration.proto";
+import "google/protobuf/timestamp.proto";
+import "intrinsic/embodiment/proto/stamped_header.proto";
+import "intrinsic/embodiment/proto/model_provenance.proto";
+
+option go_package = "intrinsic/inference/proto/inference_envelope_go_proto";
+
+// Identifies an Open Inference Protocol (OIP) model by name and version.
+//
+// This message carries identifiers only. It does not embed or import
+// ModelInferRequest, ModelInferResponse, tensors, or raw contents. The OIP
+// payload and wire stay unchanged and travel on their own channel.
+message OipModelIdentifier {
+  // OIP model name. Required non-empty when the parent envelope is engaged.
+  string model_name = 1;
+
+  // OIP model version. Empty is tolerated and means unspecified or latest.
+  string model_version = 2;
+}
+
+// Identifies one OIP inference request by model and request id.
+message OipRequestIdentifier {
+  OipModelIdentifier model = 1;
+
+  // OIP request id. Required non-empty when the parent envelope is engaged.
+  string request_id = 2;
+}
+
+// Identifies the OIP inference result that answers a request.
+message OipResultIdentifier {
+  OipModelIdentifier model = 1;
+
+  // Echo of the request id. Required non-empty when the parent result is
+  // engaged.
+  string request_id = 2;
+}
+
+// Physical AI context around one OIP inference request: epoch, snapshot,
+// deadline, validity horizon, provenance, confidence, uncertainty, and an
+// input digest. Wraps OIP request identifiers only; it does not replace or
+// modify OIP.
+//
+// An empty message is not engaged. When any field is set, the host
+// validator requires header.frame_id, header.source_time, deadline,
+// validity_horizon, the OIP identifiers, provenance.model_id, and
+// input_digest. See README.md.
+//
+// Append fields. Reserve removed tags and names.
+message InferenceEnvelope {
+  // Creation stamp. source_time is the creation time that the deadline is
+  // checked against. frame_id is required when engaged.
+  intrinsic_proto.embodiment.StampedHeader header = 1;
+
+  OipRequestIdentifier oip_request = 2;
+
+  // Estimator epoch (VehicleState.estimator_epoch) the input was taken at.
+  // Zero is allowed.
+  uint64 state_epoch = 3;
+
+  // Optional World snapshot latch (WorldSnapshotDescriptor.snapshot_id).
+  // Empty is allowed. Otherwise exactly 64 lowercase hex characters.
+  string world_snapshot_id = 4;
+
+  // Latest time a result is still wanted. Required when engaged. Must not be
+  // before header.source_time. Equal is allowed.
+  google.protobuf.Timestamp deadline = 5;
+
+  // How long a result stays valid once produced. Required when engaged.
+  // Must be non-negative.
+  google.protobuf.Duration validity_horizon = 6;
+
+  // Optional. Unset is not zero. When set: finite and in [0, 1].
+  optional double confidence = 7;
+
+  // Optional scalar uncertainty. Unset is not zero. When set: finite and
+  // >= 0. There is no covariance type here.
+  optional double uncertainty = 8;
+
+  // Digest of the OIP input. Required non-empty when engaged.
+  string input_digest = 9;
+
+  // Which model produced or will produce the result. Required when engaged;
+  // provenance.model_id must be non-empty.
+  intrinsic_proto.embodiment.ModelProvenance provenance = 10;
+
+  // Free-form producer metadata. Always tolerated, never inspected.
+  map<string, string> metadata = 100;
+}
+
+// Physical AI context around one OIP inference result. Same layout as
+// InferenceEnvelope, with the OIP result id and an output digest.
+//
+// Append fields. Reserve removed tags and names.
+message InferenceResult {
+  intrinsic_proto.embodiment.StampedHeader header = 1;
+
+  OipResultIdentifier oip_result = 2;
+
+  uint64 state_epoch = 3;
+
+  string world_snapshot_id = 4;
+
+  google.protobuf.Timestamp deadline = 5;
+
+  google.protobuf.Duration validity_horizon = 6;
+
+  optional double confidence = 7;
+
+  optional double uncertainty = 8;
+
+  // Digest of the OIP input that produced this result. Required non-empty
+  // when engaged.
+  string input_digest = 9;
+
+  // Digest of the OIP output. Required non-empty when engaged.
+  string output_digest = 10;
+
+  intrinsic_proto.embodiment.ModelProvenance provenance = 11;
+
+  map<string, string> metadata = 100;
+}
