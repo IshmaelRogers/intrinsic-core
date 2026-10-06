@@ -14,12 +14,15 @@
 
 #include "intrinsic/icon/control/parts/feature_interfaces/vehicle_body_features.h"
 
+#include <algorithm>
 #include <cstdint>
 #include <limits>
 #include <memory>
 #include <optional>
+#include <string>
 #include <string_view>
 #include <utility>
+#include <vector>
 
 #include "absl/container/fixed_array.h"
 #include "absl/status/status.h"
@@ -77,6 +80,13 @@ BodyWrenchSample Wrench(double force_x, uint64_t sequence) {
   sample.force_x_n = force_x;
   return sample;
 }
+
+std::string_view IdText(const FixedId64& id) {
+  return std::string_view(id.data, id.length);
+}
+
+constexpr std::string_view kWatchdogMessage = "command watchdog requires reset";
+constexpr Duration kCommandAgeLimit = Milliseconds(50);
 
 VehicleLimitsSample ForceTorqueLimits(double force, double torque) {
   VehicleLimitsSample sample;
@@ -184,6 +194,47 @@ class VehicleBodyFeaturesTest : public ::testing::Test {
     const auto params = ReadParams(safety);
     ASSERT_THAT(state_->ReadStatus(params), RealtimeIsOk());
     ASSERT_THAT(wrench_->ReadStatus(params), RealtimeIsOk());
+  }
+
+  // Body-state age uses the producer stamp, not the command stamp. Refresh
+  // it before prepare so a command-age case is not reported as stale state.
+  void PrepareFresh(SafetyStatus safety = {}) {
+    state_editor_->UpdatedAt(Clock::Now());
+    Prepare(safety);
+  }
+
+  void ExpectWatchdog(const RealtimeStatus& status) {
+    EXPECT_EQ(status.code(), absl::StatusCode::kDeadlineExceeded);
+    EXPECT_EQ(status.message(), kWatchdogMessage);
+  }
+
+  void ExpectNeutral() {
+    EXPECT_DOUBLE_EQ((*wrench_editor_)->force_x_n(), 0.0);
+    EXPECT_DOUBLE_EQ((*wrench_editor_)->force_y_n(), 0.0);
+    EXPECT_DOUBLE_EQ((*wrench_editor_)->force_z_n(), 0.0);
+    EXPECT_DOUBLE_EQ((*wrench_editor_)->torque_x_n_m(), 0.0);
+    EXPECT_DOUBLE_EQ((*wrench_editor_)->torque_y_n_m(), 0.0);
+    EXPECT_DOUBLE_EQ((*wrench_editor_)->torque_z_n_m(), 0.0);
+    EXPECT_EQ(intrinsic_fbs::ViewFixedString64(*(*wrench_editor_)->frame_id()),
+              "body");
+    EXPECT_EQ(
+        intrinsic_fbs::ViewFixedString64(*(*wrench_editor_)->clock_domain()),
+        "monotonic");
+    EXPECT_TRUE((*wrench_editor_)->validity_present());
+    EXPECT_EQ((*wrench_editor_)->validity_state(), 1);
+
+    const BodyWrenchSample& previous = wrench_->PreviousBodyWrench();
+    EXPECT_TRUE(previous.applied);
+    EXPECT_DOUBLE_EQ(previous.force_x_n, 0.0);
+    EXPECT_DOUBLE_EQ(previous.force_y_n, 0.0);
+    EXPECT_DOUBLE_EQ(previous.force_z_n, 0.0);
+    EXPECT_DOUBLE_EQ(previous.torque_x_n_m, 0.0);
+    EXPECT_DOUBLE_EQ(previous.torque_y_n_m, 0.0);
+    EXPECT_DOUBLE_EQ(previous.torque_z_n_m, 0.0);
+    EXPECT_EQ(IdText(previous.frame_id), "body");
+    EXPECT_EQ(IdText(previous.clock_domain), "monotonic");
+    EXPECT_TRUE(previous.validity_present);
+    EXPECT_EQ(previous.validity_state, 1);
   }
 
   std::shared_ptr<ManualClock> clock_;
@@ -442,6 +493,382 @@ TEST_F(VehicleBodyFeaturesTest, MissingCapabilityAndBadLimitsAreRejected) {
   auto wider = VehicleLimitsFeature::Create(ForceTorqueLimits(30.0, 1.0),
                                             ForceTorqueLimits(20.0, 8.0));
   EXPECT_EQ(wider.status().code(), absl::StatusCode::kFailedPrecondition);
+}
+
+// Contract 1. Each inter-apply gap equals max_command_age, which is still
+// inside the strict limit, and each pending command is applied 10 ms later.
+TEST_F(VehicleBodyFeaturesTest, FreshCommandsWithinAgeLimitDoNotLatch) {
+  constexpr int kCycles = 5;
+  for (int cycle = 0; cycle < kCycles; ++cycle) {
+    PrepareFresh();
+    const uint64_t sequence = static_cast<uint64_t>(cycle + 1);
+    const double force = 0.5 * sequence;
+    BodyWrenchSample command = Wrench(force, sequence);
+    command.torque_z_n_m = 0.25 * sequence;
+    ASSERT_THAT(wrench_->SetBodyWrench(command), RealtimeIsOk());
+    clock_->Advance(Milliseconds(10));
+    ASSERT_THAT(wrench_->ApplyCommand(ApplyParams()), RealtimeIsOk());
+    EXPECT_DOUBLE_EQ((*wrench_editor_)->force_x_n(), force);
+    EXPECT_DOUBLE_EQ((*wrench_editor_)->torque_z_n_m(), 0.25 * sequence);
+    EXPECT_EQ((*wrench_editor_)->sequence(), sequence);
+    clock_->Advance(Milliseconds(40));
+  }
+}
+
+// Contract 2. Holding a command at exactly max_command_age keeps it.
+TEST_F(VehicleBodyFeaturesTest, HeldCommandAtExactAgeLimitStaysApplied) {
+  PrepareFresh();
+  ASSERT_THAT(wrench_->SetBodyWrench(Wrench(4.0, 1)), RealtimeIsOk());
+  ASSERT_THAT(wrench_->ApplyCommand(ApplyParams()), RealtimeIsOk());
+
+  clock_->Advance(kCommandAgeLimit);
+  PrepareFresh();
+  ASSERT_THAT(wrench_->ApplyCommand(ApplyParams()), RealtimeIsOk());
+  EXPECT_DOUBLE_EQ((*wrench_editor_)->force_x_n(), 4.0);
+  EXPECT_EQ((*wrench_editor_)->sequence(), 1);
+}
+
+// Contract 3. age == max_command_age is accepted. One nanosecond later
+// latches. The same pair applies to a pending command and a held command.
+TEST_F(VehicleBodyFeaturesTest, CommandAgeBoundaryIsStrictForPendingAndHeld) {
+  PrepareFresh();
+  ASSERT_THAT(wrench_->SetBodyWrench(Wrench(1.25, 1)), RealtimeIsOk());
+  clock_->Advance(kCommandAgeLimit);
+  ASSERT_THAT(wrench_->ApplyCommand(ApplyParams()), RealtimeIsOk());
+  EXPECT_DOUBLE_EQ((*wrench_editor_)->force_x_n(), 1.25);
+
+  clock_->Advance(kCommandAgeLimit);
+  PrepareFresh();
+  ASSERT_THAT(wrench_->ApplyCommand(ApplyParams()), RealtimeIsOk());
+  EXPECT_DOUBLE_EQ((*wrench_editor_)->force_x_n(), 1.25);
+  EXPECT_EQ((*wrench_editor_)->sequence(), 1);
+
+  clock_->Advance(Nanoseconds(1));
+  PrepareFresh();
+  ExpectWatchdog(wrench_->ApplyCommand(ApplyParams()));
+  ExpectNeutral();
+
+  ASSERT_THAT(wrench_->Reset(), RealtimeIsOk());
+  PrepareFresh();
+  ASSERT_THAT(wrench_->SetBodyWrench(Wrench(2.5, 2)), RealtimeIsOk());
+  clock_->Advance(kCommandAgeLimit + Nanoseconds(1));
+  ExpectWatchdog(wrench_->ApplyCommand(ApplyParams()));
+  ExpectNeutral();
+}
+
+// Contract 4. Expiry writes neutral and stays latched across later cycles,
+// including cycles that submit a valid wrench.
+TEST_F(VehicleBodyFeaturesTest, ExpiredCommandLatchesNeutralUntilReset) {
+  PrepareFresh();
+  BodyWrenchSample command = Wrench(3.0, 1);
+  command.force_y_n = 1.0;
+  command.force_z_n = -1.0;
+  command.torque_x_n_m = 0.5;
+  command.torque_y_n_m = -0.5;
+  command.torque_z_n_m = 0.25;
+  ASSERT_THAT(wrench_->SetBodyWrench(command), RealtimeIsOk());
+  ASSERT_THAT(wrench_->ApplyCommand(ApplyParams()), RealtimeIsOk());
+
+  clock_->Advance(kCommandAgeLimit + Nanoseconds(1));
+  PrepareFresh();
+  ExpectWatchdog(wrench_->ApplyCommand(ApplyParams()));
+  ExpectNeutral();
+
+  for (int cycle = 0; cycle < 3; ++cycle) {
+    clock_->Advance(Milliseconds(10));
+    PrepareFresh();
+    if (cycle > 0) {
+      ExpectWatchdog(wrench_->SetBodyWrench(
+          Wrench(8.0, static_cast<uint64_t>(cycle + 1))));
+    }
+    ExpectWatchdog(wrench_->ApplyCommand(ApplyParams()));
+    ExpectNeutral();
+  }
+}
+
+// Contract 5. Reset clears the latch. The next advancing sequence is
+// applied, and a sequence that does not advance is still rejected.
+TEST_F(VehicleBodyFeaturesTest, ResetClearsLatchAndStillRejectsStaleSequence) {
+  PrepareFresh();
+  ASSERT_THAT(wrench_->SetBodyWrench(Wrench(2.0, 4)), RealtimeIsOk());
+  ASSERT_THAT(wrench_->ApplyCommand(ApplyParams()), RealtimeIsOk());
+  clock_->Advance(kCommandAgeLimit + Nanoseconds(1));
+  PrepareFresh();
+  ExpectWatchdog(wrench_->ApplyCommand(ApplyParams()));
+
+  ASSERT_THAT(wrench_->Reset(), RealtimeIsOk());
+  PrepareFresh();
+  const RealtimeStatus same = wrench_->SetBodyWrench(Wrench(3.0, 4));
+  EXPECT_EQ(same.code(), absl::StatusCode::kInvalidArgument);
+  EXPECT_EQ(same.message(), "wrench sequence did not advance");
+  ExpectNeutral();
+
+  ASSERT_THAT(wrench_->SetBodyWrench(Wrench(4.0, 5)), RealtimeIsOk());
+  ASSERT_THAT(wrench_->ApplyCommand(ApplyParams()), RealtimeIsOk());
+  EXPECT_DOUBLE_EQ((*wrench_editor_)->force_x_n(), 4.0);
+  EXPECT_EQ((*wrench_editor_)->sequence(), 5);
+}
+
+// Contract 6. A clock step to before the command stamp is expiry. Prepare
+// is not repeated after the step: ReadStatus would also age the body state,
+// and that lower fault must not be what this case observes.
+TEST_F(VehicleBodyFeaturesTest, BackwardClockLatchesWatchdog) {
+  PrepareFresh();
+  ASSERT_THAT(wrench_->SetBodyWrench(Wrench(1.5, 1)), RealtimeIsOk());
+  clock_->Set(Clock::Now() - Nanoseconds(1));
+  ExpectWatchdog(wrench_->ApplyCommand(ApplyParams()));
+  ExpectNeutral();
+
+  ASSERT_THAT(wrench_->Reset(), RealtimeIsOk());
+  PrepareFresh();
+  ASSERT_THAT(wrench_->SetBodyWrench(Wrench(2.5, 2)), RealtimeIsOk());
+  ASSERT_THAT(wrench_->ApplyCommand(ApplyParams()), RealtimeIsOk());
+  EXPECT_DOUBLE_EQ((*wrench_editor_)->force_x_n(), 2.5);
+
+  clock_->Set(Clock::Now() - Nanoseconds(1));
+  ExpectWatchdog(wrench_->ApplyCommand(ApplyParams()));
+  ExpectNeutral();
+}
+
+// Contract 7. The watchdog stays disarmed until a command has been applied.
+TEST_F(VehicleBodyFeaturesTest, IdleFeatureStaysNeutralWithoutLatching) {
+  clock_->Advance(Seconds(5));
+  PrepareFresh();
+  ASSERT_THAT(wrench_->ApplyCommand(ApplyParams()), RealtimeIsOk());
+  ExpectNeutral();
+
+  clock_->Advance(Seconds(5));
+  PrepareFresh();
+  ASSERT_THAT(wrench_->ApplyCommand(ApplyParams()), RealtimeIsOk());
+  ExpectNeutral();
+
+  ASSERT_THAT(wrench_->SetBodyWrench(Wrench(1.0, 1)), RealtimeIsOk());
+  ASSERT_THAT(wrench_->ApplyCommand(ApplyParams()), RealtimeIsOk());
+  EXPECT_DOUBLE_EQ((*wrench_editor_)->force_x_n(), 1.0);
+}
+
+// Contract 8. Safety and invalid state outrank a latched watchdog. A stale
+// body state does not.
+TEST_F(VehicleBodyFeaturesTest, HigherFaultsOutrankLatchedWatchdog) {
+  PrepareFresh();
+  ASSERT_THAT(wrench_->SetBodyWrench(Wrench(2.0, 1)), RealtimeIsOk());
+  ASSERT_THAT(wrench_->ApplyCommand(ApplyParams()), RealtimeIsOk());
+  clock_->Advance(kCommandAgeLimit + Nanoseconds(1));
+  PrepareFresh();
+  ExpectWatchdog(wrench_->ApplyCommand(ApplyParams()));
+
+  (*state_editor_)->mutate_validity_state(2);
+  PrepareFresh();
+  const RealtimeStatus invalid = wrench_->SetBodyWrench(Wrench(4.0, 2));
+  EXPECT_EQ(invalid.code(), absl::StatusCode::kFailedPrecondition);
+  EXPECT_EQ(invalid.message(), "body state is invalid");
+  const RealtimeStatus invalid_apply = wrench_->ApplyCommand(ApplyParams());
+  EXPECT_EQ(invalid_apply.code(), absl::StatusCode::kFailedPrecondition);
+  EXPECT_EQ(invalid_apply.message(), "body state is invalid");
+  ExpectNeutral();
+
+  (*state_editor_)->mutate_validity_state(1);
+  SafetyStatus emergency;
+  emergency.estop_button_status = intrinsic_fbs::ButtonStatus::ENGAGED;
+  PrepareFresh(emergency);
+  const RealtimeStatus safety = wrench_->ApplyCommand(ApplyParams(emergency));
+  EXPECT_EQ(safety.code(), absl::StatusCode::kFailedPrecondition);
+  EXPECT_EQ(safety.message(), "safety emergency");
+  ExpectNeutral();
+
+  clock_->Advance(Seconds(1));
+  Prepare();
+  const RealtimeStatus stale_cycle = wrench_->ApplyCommand(ApplyParams());
+  ExpectWatchdog(stale_cycle);
+  ExpectWatchdog(wrench_->SetBodyWrench(Wrench(1.0, 3)));
+  ExpectNeutral();
+}
+
+// Contract 9.
+TEST_F(VehicleBodyFeaturesTest, ScriptedClockAndCommandsAreDeterministic) {
+  struct ScriptResult {
+    std::vector<int> codes;
+    std::vector<std::string> messages;
+    std::vector<double> force_x;
+    std::vector<double> force_y;
+    std::vector<double> force_z;
+    std::vector<double> torque_x;
+    std::vector<double> torque_y;
+    std::vector<double> torque_z;
+    std::vector<std::string> frames;
+    std::vector<std::string> domains;
+  };
+
+  const auto run = [this]() {
+    ScriptResult result;
+    clock_->Set(Time(Seconds(1000)));
+    FillValidState(**state_editor_);
+    state_editor_->UpdatedAt(Clock::Now());
+    wrench_.reset();
+    auto writer = hw_->GetMutableInterfaceHandle<intrinsic_fbs::BodyWrench>(
+        "body_wrench");
+    EXPECT_TRUE(writer.ok());
+    if (!writer.ok()) {
+      return result;
+    }
+    VehicleFeatureCycleConfig config;
+    config.max_command_age = kCommandAgeLimit;
+    config.max_state_age = kCommandAgeLimit;
+    auto created = BodyWrenchFeature::Create(std::move(*writer), &*state_,
+                                             &*limits_, config);
+    EXPECT_TRUE(created.ok());
+    if (!created.ok()) {
+      return result;
+    }
+    wrench_.emplace(std::move(*created));
+
+    const auto push_status = [&result](const RealtimeStatus& status) {
+      result.codes.push_back(static_cast<int>(status.code()));
+      result.messages.emplace_back(status.message());
+    };
+    const auto push_wrench = [&result, this]() {
+      result.force_x.push_back((*wrench_editor_)->force_x_n());
+      result.force_y.push_back((*wrench_editor_)->force_y_n());
+      result.force_z.push_back((*wrench_editor_)->force_z_n());
+      result.torque_x.push_back((*wrench_editor_)->torque_x_n_m());
+      result.torque_y.push_back((*wrench_editor_)->torque_y_n_m());
+      result.torque_z.push_back((*wrench_editor_)->torque_z_n_m());
+      result.frames.emplace_back(
+          intrinsic_fbs::ViewFixedString64(*(*wrench_editor_)->frame_id()));
+      result.domains.emplace_back(
+          intrinsic_fbs::ViewFixedString64(*(*wrench_editor_)->clock_domain()));
+    };
+
+    PrepareFresh();
+    push_status(wrench_->SetBodyWrench(Wrench(1.0, 1)));
+    push_status(wrench_->ApplyCommand(ApplyParams()));
+    push_wrench();
+
+    clock_->Advance(Milliseconds(25));
+    PrepareFresh();
+    BodyWrenchSample second = Wrench(2.0, 2);
+    second.torque_y_n_m = -0.5;
+    push_status(wrench_->SetBodyWrench(second));
+    push_status(wrench_->ApplyCommand(ApplyParams()));
+    push_wrench();
+
+    clock_->Advance(kCommandAgeLimit);
+    PrepareFresh();
+    push_status(wrench_->ApplyCommand(ApplyParams()));
+    push_wrench();
+
+    clock_->Advance(Nanoseconds(1));
+    PrepareFresh();
+    push_status(wrench_->ApplyCommand(ApplyParams()));
+    push_wrench();
+
+    clock_->Advance(Milliseconds(5));
+    PrepareFresh();
+    push_status(wrench_->SetBodyWrench(Wrench(9.0, 3)));
+    push_status(wrench_->ApplyCommand(ApplyParams()));
+    push_wrench();
+
+    EXPECT_THAT(wrench_->Reset(), RealtimeIsOk());
+    PrepareFresh();
+    push_status(wrench_->SetBodyWrench(Wrench(3.0, 2)));
+    push_status(wrench_->SetBodyWrench(Wrench(4.0, 3)));
+    push_status(wrench_->ApplyCommand(ApplyParams()));
+    push_wrench();
+
+    clock_->Set(Clock::Now() - Nanoseconds(1));
+    push_status(wrench_->ApplyCommand(ApplyParams()));
+    push_wrench();
+    return result;
+  };
+
+  const ScriptResult first = run();
+  const ScriptResult second = run();
+  EXPECT_EQ(first.codes, second.codes);
+  EXPECT_EQ(first.messages, second.messages);
+  EXPECT_EQ(first.force_x, second.force_x);
+  EXPECT_EQ(first.force_y, second.force_y);
+  EXPECT_EQ(first.force_z, second.force_z);
+  EXPECT_EQ(first.torque_x, second.torque_x);
+  EXPECT_EQ(first.torque_y, second.torque_y);
+  EXPECT_EQ(first.torque_z, second.torque_z);
+  EXPECT_EQ(first.frames, second.frames);
+  EXPECT_EQ(first.domains, second.domains);
+  EXPECT_FALSE(first.codes.empty());
+  EXPECT_NE(
+      std::find(first.messages.begin(), first.messages.end(), kWatchdogMessage),
+      first.messages.end());
+}
+
+// Contract 10. Hold, expiry, latched rejection, reset, and resume do not
+// allocate on the cycle path.
+TEST_F(VehicleBodyFeaturesTest, WatchdogCyclePathsDoNotAllocate) {
+  access_.emplace(properties_in_, properties_out_);
+  const RealtimePartInterface::ReadStatusParameters read{*access_,
+                                                         SafetyStatus{}};
+  const RealtimePartInterface::ApplyCommandParameters apply{*access_,
+                                                            SafetyStatus{}};
+  const BodyWrenchSample first = Wrench(1.5, 1);
+  const BodyWrenchSample next = Wrench(2.5, 2);
+  ASSERT_THAT(state_->ReadStatus(read), RealtimeIsOk());
+  ASSERT_THAT(wrench_->ReadStatus(read), RealtimeIsOk());
+
+  RealtimeStatus idle_apply;
+  RealtimeStatus set_ok;
+  RealtimeStatus apply_ok;
+  RealtimeStatus hold_read_state;
+  RealtimeStatus hold_read_wrench;
+  RealtimeStatus hold;
+  RealtimeStatus expiry_read_state;
+  RealtimeStatus expiry_read_wrench;
+  RealtimeStatus expired;
+  RealtimeStatus latched_set;
+  RealtimeStatus latched_apply;
+  RealtimeStatus reset;
+  RealtimeStatus resumed_set;
+  RealtimeStatus resumed_apply;
+  double held_force = -1.0;
+  double latched_force = -1.0;
+
+  IF_INTRINSIC_MALLOC_TEST_INIT_COUNTER();
+  idle_apply = wrench_->ApplyCommand(apply);
+  set_ok = wrench_->SetBodyWrench(first);
+  apply_ok = wrench_->ApplyCommand(apply);
+  clock_->Advance(kCommandAgeLimit);
+  state_editor_->UpdatedAt(Clock::Now());
+  hold_read_state = state_->ReadStatus(read);
+  hold_read_wrench = wrench_->ReadStatus(read);
+  hold = wrench_->ApplyCommand(apply);
+  held_force = (*wrench_editor_)->force_x_n();
+  clock_->Advance(Nanoseconds(1));
+  state_editor_->UpdatedAt(Clock::Now());
+  expiry_read_state = state_->ReadStatus(read);
+  expiry_read_wrench = wrench_->ReadStatus(read);
+  expired = wrench_->ApplyCommand(apply);
+  latched_force = (*wrench_editor_)->force_x_n();
+  latched_set = wrench_->SetBodyWrench(next);
+  latched_apply = wrench_->ApplyCommand(apply);
+  reset = wrench_->Reset();
+  resumed_set = wrench_->SetBodyWrench(next);
+  resumed_apply = wrench_->ApplyCommand(apply);
+  IF_INTRINSIC_MALLOC_TEST_EXPECT_NO_ALLOCATIONS();
+
+  EXPECT_THAT(idle_apply, RealtimeIsOk());
+  EXPECT_THAT(set_ok, RealtimeIsOk());
+  EXPECT_THAT(apply_ok, RealtimeIsOk());
+  EXPECT_THAT(hold_read_state, RealtimeIsOk());
+  EXPECT_THAT(hold_read_wrench, RealtimeIsOk());
+  EXPECT_THAT(hold, RealtimeIsOk());
+  EXPECT_DOUBLE_EQ(held_force, 1.5);
+  EXPECT_THAT(expiry_read_state, RealtimeIsOk());
+  EXPECT_THAT(expiry_read_wrench, RealtimeIsOk());
+  ExpectWatchdog(expired);
+  EXPECT_DOUBLE_EQ(latched_force, 0.0);
+  ExpectWatchdog(latched_set);
+  ExpectWatchdog(latched_apply);
+  EXPECT_THAT(reset, RealtimeIsOk());
+  EXPECT_THAT(resumed_set, RealtimeIsOk());
+  EXPECT_THAT(resumed_apply, RealtimeIsOk());
+  EXPECT_DOUBLE_EQ((*wrench_editor_)->force_x_n(), 2.5);
 }
 
 }  // namespace

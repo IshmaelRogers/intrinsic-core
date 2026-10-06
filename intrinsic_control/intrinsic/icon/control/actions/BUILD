@@ -865,6 +865,7 @@ cc_test_and_malloc_test(
         "//intrinsic_control/intrinsic/icon/control:streaming_io_storage",
         "//intrinsic_control/intrinsic/icon/control/parts:feature_interface_registry",
         "//intrinsic_control/intrinsic/icon/control/parts:feature_interfaces",
+        "//intrinsic_control/intrinsic/icon/control/parts/feature_interfaces:vehicle_body_features",
         "//intrinsic_control/intrinsic/icon/control/parts/testing:fake_vehicle_realtime_part",
         "//intrinsic_control/intrinsic/icon/server:signature_utils",
         "//intrinsic_control/intrinsic/icon/testing:malloc_test",
