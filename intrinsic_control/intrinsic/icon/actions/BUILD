@@ -247,6 +247,24 @@ cc_library(
     ],
 )
 
+cc_library(
+    name = "body_wrench_action_info",
+    hdrs = ["body_wrench_action_info.h"],
+    deps = ["@intrinsic_apis//intrinsic/vehicle/proto:vehicle_command_cc_proto"],
+)
+
+cc_library(
+    name = "body_wrench_action_signature",
+    srcs = ["body_wrench_action_signature.cc"],
+    hdrs = ["body_wrench_action_signature.h"],
+    deps = [
+        ":action_utils",
+        ":body_wrench_action_info",
+        "@abseil-cpp//absl/log:check",
+        "@intrinsic_apis//intrinsic/icon/proto/v1:types_cc_proto",
+    ],
+)
+
 proto_library(
     name = "joint_jogging_proto",
     srcs = ["joint_jogging.proto"],

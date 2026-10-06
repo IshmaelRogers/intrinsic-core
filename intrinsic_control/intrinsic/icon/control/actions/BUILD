@@ -13,6 +13,7 @@
 # limitations under the License.
 
 load("//bazel:cc_macros.bzl", "cc_library")
+load("//intrinsic_control/intrinsic/icon/testing:cc_test_and_malloc_test.bzl", "cc_test_and_malloc_test")
 
 package(
     default_visibility = [
@@ -793,4 +794,85 @@ cc_library(
         "//intrinsic_control/intrinsic/icon/control:rtcl_action_factory_registry",
     ],
     alwayslink = True,
+)
+
+cc_library(
+    name = "body_wrench_action",
+    srcs = ["body_wrench_action.cc"],
+    hdrs = ["body_wrench_action.h"],
+    deps = [
+        "//intrinsic/util/status:status_macros",
+        "//intrinsic_control/intrinsic/icon/actions:body_wrench_action_info",
+        "//intrinsic_control/intrinsic/icon/actions:body_wrench_action_signature",
+        "//intrinsic_control/intrinsic/icon/cc_client:condition",
+        "//intrinsic_control/intrinsic/icon/control:action_factory_context",
+        "//intrinsic_control/intrinsic/icon/control:realtime_slot_map",
+        "//intrinsic_control/intrinsic/icon/control:rtcl_action",
+        "//intrinsic_control/intrinsic/icon/control:slot_types",
+        "//intrinsic_control/intrinsic/icon/control:streaming_io_realtime",
+        "//intrinsic_control/intrinsic/icon/control:streaming_io_types",
+        "//intrinsic_control/intrinsic/icon/control/parts:feature_interfaces",
+        "//intrinsic_control/intrinsic/icon/utils:realtime_guard",
+        "//intrinsic_control/intrinsic/icon/utils:realtime_status",
+        "//intrinsic_control/intrinsic/icon/utils:realtime_status_macro",
+        "//intrinsic_control/intrinsic/icon/utils:realtime_status_or",
+        "@abseil-cpp//absl/algorithm:container",
+        "@abseil-cpp//absl/status",
+        "@abseil-cpp//absl/status:statusor",
+        "@abseil-cpp//absl/strings",
+        "@abseil-cpp//absl/strings:string_view",
+        "@intrinsic_apis//intrinsic/icon/proto/v1:types_cc_proto",
+    ],
+)
+
+# Opt-in registration. No default action set or server plugin list depends on
+# this target.
+cc_library(
+    name = "body_wrench_action_register",
+    srcs = ["body_wrench_action_register.cc"],
+    visibility = ["//visibility:private"],
+    deps = [
+        ":body_wrench_action",
+        "//intrinsic_control/intrinsic/icon/actions:body_wrench_action_info",
+        "//intrinsic_control/intrinsic/icon/actions:body_wrench_action_signature",
+        "//intrinsic_control/intrinsic/icon/control:rtcl_action_factory_registry",
+    ],
+    alwayslink = True,
+)
+
+cc_test_and_malloc_test(
+    name = "body_wrench_action_test",
+    size = "small",
+    srcs = ["body_wrench_action_test.cc"],
+    deps = [
+        ":body_wrench_action",
+        ":test_helpers",
+        "//intrinsic_control/intrinsic/icon/actions:body_wrench_action_info",
+        "//intrinsic_control/intrinsic/icon/actions:body_wrench_action_signature",
+        "//intrinsic_control/intrinsic/icon/common:id_types",
+        "//intrinsic_control/intrinsic/icon/control:action_factory_context",
+        "//intrinsic_control/intrinsic/icon/control:realtime_signal_access",
+        "//intrinsic_control/intrinsic/icon/control:realtime_signal_storage",
+        "//intrinsic_control/intrinsic/icon/control:realtime_slot_map",
+        "//intrinsic_control/intrinsic/icon/control:rtcl_action",
+        "//intrinsic_control/intrinsic/icon/control:slot_types",
+        "//intrinsic_control/intrinsic/icon/control:streaming_io_helpers",
+        "//intrinsic_control/intrinsic/icon/control:streaming_io_realtime",
+        "//intrinsic_control/intrinsic/icon/control:streaming_io_storage",
+        "//intrinsic_control/intrinsic/icon/control/parts:feature_interface_registry",
+        "//intrinsic_control/intrinsic/icon/control/parts:feature_interfaces",
+        "//intrinsic_control/intrinsic/icon/control/parts/testing:fake_vehicle_realtime_part",
+        "//intrinsic_control/intrinsic/icon/testing:malloc_test",
+        "//intrinsic_control/intrinsic/icon/utils:core_time",
+        "//intrinsic_control/intrinsic/icon/utils:realtime_status",
+        "//intrinsic_control/intrinsic/icon/utils:realtime_status_matchers",
+        "//intrinsic_kinematics/intrinsic/kinematics/types:joint_trajectories",
+        "@abseil-cpp//absl/container:fixed_array",
+        "@abseil-cpp//absl/container:flat_hash_map",
+        "@abseil-cpp//absl/status",
+        "@abseil-cpp//absl/status:statusor",
+        "@com_google_googletest//:gtest",
+        "@intrinsic_apis//intrinsic/icon/proto/v1:types_cc_proto",
+        "@intrinsic_apis//intrinsic/vehicle/proto:vehicle_command_cc_proto",
+    ],
 )
