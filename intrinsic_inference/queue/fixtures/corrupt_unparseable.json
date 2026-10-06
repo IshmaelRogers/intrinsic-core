@@ -1,0 +1,4 @@
+{
+  "match": {"provenance_model_id": "pose_estimator", "input_digest": "sha256:in-trunc",
+  "state_epoch": 42},
+  "result": {"frame_id": "world_en

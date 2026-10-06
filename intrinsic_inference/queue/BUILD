@@ -16,18 +16,37 @@ load("//bazel:cc_macros.bzl", "cc_library", "cc_test")
 load("//bazel:python.bzl", "py_library", "py_test")
 
 # Opt-in bounded async inference request queue (capacity 8, reject new) with a
-# stub worker. Contract: issue #119, comment 5978277220. Not wired into the
-# Triton inference service, ICON, or a HAL, and not part of the protected
-# manipulator baseline. Do not add these labels to
-# .github/baseline/manipulator_targets.tsv.
+# stub worker, plus a deterministic replay worker and fixtures that can be
+# injected in its place. Contracts: issue #119, comment 5978277220, and issue
+# #120, comment 6009314342. Not wired into the Triton inference service, ICON,
+# or a HAL, and not part of the protected manipulator baseline. Do not add
+# these labels to .github/baseline/manipulator_targets.tsv.
 
 package(default_visibility = ["//visibility:public"])
+
+# Recorded results for the replay worker. One JSON file each, at most eight.
+filegroup(
+    name = "fixtures",
+    srcs = glob(["fixtures/*.json"]),
+)
 
 cc_library(
     name = "stub_worker",
     srcs = ["stub_worker.cc"],
     hdrs = ["stub_worker.h"],
     deps = ["//intrinsic_inference/envelope:inference_envelope_contract_policy"],
+)
+
+cc_library(
+    name = "replay_worker",
+    srcs = ["replay_worker.cc"],
+    hdrs = ["replay_worker.h"],
+    deps = [
+        ":stub_worker",
+        "//intrinsic/embodiment:frame_policy",
+        "//intrinsic_inference/envelope:inference_envelope_contract_policy",
+        "@com_github_nlohmann_json//:json",
+    ],
 )
 
 cc_library(
@@ -61,6 +80,15 @@ py_library(
 )
 
 py_library(
+    name = "replay_worker_py",
+    srcs = ["replay_worker.py"],
+    deps = [
+        ":stub_worker_py",
+        "//intrinsic_inference/envelope:inference_envelope_contract_policy_py",
+    ],
+)
+
+py_library(
     name = "inference_client_py",
     srcs = ["inference_client.py"],
     deps = [
@@ -77,6 +105,35 @@ py_test(
     main = "inference_queue_test.py",
     deps = [
         ":inference_client_py",
+        ":stub_worker_py",
+        "//intrinsic_inference/envelope:inference_envelope_contract_policy_py",
+    ],
+)
+
+cc_test(
+    name = "inference_replay_test",
+    size = "small",
+    srcs = ["inference_replay_test.cc"],
+    data = [":fixtures"],
+    deps = [
+        ":inference_client",
+        ":replay_worker",
+        ":stub_worker",
+        "//intrinsic/embodiment:frame_policy",
+        "//intrinsic_inference/envelope:inference_envelope_contract_policy",
+        "@com_google_googletest//:gtest_main",
+    ],
+)
+
+py_test(
+    name = "inference_replay_test_py",
+    size = "small",
+    srcs = ["inference_replay_test.py"],
+    data = [":fixtures"],
+    main = "inference_replay_test.py",
+    deps = [
+        ":inference_client_py",
+        ":replay_worker_py",
         ":stub_worker_py",
         "//intrinsic_inference/envelope:inference_envelope_contract_policy_py",
     ],

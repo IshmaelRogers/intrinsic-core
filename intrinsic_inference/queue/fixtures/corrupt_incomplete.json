@@ -1,0 +1,31 @@
+{
+  "match": {
+    "provenance_model_id": "pose_estimator",
+    "input_digest": "sha256:in-corrupt",
+    "state_epoch": 42
+  },
+  "result": {
+    "frame_id": "world_enu",
+    "validity_state": 1,
+    "source_time": {
+      "seconds": 1700000000,
+      "nanos": 0
+    },
+    "deadline": {
+      "seconds": 1700000000,
+      "nanos": 500000000
+    },
+    "validity_horizon": {
+      "seconds": 2,
+      "nanos": 0
+    },
+    "confidence": 0.9,
+    "uncertainty": 0.05,
+    "oip": {
+      "model_name": "pose_estimator",
+      "model_version": "3",
+      "request_id": "rec-0005"
+    },
+    "world_snapshot_id": "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+  }
+}

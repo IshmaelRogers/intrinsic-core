@@ -1,0 +1,31 @@
+{
+  "match": {
+    "provenance_model_id": "grasp_planner",
+    "input_digest": "sha256:in",
+    "state_epoch": 42
+  },
+  "result": {
+    "frame_id": "world_enu",
+    "validity_state": 1,
+    "source_time": {
+      "seconds": 1700000000,
+      "nanos": 0
+    },
+    "deadline": {
+      "seconds": 1700000000,
+      "nanos": 500000000
+    },
+    "validity_horizon": {
+      "seconds": 2,
+      "nanos": 0
+    },
+    "confidence": 0.9,
+    "uncertainty": 0.05,
+    "oip": {
+      "model_name": "grasp_planner",
+      "model_version": "3",
+      "request_id": "rec-0003"
+    },
+    "output_digest": "sha256:replay-out-grasp"
+  }
+}

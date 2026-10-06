@@ -124,4 +124,13 @@ InferenceResultShell StubWorker::Run(const OwnedInferenceEnvelope& envelope,
   return InferenceResultShell(result);
 }
 
+WorkerOutcome StubWorker::Complete(const OwnedInferenceEnvelope& envelope,
+                                   std::string_view queue_request_id,
+                                   embodiment::ClockReading /*now*/) const {
+  WorkerOutcome outcome;
+  outcome.status = WorkerStatus::kComplete;
+  outcome.result = Run(envelope, queue_request_id);
+  return outcome;
+}
+
 }  // namespace intrinsic::inference

@@ -15,9 +15,11 @@
 #ifndef INTRINSIC_INFERENCE_QUEUE_STUB_WORKER_H_
 #define INTRINSIC_INFERENCE_QUEUE_STUB_WORKER_H_
 
+#include <optional>
 #include <string>
 #include <string_view>
 
+#include "intrinsic/embodiment/stamped_header_policy.h"
 #include "intrinsic_inference/envelope/inference_envelope_contract_policy.h"
 
 namespace intrinsic::inference {
@@ -65,14 +67,50 @@ class InferenceResultShell {
   std::string output_digest_;
 };
 
+// Terminal outcome of a worker for one request. The queue maps each value to
+// the InferenceQueueStatus of the same name.
+enum class WorkerStatus {
+  kComplete = 0,
+  // Replay worker only (#120).
+  kReplayMiss,
+  kReplayExpired,
+  kCorruptFixture,
+};
+
+struct WorkerOutcome {
+  WorkerStatus status = WorkerStatus::kComplete;
+  // Set for kComplete. Also set for kReplayExpired, so the recorded timing
+  // stays assertable. Empty for every other status.
+  std::optional<InferenceResultShell> result;
+};
+
+// The one seam between InferenceClient and a backend. InferenceClient takes a
+// worker through InferenceClientOptions; there is no registry. Implementations
+// must be thread safe and must not block: the queue calls Complete under its
+// lock.
+class InferenceWorker {
+ public:
+  virtual ~InferenceWorker() = default;
+
+  // now is the queue clock (InferenceClientOptions.clock) at the moment the
+  // worker produces the terminal result.
+  virtual WorkerOutcome Complete(const OwnedInferenceEnvelope& envelope,
+                                 std::string_view queue_request_id,
+                                 embodiment::ClockReading now) const = 0;
+};
+
 // Fake worker. Completes a request on a deterministic path with no I/O: no
 // OIP or Triton call, no model, no socket, no replay store, no clock, no
 // sleep. The result echoes the envelope context and stamps a stub output
-// digest. Real backends are a later leaf.
-class StubWorker {
+// digest. The default worker of InferenceClient.
+class StubWorker : public InferenceWorker {
  public:
   InferenceResultShell Run(const OwnedInferenceEnvelope& envelope,
                            std::string_view queue_request_id) const;
+
+  WorkerOutcome Complete(const OwnedInferenceEnvelope& envelope,
+                         std::string_view queue_request_id,
+                         embodiment::ClockReading now) const override;
 };
 
 }  // namespace intrinsic::inference
