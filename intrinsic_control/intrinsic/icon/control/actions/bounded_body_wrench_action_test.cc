@@ -36,6 +36,7 @@
 #include "intrinsic/icon/control/actions/test_helpers.h"
 #include "intrinsic/icon/control/parts/feature_interface_registry.h"
 #include "intrinsic/icon/control/parts/feature_interfaces.h"
+#include "intrinsic/icon/control/parts/feature_interfaces/vehicle_body_features.h"
 #include "intrinsic/icon/control/parts/testing/fake_vehicle_realtime_part.h"
 #include "intrinsic/icon/control/realtime_signal_access.h"
 #include "intrinsic/icon/control/realtime_signal_storage.h"
@@ -696,6 +697,65 @@ TEST_F(BoundedBodyWrenchActionTest, CycleMethodsDoNotAllocate) {
 
   ASSERT_THAT(part_->ApplyCommandForTest(), RealtimeIsOk());
   EXPECT_EQ(part_->RecordedBodyWrench().sequence, 2);
+}
+
+// Contract 11. Streaming wrenches, then stopping past the default 50 ms
+// command-age limit, latches neutral until Reset. A later stream resumes.
+TEST_F(BoundedBodyWrenchActionTest, StreamStopLatchesNeutralUntilReset) {
+  ASSERT_STATUS_OK(harness_->Create(WrenchParams(1, 1.5)));
+  ASSERT_THAT(harness_->OnEnter(), RealtimeIsOk());
+
+  const double kForces[] = {1.5, 2.5, 3.5};
+  for (int i = 0; i < 3; ++i) {
+    if (i > 0) {
+      ASSERT_STATUS_OK(harness_->Stream(WrenchParams(i + 1, kForces[i])));
+    }
+    const CycleResult cycle = RunCycle();
+    EXPECT_THAT(cycle.control, RealtimeIsOk());
+    EXPECT_THAT(cycle.apply, RealtimeIsOk());
+    EXPECT_DOUBLE_EQ(part_->RecordedBodyWrench().force_x_n, kForces[i]);
+    EXPECT_EQ(part_->RecordedBodyWrench().sequence,
+              static_cast<uint64_t>(i + 1));
+    clock_->Advance(Milliseconds(10));
+  }
+
+  // 10 ms already elapsed since the last apply. This step makes the age
+  // max_command_age + 1 ns, so the held command expires.
+  clock_->Advance(Milliseconds(40) + Nanoseconds(1));
+  const CycleResult expired = RunCycle();
+  EXPECT_THAT(expired.sense, RealtimeIsOk());
+  EXPECT_THAT(expired.control, RealtimeIsOk());
+  EXPECT_EQ(expired.apply.code(), absl::StatusCode::kDeadlineExceeded);
+  EXPECT_EQ(expired.apply.message(), "command watchdog requires reset");
+  ExpectNeutralRecorded();
+  EXPECT_EQ(View(part_->RecordedBodyWrench().clock_domain), "monotonic");
+  EXPECT_TRUE(part_->RecordedBodyWrench().validity_present);
+  EXPECT_EQ(part_->RecordedBodyWrench().validity_state, 1);
+  const BodyWrenchCommand* latched_wrench =
+      part_->GetFeatureInterfaces().GetInterface<BodyWrenchCommand>();
+  ASSERT_NE(latched_wrench, nullptr);
+  EXPECT_TRUE(latched_wrench->PreviousBodyWrench().applied);
+
+  ASSERT_STATUS_OK(harness_->Stream(WrenchParams(4, 4.5)));
+  const CycleResult still_latched = RunCycle();
+  EXPECT_EQ(still_latched.control.code(), absl::StatusCode::kDeadlineExceeded);
+  EXPECT_EQ(still_latched.control.message(), "command watchdog requires reset");
+  EXPECT_EQ(still_latched.apply.code(), absl::StatusCode::kDeadlineExceeded);
+  EXPECT_EQ(still_latched.apply.message(), "command watchdog requires reset");
+  ExpectNeutralRecorded();
+
+  auto* feature = dynamic_cast<BodyWrenchFeature*>(
+      part_->GetFeatureInterfaces().GetInterface<BodyWrenchCommand>());
+  ASSERT_NE(feature, nullptr);
+  ASSERT_THAT(feature->Reset(), RealtimeIsOk());
+
+  ASSERT_STATUS_OK(harness_->Stream(WrenchParams(5, 5.5, -0.25)));
+  const CycleResult resumed = RunCycle();
+  EXPECT_THAT(resumed.control, RealtimeIsOk());
+  EXPECT_THAT(resumed.apply, RealtimeIsOk());
+  EXPECT_EQ(part_->RecordedBodyWrench().sequence, 5);
+  EXPECT_DOUBLE_EQ(part_->RecordedBodyWrench().force_x_n, 5.5);
+  EXPECT_DOUBLE_EQ(part_->RecordedBodyWrench().torque_z_n_m, -0.25);
 }
 
 }  // namespace
