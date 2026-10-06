@@ -70,6 +70,20 @@ embodiment::ClockReading SystemUtcNow() {
                                   static_cast<int32_t>(nanos.count())};
 }
 
+Status ToQueueStatus(WorkerStatus status) {
+  switch (status) {
+    case WorkerStatus::kComplete:
+      return Status::kComplete;
+    case WorkerStatus::kReplayMiss:
+      return Status::kReplayMiss;
+    case WorkerStatus::kReplayExpired:
+      return Status::kReplayExpired;
+    case WorkerStatus::kCorruptFixture:
+      return Status::kCorruptFixture;
+  }
+  return Status::kCorruptFixture;
+}
+
 }  // namespace
 
 InferenceClient::InferenceClient()
@@ -80,6 +94,7 @@ InferenceClient::InferenceClient(InferenceClientOptions options)
   if (!options_.clock) {
     options_.clock = SystemUtcNow;
   }
+  worker_ = options_.worker ? options_.worker : std::make_shared<StubWorker>();
 }
 
 size_t InferenceClient::OutstandingLocked() const {
@@ -120,7 +135,10 @@ bool InferenceClient::WasDiscardedLocked(std::string_view request_id) const {
 }
 
 void InferenceClient::CompleteLocked(Slot& slot) {
-  slot.result = worker_.Run(slot.envelope, FormatId(slot.id));
+  WorkerOutcome outcome =
+      worker_->Complete(slot.envelope, FormatId(slot.id), options_.clock());
+  slot.terminal_status = ToQueueStatus(outcome.status);
+  slot.result = std::move(outcome.result);
   slot.state = SlotState::kComplete;
 }
 
@@ -185,7 +203,7 @@ PollOutcome InferenceClient::Poll(std::string_view request_id) {
     return outcome;
   }
   if (slot->state == SlotState::kComplete) {
-    outcome.status = Status::kComplete;
+    outcome.status = slot->terminal_status;
     outcome.result = slot->result;
   } else {
     outcome.status = Status::kOk;
@@ -224,7 +242,7 @@ PollOutcome InferenceClient::Reap(std::string_view request_id) {
     outcome.status = Status::kOk;
     return outcome;
   }
-  outcome.status = Status::kComplete;
+  outcome.status = slot->terminal_status;
   outcome.result = std::move(slot->result);
   *slot = Slot{};
   return outcome;

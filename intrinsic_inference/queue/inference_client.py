@@ -15,8 +15,9 @@
 """Bounded async request queue with a Submit / Poll / Cancel client facade.
 
 Contract: issue #119, comment 5978277220. This is a host-side queue around a
-stub worker. It does not call OIP or Triton, load models, open sockets, read
-replay stores, or link into ICON or a HAL. submit, poll, cancel, reap, tick
+worker (the stub worker by default, or the replay worker of #120 through the
+worker argument). It does not call OIP or Triton, load models, open sockets,
+or link into ICON or a HAL. submit, poll, cancel, reap, tick
 and shutdown never sleep and never wait on a worker.
 """
 
@@ -68,6 +69,15 @@ class InferenceQueueStatus(enum.Enum):
   # Submit of an envelope that assess_inference_envelope does not accept for
   # a reason other than the deadline. Not enqueued.
   INVALID_ENVELOPE = 8
+  # Replay worker only (#120). Poll or reap of a request that finished with no
+  # result: no fixture for the (model, digest, epoch) match key.
+  REPLAY_MISS = 9
+  # Replay worker only. A fixture matched but its recorded deadline is strictly
+  # before the clock. The recorded result is attached with timing unchanged.
+  REPLAY_EXPIRED = 10
+  # Replay worker only. A fixture matched the key but is unusable (incomplete
+  # recorded result, or duplicate key).
+  CORRUPT_FIXTURE = 11
 
 
 _Status = InferenceQueueStatus
@@ -86,7 +96,7 @@ class SubmitOutcome:
 @dataclasses.dataclass(frozen=True)
 class PollOutcome:
   status: InferenceQueueStatus = _Status.UNKNOWN_ID
-  # Set only when status is COMPLETE.
+  # Set when status is COMPLETE or REPLAY_EXPIRED.
   result: Optional[policy.InferenceResultView] = None
 
 
@@ -120,6 +130,8 @@ def _parse_id(text: str) -> Optional[int]:
 class _Slot:
   number: int
   envelope: policy.InferenceEnvelopeView
+  # None while in progress. Any worker status is terminal.
+  status: Optional[InferenceQueueStatus] = None
   result: Optional[policy.InferenceResultView] = None
 
 
@@ -130,6 +142,7 @@ class InferenceClient:
       self,
       clock: Optional[Callable[[], policy.TimeParts]] = None,
       complete_on_submit: bool = False,
+      worker=None,
   ):
     """Creates an empty queue.
 
@@ -138,10 +151,13 @@ class InferenceClient:
         None uses the system UTC clock.
       complete_on_submit: When true the stub worker completes each request
         inside submit. When false a request stays in progress until tick.
+      worker: Object with complete(envelope, queue_request_id, now) returning
+        a stub_worker.WorkerOutcome. None uses StubWorker. now is the queue
+        clock at the moment the worker produces the terminal result.
     """
     self._clock = clock or _system_utc_now
     self._complete_on_submit = complete_on_submit
-    self._worker = stub_worker_lib.StubWorker()
+    self._worker = worker or stub_worker_lib.StubWorker()
     self._lock = threading.Lock()
     self._slots: dict[int, _Slot] = {}
     self._discarded: set[int] = set()
@@ -193,8 +209,8 @@ class InferenceClient:
       slot = self._find(request_id)
       if slot is None:
         return PollOutcome(self._missing_status(request_id))
-      if slot.result is not None:
-        return PollOutcome(_Status.COMPLETE, slot.result)
+      if slot.status is not None:
+        return PollOutcome(slot.status, slot.result)
       return PollOutcome(_Status.OK)
 
   def cancel(self, request_id: str) -> CancelOutcome:
@@ -207,7 +223,7 @@ class InferenceClient:
       slot = self._find(request_id)
       if slot is None:
         return CancelOutcome(self._missing_status(request_id))
-      if slot.result is not None:
+      if slot.status is not None:
         return CancelOutcome(_Status.ALREADY_COMPLETE)
       del self._slots[slot.number]
       return CancelOutcome(_Status.CANCELLED)
@@ -222,22 +238,22 @@ class InferenceClient:
       slot = self._find(request_id)
       if slot is None:
         return PollOutcome(self._missing_status(request_id))
-      if slot.result is None:
+      if slot.status is None:
         return PollOutcome(_Status.OK)
       del self._slots[slot.number]
-      return PollOutcome(_Status.COMPLETE, slot.result)
+      return PollOutcome(slot.status, slot.result)
 
   def tick(self, max_completions: int = 1) -> int:
     """Test and fake-async hook.
 
-    Lets the stub worker complete up to max_completions in-progress requests,
+    Lets the worker complete up to max_completions in-progress requests,
     oldest first. Returns the number completed. Does nothing after shutdown.
     """
     with self._lock:
       if self._shutdown:
         return 0
       pending = sorted(
-          number for number, slot in self._slots.items() if slot.result is None
+          number for number, slot in self._slots.items() if slot.status is None
       )
       completed = 0
       for number in pending[: max(max_completions, 0)]:
@@ -263,7 +279,11 @@ class InferenceClient:
       return self._shutdown
 
   def _complete(self, slot: _Slot) -> None:
-    slot.result = self._worker.run(slot.envelope, _format_id(slot.number))
+    outcome = self._worker.complete(
+        slot.envelope, _format_id(slot.number), self._clock()
+    )
+    slot.status = _Status[outcome.status.name]
+    slot.result = outcome.result
 
   def _find(self, request_id: str) -> Optional[_Slot]:
     number = _parse_id(request_id)

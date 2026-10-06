@@ -16,17 +16,51 @@
 
 Completes a request on a deterministic path with no I/O: no OIP or Triton
 call, no model, no socket, no replay store, no clock, no sleep. The result
-echoes the envelope context and stamps a stub output digest. Real backends
-are a later leaf.
+echoes the envelope context and stamps a stub output digest.
 """
 
 import dataclasses
+import enum
+from typing import Optional
 
 from intrinsic_inference.envelope import inference_envelope_contract_policy as policy
 
 
+class WorkerStatus(enum.Enum):
+  """Terminal outcome of a worker. Names match InferenceQueueStatus."""
+
+  COMPLETE = 0
+  # Replay worker only (#120).
+  REPLAY_MISS = 1
+  REPLAY_EXPIRED = 2
+  CORRUPT_FIXTURE = 3
+
+
+@dataclasses.dataclass(frozen=True)
+class WorkerOutcome:
+  status: WorkerStatus = WorkerStatus.COMPLETE
+  # Set for COMPLETE. Also set for REPLAY_EXPIRED, so the recorded timing
+  # stays assertable. None for every other status.
+  result: Optional[policy.InferenceResultView] = None
+
+
 class StubWorker:
-  """Builds an InferenceResultView for an accepted InferenceEnvelopeView."""
+  """Builds an InferenceResultView for an accepted InferenceEnvelopeView.
+
+  The default worker of InferenceClient. Any object with a matching
+  complete(envelope, queue_request_id, now) method can be injected instead.
+  """
+
+  def complete(
+      self,
+      envelope: policy.InferenceEnvelopeView,
+      queue_request_id: str,
+      now: policy.TimeParts,
+  ) -> WorkerOutcome:
+    del now
+    return WorkerOutcome(
+        WorkerStatus.COMPLETE, self.run(envelope, queue_request_id)
+    )
 
   def run(
       self, envelope: policy.InferenceEnvelopeView, queue_request_id: str

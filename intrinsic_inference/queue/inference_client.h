@@ -19,6 +19,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <functional>
+#include <memory>
 #include <mutex>
 #include <optional>
 #include <string>
@@ -32,9 +33,10 @@ namespace intrinsic::inference {
 
 // Bounded async request queue with a Submit / Poll / Cancel client facade.
 // Contract: issue #119, comment 5978277220. This is a host-side queue around
-// a stub worker. It does not call OIP or Triton, load models, open sockets,
-// read replay stores, or link into ICON or a HAL. Submit, Poll, Cancel, Reap,
-// Tick and Shutdown never sleep and never wait on a worker.
+// a worker (the stub worker by default, or the replay worker of #120 through
+// InferenceClientOptions.worker). It does not call OIP or Triton, load models,
+// open sockets, or link into ICON or a HAL. Submit, Poll, Cancel, Reap, Tick
+// and Shutdown never sleep and never wait on a worker.
 
 // Fixed maximum of outstanding requests. Locked by the contract.
 inline constexpr size_t kMaxOutstanding = 8;
@@ -63,6 +65,16 @@ enum class InferenceQueueStatus {
   // Submit of an envelope that AssessInferenceEnvelope does not accept for a
   // reason other than the deadline. Not enqueued.
   kInvalidEnvelope,
+  // Replay worker only (#120). Poll or Reap of a request that finished with no
+  // result: no fixture for the (model, digest, epoch) match key.
+  kReplayMiss,
+  // Replay worker only. Poll or Reap of a request whose fixture matched but
+  // whose recorded deadline is strictly before the clock. The recorded result
+  // shell is attached with its timing unchanged.
+  kReplayExpired,
+  // Replay worker only. Poll or Reap of a request whose fixture matched the
+  // key but is unusable (incomplete recorded result, or duplicate key).
+  kCorruptFixture,
 };
 
 struct SubmitOutcome {
@@ -77,7 +89,7 @@ struct SubmitOutcome {
 
 struct PollOutcome {
   InferenceQueueStatus status = InferenceQueueStatus::kUnknownId;
-  // Set only when status is kComplete.
+  // Set when status is kComplete or kReplayExpired.
   std::optional<InferenceResultShell> result;
 };
 
@@ -91,6 +103,9 @@ struct InferenceClientOptions {
   // When true the stub worker completes each request inside Submit. When
   // false a request stays in progress until Tick.
   bool complete_on_submit = false;
+  // Worker that completes requests. Null uses StubWorker. The client keeps a
+  // shared reference, so the caller may drop theirs.
+  std::shared_ptr<const InferenceWorker> worker;
 };
 
 // Thread safe. One mutex guards all state; no call holds it across anything
@@ -107,8 +122,9 @@ class InferenceClient {
   // kInvalidEnvelope), then kQueueFull, then kOk with a new request id.
   SubmitOutcome Submit(const InferenceEnvelopeView& request);
 
-  // kOk while in progress, kComplete with the result once complete. Poll does
-  // not release the slot, so repeated Poll is idempotent.
+  // kOk while in progress. Once the worker has finished: kComplete with the
+  // result, or a replay status (kReplayMiss, kReplayExpired, kCorruptFixture).
+  // Poll does not release the slot, so repeated Poll is idempotent.
   PollOutcome Poll(std::string_view request_id);
 
   // In progress: kCancelled and the slot is released. Complete:
@@ -120,7 +136,7 @@ class InferenceClient {
   // that frees a slot after completion.
   PollOutcome Reap(std::string_view request_id);
 
-  // Test and fake-async hook. Lets the stub worker complete up to
+  // Test and fake-async hook. Lets the worker complete up to
   // max_completions in-progress requests, oldest first. Returns the number
   // completed. Does nothing after Shutdown.
   size_t Tick(size_t max_completions = 1);
@@ -138,6 +154,9 @@ class InferenceClient {
     SlotState state = SlotState::kFree;
     uint64_t id = 0;
     OwnedInferenceEnvelope envelope;
+    // Terminal status once state is kComplete. Any worker status counts as
+    // complete for Cancel (kAlreadyComplete) and Reap.
+    InferenceQueueStatus terminal_status = InferenceQueueStatus::kComplete;
     std::optional<InferenceResultShell> result;
   };
 
@@ -147,7 +166,7 @@ class InferenceClient {
   void CompleteLocked(Slot& slot);
 
   InferenceClientOptions options_;
-  StubWorker worker_;
+  std::shared_ptr<const InferenceWorker> worker_;
   mutable std::mutex mutex_;
   std::array<Slot, kMaxOutstanding> slots_;
   std::array<uint64_t, kMaxOutstanding> discarded_ids_{};
