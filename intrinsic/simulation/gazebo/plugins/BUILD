@@ -38,6 +38,7 @@ cc_library(
         "//intrinsic/simulation/gazebo/plugins/cameras:multi_camera_plugin",
         "//intrinsic/simulation/gazebo/plugins/generic_action:generic_action_plugin",
         "//intrinsic/simulation/gazebo/plugins/grippers:gripper_plugins",
+        "//intrinsic/simulation/gazebo/plugins/hydrodynamics:hydrodynamics_plugin_register",
         "//intrinsic/simulation/gazebo/plugins/sim_inputs:sim_inputs_system_register",
     ],
     alwayslink = 1,
