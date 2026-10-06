@@ -79,6 +79,51 @@ cc_library(
 )
 
 proto_library(
+    name = "bounded_body_wrench_proto",
+    srcs = ["bounded_body_wrench.proto"],
+    deps = ["@intrinsic_apis//intrinsic/vehicle/proto:vehicle_command_proto"],
+)
+
+cc_proto_library(
+    name = "bounded_body_wrench_cc_proto",
+    deps = [":bounded_body_wrench_proto"],
+)
+
+py_proto_library(
+    name = "bounded_body_wrench_py_pb2",
+    deps = [":bounded_body_wrench_proto"],
+)
+
+go_proto_library(
+    name = "bounded_body_wrench_go_proto",
+    importpath = "intrinsic/icon/actions/bounded_body_wrench_go_proto",
+    protos = [":bounded_body_wrench_proto"],
+    deps = ["@intrinsic_apis//intrinsic/vehicle/proto:vehicle_command_go_proto"],
+)
+
+cc_library(
+    name = "bounded_body_wrench_info",
+    srcs = ["bounded_body_wrench_info.cc"],
+    hdrs = ["bounded_body_wrench_info.h"],
+    deps = [
+        ":bounded_body_wrench_cc_proto",
+        "@intrinsic_apis//intrinsic/vehicle/proto:vehicle_command_cc_proto",
+    ],
+)
+
+cc_library(
+    name = "bounded_body_wrench_signature",
+    srcs = ["bounded_body_wrench_signature.cc"],
+    hdrs = ["bounded_body_wrench_signature.h"],
+    deps = [
+        ":action_utils",
+        ":bounded_body_wrench_info",
+        "@abseil-cpp//absl/log:check",
+        "@intrinsic_apis//intrinsic/icon/proto/v1:types_cc_proto",
+    ],
+)
+
+proto_library(
     name = "joint_impedance_action_proto",
     srcs = ["joint_impedance_action.proto"],
     deps = [
