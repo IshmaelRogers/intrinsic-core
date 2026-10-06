@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-load("//bazel:cc_macros.bzl", "cc_library")
+load("//bazel:cc_macros.bzl", "cc_library", "cc_test")
 
 package(
     default_visibility =
@@ -105,6 +105,34 @@ cc_library(
         "@abseil-cpp//absl/strings",
         "@intrinsic_apis//intrinsic/scene/proto/v1:simulation_spec_cc_proto",
         "@tinyxml2",
+    ],
+)
+
+cc_library(
+    name = "current_field_to_sdf",
+    srcs = ["current_field_to_sdf.cc"],
+    hdrs = ["current_field_to_sdf.h"],
+    deps = [
+        "//intrinsic/embodiment:frame_policy",
+        "//intrinsic/world/current_field_component:current_field_component_policy",
+        "@abseil-cpp//absl/status",
+        "@abseil-cpp//absl/status:statusor",
+        "@abseil-cpp//absl/strings",
+    ],
+)
+
+cc_test(
+    name = "current_field_to_sdf_test",
+    size = "small",
+    srcs = ["current_field_to_sdf_test.cc"],
+    data = ["testdata/current_field_hydrodynamics_constant.golden.sdf"],
+    deps = [
+        ":current_field_to_sdf",
+        "//intrinsic/embodiment:frame_policy",
+        "//intrinsic/world/current_field_component:current_field_component_policy",
+        "@abseil-cpp//absl/status",
+        "@abseil-cpp//absl/status:statusor",
+        "@com_google_googletest//:gtest_main",
     ],
 )
 
