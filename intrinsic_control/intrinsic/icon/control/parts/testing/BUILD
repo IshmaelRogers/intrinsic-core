@@ -13,6 +13,7 @@
 # limitations under the License.
 
 load("//bazel:cc_macros.bzl", "cc_library", "cc_test")
+load("//intrinsic_control/intrinsic/icon/testing:cc_test_and_malloc_test.bzl", "cc_test_and_malloc_test")
 
 cc_library(
     name = "fake_realtime_part",
@@ -62,6 +63,60 @@ cc_library(
         "@abseil-cpp//absl/memory",
         "@abseil-cpp//absl/status",
         "@abseil-cpp//absl/status:statusor",
+    ],
+)
+
+cc_library(
+    name = "vehicle_cycle_guard",
+    testonly = True,
+    srcs = ["vehicle_cycle_guard.cc"],
+    hdrs = ["vehicle_cycle_guard.h"],
+    deps = [
+        "//intrinsic_control/intrinsic/icon/testing:malloc_test",
+        "//intrinsic_control/intrinsic/icon/utils:core_time",
+        "//intrinsic_control/intrinsic/icon/utils:realtime_status",
+        "@abseil-cpp//absl/log:check",
+        "@abseil-cpp//absl/status",
+        "@abseil-cpp//absl/strings",
+        "@com_google_googletest//:gtest",
+    ],
+)
+
+cc_test_and_malloc_test(
+    name = "vehicle_cycle_guard_test",
+    size = "small",
+    srcs = ["vehicle_cycle_guard_test.cc"],
+    deps = [
+        ":fake_realtime_part",
+        ":fake_vehicle_realtime_part",
+        ":vehicle_cycle_guard",
+        "//intrinsic_control/intrinsic/icon/actions:bounded_body_wrench_info",
+        "//intrinsic_control/intrinsic/icon/actions:bounded_body_wrench_signature",
+        "//intrinsic_control/intrinsic/icon/common:id_types",
+        "//intrinsic_control/intrinsic/icon/common:part_properties",
+        "//intrinsic_control/intrinsic/icon/control:action_factory_context",
+        "//intrinsic_control/intrinsic/icon/control:realtime_signal_access",
+        "//intrinsic_control/intrinsic/icon/control:realtime_signal_storage",
+        "//intrinsic_control/intrinsic/icon/control:realtime_slot_map",
+        "//intrinsic_control/intrinsic/icon/control:slot_types",
+        "//intrinsic_control/intrinsic/icon/control:streaming_io_helpers",
+        "//intrinsic_control/intrinsic/icon/control:streaming_io_realtime",
+        "//intrinsic_control/intrinsic/icon/control:streaming_io_storage",
+        "//intrinsic_control/intrinsic/icon/control/actions:bounded_body_wrench_action",
+        "//intrinsic_control/intrinsic/icon/control/parts:feature_interface_registry",
+        "//intrinsic_control/intrinsic/icon/control/parts:feature_interfaces",
+        "//intrinsic_control/intrinsic/icon/control/parts:realtime_part_interface",
+        "//intrinsic_control/intrinsic/icon/control/parts:realtime_part_property_access",
+        "//intrinsic_control/intrinsic/icon/utils:core_time",
+        "//intrinsic_control/intrinsic/icon/utils:realtime_status",
+        "//intrinsic_kinematics/intrinsic/kinematics/types:joint_trajectories",
+        "@abseil-cpp//absl/container:fixed_array",
+        "@abseil-cpp//absl/container:flat_hash_map",
+        "@abseil-cpp//absl/status",
+        "@abseil-cpp//absl/strings",
+        "@intrinsic_apis//intrinsic/embodiment/proto:stamped_header_cc_proto",
+        "@intrinsic_apis//intrinsic/icon/proto/v1:types_cc_proto",
+        "@intrinsic_apis//intrinsic/vehicle/proto:vehicle_command_cc_proto",
     ],
 )
 
