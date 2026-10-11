@@ -33,8 +33,9 @@
 //
 // Sim and test only. Every measurement is written by FakeDvl::Measure. The
 // adapter chooses its inputs (truth, bias, lock-loss, seed, delay), it does
-// not build the proto. The one adapter edit to a produced message is the
-// noise-only DEGRADED rule documented on Step.
+// not build the proto. The adapter makes exactly two edits to a produced
+// message, both documented on Step: the receive stamp set at emission (latency
+// is applied with AddClockDelay), and the noise-only DEGRADED rule.
 //
 // SDF shape (children of the <plugin> element):
 //
@@ -122,16 +123,26 @@ class DvlAdapter {
 
   // One simulator step. Pipeline order is part of the contract:
   //   1. truth        kInvalidState (nothing enqueued) on an unresolved
-  //                   link or missing or non-finite kinematics. The step
-  //                   index still advances and nothing is emitted.
+  //                   link, missing or non-finite kinematics, or an
+  //                   orientation that is not a unit quaternion (norm
+  //                   differs from 1 by more than 1e-6, never normalised).
+  //                   The step index still advances and nothing is emitted.
   //   2. lock         lock_loss = bottom_track && altitude out of range.
   //   3. noise        three draws keyed by (3k + i), consumed every step.
   //   4. dropout      the sample for step k is absent.
   //   5. FakeDvl      FakeDvl::Measure with seed + k and the effective bias.
   //   6. latency      FIFO of depth latency_steps. Step k emits the item
   //                   that originated at k - latency_steps, if any.
-  // A non-zero noise amplitude without lock-loss never leaves a VALID
-  // state: a sample the fake returned as VALID is set to DEGRADED.
+  // The adapter edits a produced message in two places only:
+  //   - Receive stamp. FakeDvl is called with delay 0. At emission the
+  //     adapter sets the receive time to this step's time with
+  //     AddClockDelay, so receive - source = latency_steps * dt.
+  //   - DEGRADED. A non-zero noise amplitude without lock-loss never leaves
+  //     a VALID state: a sample the fake returned as VALID is set to
+  //     DEGRADED.
+  // A bad-state step (stage 1) enqueues an empty slot, emits nothing, and
+  // drops the delayed sample that was due at that step. One bad step at k
+  // therefore means no sample at step k and none at k + latency_steps.
   [[nodiscard]] DvlStepResult Step(const DvlSimulatorState& state);
 
   // Back to step 0 with an empty latency queue. The configuration stays.
@@ -141,10 +152,12 @@ class DvlAdapter {
   [[nodiscard]] const std::optional<std::string>& link_name() const {
     return link_name_;
   }
-  [[nodiscard]] const DvlSimStatus& config_status() const {
+  // Test-only. Production code uses active().
+  [[nodiscard]] const DvlSimStatus& ConfigStatusForTesting() const {
     return config_status_;
   }
-  [[nodiscard]] int64_t step_index() const { return step_; }
+  // Test-only. Number of Step calls since Configure or Reset.
+  [[nodiscard]] int64_t StepIndexForTesting() const { return step_; }
 
  private:
   enum class CurrentFrame { kWorldEnu, kWorldNed, kBody };

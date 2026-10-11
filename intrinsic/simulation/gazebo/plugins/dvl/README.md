@@ -8,7 +8,7 @@ HAL type, by calling the existing `FakeDvl::Measure`.
 
 Sim and test only. UUV only. C++ only (the #122 hydrodynamics plugin has no
 Python mirror either). There is no gz-transport topic: the output is the
-adapter return value, and `Dvl::last_result()` for tests. A publication
+adapter return value, and `Dvl::LastResultForTesting()` for tests. A publication
 channel is a later decision. `.github/baseline/manipulator_targets.tsv` does
 not list these targets, and manipulator code is unchanged.
 
@@ -73,8 +73,12 @@ Step index `k` counts non-paused `PostUpdate` calls since Configure or Reset,
 starting at 0. `t_k` is `info.simTime` split into int64 seconds and nanos in
 `[0, 1e9)`. The order is part of the contract:
 
-1. **Truth.** Unresolved link or missing or non-finite kinematics gives
-   `kInvalidState`, enqueues nothing, and emits nothing. `k` still advances.
+1. **Truth.** Unresolved link, missing or non-finite kinematics, or an
+   orientation whose norm differs from 1 by more than `1e-6` (never
+   normalised) gives `kInvalidState`, enqueues an empty slot, and emits
+   nothing. `k` still advances. The step also drops the delayed sample that was
+   due at `k`, so one bad step means no sample at step `k` and none at
+   `k + latency_steps`.
 2. **Lock.** `lock_loss = (mode == bottom_track && !in_range)`. Water track
    never sets it. `altitude_present = in_range`.
 3. **Noise.** `u_{k,i} = ImuSignedUnitNoise(seed + (3k + i) * 0x9E3779B97F4A7C15)`

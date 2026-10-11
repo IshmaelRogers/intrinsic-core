@@ -147,21 +147,22 @@ class PoseProbe final : public gz::sim::System,
   std::vector<PoseSample>* samples_;
 };
 
-// Counts PostUpdate calls made while the simulation is paused.
+// Counts PostUpdate calls made while the simulation is paused and while it
+// is running.
 class PausedCounter final : public gz::sim::System,
                             public gz::sim::ISystemPostUpdate {
  public:
-  explicit PausedCounter(std::atomic<int>* count) : count_(count) {}
+  PausedCounter(std::atomic<int>* paused, std::atomic<int>* running)
+      : paused_(paused), running_(running) {}
 
   void PostUpdate(const gz::sim::UpdateInfo& info,
                   const gz::sim::EntityComponentManager& /*ecm*/) override {
-    if (info.paused) {
-      count_->fetch_add(1);
-    }
+    (info.paused ? paused_ : running_)->fetch_add(1);
   }
 
  private:
-  std::atomic<int>* count_;
+  std::atomic<int>* paused_;
+  std::atomic<int>* running_;
 };
 
 // Moves the model and sets the link's world linear velocity, so the sensor
@@ -218,7 +219,8 @@ std::unique_ptr<gz::sim::Server> MakeServer(const std::string& sdf) {
 }
 
 // Adds the plugin to the model programmatically so a test can read its
-// last_result(). The plugin is configured with the same <plugin> element.
+// LastResultForTesting(). The plugin is configured with the same <plugin>
+// element.
 std::shared_ptr<Dvl> AddDvl(gz::sim::Server* server, std::string_view children,
                             sdf::Root* root) {
   const std::string wrapped = "<sdf version=\"1.11\"><world name=\"w\">" +
@@ -295,7 +297,7 @@ struct TraceEntry {
 
 TraceEntry EntryOf(const Dvl& dvl) {
   TraceEntry entry;
-  entry.result = dvl.last_result();
+  entry.result = dvl.LastResultForTesting();
   if (entry.result.measurement.has_value()) {
     entry.bytes = entry.result.measurement->SerializeAsString();
   }
@@ -310,9 +312,9 @@ std::vector<TraceEntry> StepAndRecord(gz::sim::Server* server, const Dvl& dvl,
   std::vector<TraceEntry> trace;
   for (int i = 0; i < steps + 2 && static_cast<int>(trace.size()) < steps;
        ++i) {
-    const int64_t before = dvl.adapter().step_index();
+    const int64_t before = dvl.AdapterForTesting().StepIndexForTesting();
     EXPECT_TRUE(server->Run(/*_blocking=*/true, 1, /*_paused=*/false));
-    if (dvl.adapter().step_index() == before + 1) {
+    if (dvl.AdapterForTesting().StepIndexForTesting() == before + 1) {
       trace.push_back(EntryOf(dvl));
     }
   }
@@ -331,9 +333,9 @@ std::vector<TraceEntry> ResetAndRecord(gz::sim::Server* server, const Dvl& dvl,
   bool reset_applied = false;
   for (int i = 0; i < steps + 6 && static_cast<int>(trace.size()) < steps;
        ++i) {
-    const int64_t before = dvl.adapter().step_index();
+    const int64_t before = dvl.AdapterForTesting().StepIndexForTesting();
     EXPECT_TRUE(server->Run(/*_blocking=*/true, 1, /*_paused=*/false));
-    const int64_t after = dvl.adapter().step_index();
+    const int64_t after = dvl.AdapterForTesting().StepIndexForTesting();
     if (!reset_applied) {
       reset_applied = after < before;
       if (reset_applied && after == 1) {
@@ -395,7 +397,7 @@ std::vector<PoseSample> RunWorld(const std::string& sdf, int steps,
 }  // namespace
 
 TEST(DvlPluginTest, ConfigureStepResetUnloadRunCleanly) {
-  ASSERT_EQ(DvlStaticPluginAnchor(), 1);
+  ASSERT_EQ(DvlStaticPluginAnchorForTesting(), 1);
   const std::string children = std::string(kValidChildren) +
                                "<latency_steps>2</latency_steps>"
                                "<noise_amplitude_m_s>0.05</noise_amplitude_m_s>"
@@ -408,9 +410,9 @@ TEST(DvlPluginTest, ConfigureStepResetUnloadRunCleanly) {
     ASSERT_TRUE(server != nullptr);
     sdf::Root root;
     const std::shared_ptr<Dvl> dvl = AddDvl(server.get(), children, &root);
-    ASSERT_TRUE(dvl->adapter().config_status().ok());
+    ASSERT_TRUE(dvl->AdapterForTesting().ConfigStatusForTesting().ok());
     first_run = StepAndRecord(server.get(), *dvl, 12);
-    EXPECT_EQ(dvl->adapter().step_index(), 12);
+    EXPECT_EQ(dvl->AdapterForTesting().StepIndexForTesting(), 12);
 
     after_reset = ResetAndRecord(server.get(), *dvl, 12);
   }
@@ -446,11 +448,13 @@ TEST(DvlPluginTest, ConfigureStepResetUnloadRunCleanly) {
 
 TEST(DvlPluginTest, PausedStepsDoNotAdvanceTheStepIndex) {
   std::atomic<int> paused_updates{0};
+  std::atomic<int> running_updates{0};
   std::unique_ptr<gz::sim::Server> server = MakeServer(ModelWorld(""));
   ASSERT_TRUE(server != nullptr);
-  ASSERT_TRUE(
-      server->AddSystem(std::make_shared<PausedCounter>(&paused_updates))
-          .value_or(false));
+  ASSERT_TRUE(server
+                  ->AddSystem(std::make_shared<PausedCounter>(&paused_updates,
+                                                              &running_updates))
+                  .value_or(false));
   sdf::Root root;
   const std::shared_ptr<Dvl> dvl = AddDvl(server.get(), kValidChildren, &root);
 
@@ -466,14 +470,20 @@ TEST(DvlPluginTest, PausedStepsDoNotAdvanceTheStepIndex) {
   }
   ASSERT_FALSE(server->Running());
   EXPECT_GE(paused_updates.load(), 5);
-  EXPECT_EQ(dvl->adapter().step_index(), 0);
-  EXPECT_FALSE(dvl->last_result().measurement.has_value());
+  EXPECT_EQ(dvl->AdapterForTesting().StepIndexForTesting(), 0);
+  EXPECT_FALSE(dvl->LastResultForTesting().measurement.has_value());
 
   ASSERT_TRUE(server->Run(/*_blocking=*/true, 1, /*_paused=*/false));
-  EXPECT_EQ(dvl->adapter().step_index(), 1);
-  ASSERT_TRUE(dvl->last_result().measurement.has_value());
-  EXPECT_EQ(dvl->last_result().step, 0);
-  EXPECT_EQ(dvl->last_result().measurement->health().header().sequence(), 42u);
+  // The plugin's step index equals the number of non-paused updates the
+  // server made, however many iterations gz-sim ran for the request.
+  const int running = running_updates.load();
+  ASSERT_GE(running, 1);
+  EXPECT_EQ(dvl->AdapterForTesting().StepIndexForTesting(), running);
+  ASSERT_TRUE(dvl->LastResultForTesting().measurement.has_value());
+  EXPECT_EQ(dvl->LastResultForTesting().step, running - 1);
+  EXPECT_EQ(
+      dvl->LastResultForTesting().measurement->health().header().sequence(),
+      42u + static_cast<uint64_t>(running - 1));
 }
 
 TEST(DvlPluginTest, ReadsLinkPoseVelocityAndSimulationTime) {
@@ -488,7 +498,7 @@ TEST(DvlPluginTest, ReadsLinkPoseVelocityAndSimulationTime) {
   for (int k = 0; k < 6; ++k) {
     ASSERT_TRUE(server->Run(/*_blocking=*/true, 1, /*_paused=*/false));
     ASSERT_EQ(poses.size(), static_cast<size_t>(k + 1));
-    const DvlStepResult& result = dvl->last_result();
+    const DvlStepResult& result = dvl->LastResultForTesting();
     ASSERT_TRUE(result.status.ok()) << result.status.message;
     ASSERT_TRUE(result.measurement.has_value()) << k;
     const DvlMeasurement& sample = *result.measurement;
@@ -554,15 +564,18 @@ TEST(DvlPluginTest, InvalidConfigurationProducesNoOutputAndNoCrash) {
     ASSERT_TRUE(server != nullptr);
     sdf::Root root;
     const std::shared_ptr<Dvl> dvl = AddDvl(server.get(), children, &root);
-    EXPECT_FALSE(dvl->adapter().config_status().ok()) << children;
+    EXPECT_FALSE(dvl->AdapterForTesting().ConfigStatusForTesting().ok())
+        << children;
     for (int k = 0; k < 3; ++k) {
       ASSERT_TRUE(server->Run(/*_blocking=*/true, 1, /*_paused=*/false));
-      EXPECT_FALSE(dvl->last_result().measurement.has_value()) << children;
+      EXPECT_FALSE(dvl->LastResultForTesting().measurement.has_value())
+          << children;
     }
-    EXPECT_EQ(dvl->adapter().step_index(), 0) << children;
+    EXPECT_EQ(dvl->AdapterForTesting().StepIndexForTesting(), 0) << children;
     server->ResetAll();
     ASSERT_TRUE(server->Run(/*_blocking=*/true, 1, /*_paused=*/false));
-    EXPECT_FALSE(dvl->last_result().measurement.has_value()) << children;
+    EXPECT_FALSE(dvl->LastResultForTesting().measurement.has_value())
+        << children;
   }
   const std::vector<PoseSample> poses = RunWorld(
       ModelWorld(PluginXml("<mode>sideways</mode>")), 3, /*add_dvl=*/false);
@@ -576,12 +589,13 @@ TEST(DvlPluginTest, UnknownLinkIsInvalidStateWithNoSample) {
   const std::string children =
       std::string(kValidChildren) + "<link_name>missing_hull</link_name>";
   const std::shared_ptr<Dvl> dvl = AddDvl(server.get(), children, &root);
-  ASSERT_TRUE(dvl->adapter().config_status().ok());
+  ASSERT_TRUE(dvl->AdapterForTesting().ConfigStatusForTesting().ok());
   for (int k = 0; k < 4; ++k) {
     ASSERT_TRUE(server->Run(/*_blocking=*/true, 1, /*_paused=*/false));
-    EXPECT_EQ(dvl->last_result().status.code, DvlSimErrorCode::kInvalidState);
-    EXPECT_FALSE(dvl->last_result().measurement.has_value());
-    EXPECT_EQ(dvl->last_result().step, k);
+    EXPECT_EQ(dvl->LastResultForTesting().status.code,
+              DvlSimErrorCode::kInvalidState);
+    EXPECT_FALSE(dvl->LastResultForTesting().measurement.has_value());
+    EXPECT_EQ(dvl->LastResultForTesting().step, k);
   }
 }
 
@@ -593,8 +607,8 @@ TEST(DvlPluginTest, NamedLinkIsResolved) {
       std::string(kValidChildren) + "<link_name>hull</link_name>";
   const std::shared_ptr<Dvl> dvl = AddDvl(server.get(), children, &root);
   ASSERT_TRUE(server->Run(/*_blocking=*/true, 2, /*_paused=*/false));
-  ASSERT_TRUE(dvl->last_result().measurement.has_value());
-  EXPECT_TRUE(dvl->last_result().measurement->bottom_lock());
+  ASSERT_TRUE(dvl->LastResultForTesting().measurement.has_value());
+  EXPECT_TRUE(dvl->LastResultForTesting().measurement->bottom_lock());
 }
 
 }  // namespace intrinsic::simulation

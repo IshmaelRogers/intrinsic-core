@@ -808,9 +808,9 @@ TEST(DvlAdapterTest, ResetThenRerunReproducesTheSameTrace) {
                         ? std::optional<std::string>(Bytes(result))
                         : std::nullopt);
   }
-  EXPECT_EQ(adapter.step_index(), 30);
+  EXPECT_EQ(adapter.StepIndexForTesting(), 30);
   adapter.Reset();
-  EXPECT_EQ(adapter.step_index(), 0);
+  EXPECT_EQ(adapter.StepIndexForTesting(), 0);
   for (int k = 0; k < 30; ++k) {
     const DvlStepResult result = adapter.Step(StateAt(k));
     EXPECT_EQ(result.step, k);
@@ -1135,7 +1135,7 @@ TEST(DvlAdapterTest, UnconfiguredAdapterEmitsNothing) {
   const DvlStepResult result = adapter.Step(StateAt(0));
   EXPECT_EQ(result.status.code, DvlSimErrorCode::kInvalidConfig);
   EXPECT_FALSE(result.measurement.has_value());
-  EXPECT_EQ(adapter.step_index(), 0);
+  EXPECT_EQ(adapter.StepIndexForTesting(), 0);
 }
 
 TEST(DvlAdapterTest, ReconfigureReplacesPreviousConfiguration) {
@@ -1152,7 +1152,7 @@ TEST(DvlAdapterTest, ReconfigureReplacesPreviousConfiguration) {
   EXPECT_FALSE(adapter.Step(StateAt(0)).measurement.has_value());
   ASSERT_TRUE(
       adapter.ConfigureFromPluginXml(PluginXml(DefaultChildren())).ok());
-  EXPECT_EQ(adapter.step_index(), 0);
+  EXPECT_EQ(adapter.StepIndexForTesting(), 0);
   EXPECT_TRUE(adapter.Step(StateAt(0)).measurement.has_value());
 }
 
@@ -1185,9 +1185,16 @@ TEST(DvlAdapterTest, InvalidStateGivesNoSampleAndStepStillAdvances) {
       {"negative nanos", [](auto* s) { s->time_nanos = -1; }},
       {"overflowing velocity",
        [](auto* s) {
-         s->world_linear_velocity_m_s = {1e308, 1e308, 1e308};
-         s->orientation_xyzw = {1e10, 1e10, 1e10, 1e10};
+         s->world_linear_velocity_m_s = {1.7e308, 1.7e308, 1.7e308};
+         s->orientation_xyzw = {0.5, 0.5, 0.5, 0.5};
        }},
+      {"zero quaternion", [](auto* s) { s->orientation_xyzw = {0, 0, 0, 0}; }},
+      {"scaled quaternion (norm 2)",
+       [](auto* s) { s->orientation_xyzw = {0, 0, 0, 2}; }},
+      {"slightly non-unit quaternion (norm 1.001)",
+       [](auto* s) { s->orientation_xyzw = {0, 0, 0, 1.001}; }},
+      {"huge quaternion",
+       [](auto* s) { s->orientation_xyzw = {1e200, 1e200, 1e200, 1e200}; }},
   };
   for (const auto& [label, mutate] : cases) {
     DvlAdapter adapter;
@@ -1200,12 +1207,30 @@ TEST(DvlAdapterTest, InvalidStateGivesNoSampleAndStepStillAdvances) {
     EXPECT_EQ(result.status.code, DvlSimErrorCode::kInvalidState) << label;
     EXPECT_FALSE(result.measurement.has_value()) << label;
     EXPECT_EQ(result.step, 1) << label;
-    EXPECT_EQ(adapter.step_index(), 2) << label;
+    EXPECT_EQ(adapter.StepIndexForTesting(), 2) << label;
     const DvlStepResult next = adapter.Step(StateAt(2));
     ASSERT_TRUE(next.measurement.has_value()) << label;
     EXPECT_EQ(next.measurement->health().header().sequence(), 44u) << label;
     ExpectFinite(*next.measurement);
   }
+}
+
+TEST(DvlAdapterTest, NonUnitQuaternionIsRejectedNotNormalised) {
+  DvlAdapter adapter;
+  ASSERT_TRUE(
+      adapter.ConfigureFromPluginXml(PluginXml(DefaultChildren())).ok());
+  const DvlStepResult rejected =
+      adapter.Step(StateAt(0, -40.0, {0, 1, 0}, {0, 0, 0, 2}));
+  EXPECT_EQ(rejected.status.code, DvlSimErrorCode::kInvalidState);
+  EXPECT_FALSE(rejected.measurement.has_value());
+  EXPECT_NE(rejected.status.message.find("unit quaternion"), std::string::npos);
+  EXPECT_EQ(adapter.StepIndexForTesting(), 1);
+
+  const double half_sqrt2 = std::sqrt(0.5);
+  const DvlStepResult within_tolerance = adapter.Step(StateAt(
+      1, -40.0, {0, 1, 0}, {0, 0, half_sqrt2 * (1 + 1e-9), half_sqrt2}));
+  EXPECT_TRUE(within_tolerance.status.ok());
+  ASSERT_TRUE(within_tolerance.measurement.has_value());
 }
 
 TEST(DvlAdapterTest, InvalidStateStepSkipsThePendingLatencyItem) {

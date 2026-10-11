@@ -39,7 +39,7 @@ namespace intrinsic::simulation {
 // as the same world without it.
 //
 // There is no gz-transport topic. The latest adapter result is available
-// through last_result() for tests. See dvl_adapter.h for the SDF
+// through LastResultForTesting() for tests. See dvl_adapter.h for the SDF
 // parameters, and README.md for the contract.
 class Dvl final : public gz::sim::System,
                   public gz::sim::ISystemConfigure,
@@ -60,11 +60,14 @@ class Dvl final : public gz::sim::System,
   void Reset(const gz::sim::UpdateInfo& info,
              gz::sim::EntityComponentManager& ecm) override;
 
+  // Test-only accessors. Not part of the plugin contract and not for
+  // production callers.
+  //
   // Result of the most recent non-paused step. Default before the first.
-  [[nodiscard]] const DvlStepResult& last_result() const {
+  [[nodiscard]] const DvlStepResult& LastResultForTesting() const {
     return last_result_;
   }
-  [[nodiscard]] const DvlAdapter& adapter() const { return adapter_; }
+  [[nodiscard]] const DvlAdapter& AdapterForTesting() const { return adapter_; }
 
  private:
   void Report(const DvlSimStatus& status);
@@ -77,7 +80,9 @@ class Dvl final : public gz::sim::System,
   std::string last_reported_message_;
 };
 
-int DvlStaticPluginAnchor();
+// Test-only. Lets a test reference the registration translation unit so the
+// linker keeps it.
+int DvlStaticPluginAnchorForTesting();
 
 }  // namespace intrinsic::simulation
 

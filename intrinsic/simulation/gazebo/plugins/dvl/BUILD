@@ -18,7 +18,7 @@
 
 load("//bazel:cc_macros.bzl", "cc_library", "cc_test")
 
-package(default_visibility = ["//visibility:public"])
+package(default_visibility = ["//visibility:private"])
 
 cc_library(
     name = "dvl_adapter",
@@ -54,6 +54,7 @@ cc_library(
 cc_library(
     name = "dvl_plugin_register",
     srcs = ["dvl_plugin_register.cc"],
+    visibility = ["//intrinsic/simulation/gazebo/plugins:__pkg__"],
     deps = [
         ":dvl_plugin",
         "@gz-plugin//:register",

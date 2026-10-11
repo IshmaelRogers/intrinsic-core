@@ -58,6 +58,7 @@ constexpr uint64_t kSplitMix64Gamma = 0x9E3779B97F4A7C15ULL;
 constexpr int kAxes = 3;
 constexpr int64_t kNanosPerSecond = 1000000000;
 constexpr double kQuality = 0.75;
+constexpr double kUnitQuaternionTolerance = 1e-6;
 
 bool IsSpace(char value) {
   return value == ' ' || value == '\t' || value == '\n' || value == '\r';
@@ -430,6 +431,14 @@ DvlStepResult DvlAdapter::Step(const DvlSimulatorState& state) {
       !std::isfinite(state.orientation_xyzw[2]) ||
       !std::isfinite(state.orientation_xyzw[3])) {
     return invalid_state("link kinematics are unavailable or not finite");
+  }
+  const double quaternion_norm =
+      std::sqrt(state.orientation_xyzw[0] * state.orientation_xyzw[0] +
+                state.orientation_xyzw[1] * state.orientation_xyzw[1] +
+                state.orientation_xyzw[2] * state.orientation_xyzw[2] +
+                state.orientation_xyzw[3] * state.orientation_xyzw[3]);
+  if (!(std::fabs(quaternion_norm - 1.0) <= kUnitQuaternionTolerance)) {
+    return invalid_state("orientation is not a unit quaternion");
   }
   if (state.time_nanos < 0 || state.time_nanos >= kNanosPerSecond) {
     return invalid_state("simulation time nanos must be in [0, 1e9)");

@@ -23,6 +23,6 @@ GZ_ADD_STATIC_PLUGIN(Dvl, ::gz::sim::System, Dvl::ISystemConfigure,
 
 GZ_ADD_STATIC_PLUGIN_ALIAS(Dvl, "intrinsic::simulation::Dvl")
 
-int DvlStaticPluginAnchor() { return 1; }
+int DvlStaticPluginAnchorForTesting() { return 1; }
 
 }  // namespace intrinsic::simulation
