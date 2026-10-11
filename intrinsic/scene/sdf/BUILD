@@ -23,6 +23,8 @@ package(
         ],
 )
 
+exports_files(["testdata/current_field_hydrodynamics_constant.golden.sdf"])
+
 cc_library(
     name = "convert_to_sdf",
     srcs = ["convert_to_sdf.cc"],
