@@ -50,7 +50,9 @@ namespace intrinsic::simulation {
 // ImuSignedUnitNoise(seed + k * 0x9E3779B97F4A7C15), the standard SplitMix64
 // sequence. Every field owns a fixed draw index (see kMarineSlot*), whether
 // or not it has bounds, so enabling a bound on one field never changes the
-// value realized for another.
+// value realized for another. Seed s + 0x9E3779B97F4A7C15 gives the same
+// draws as seed s, shifted by one draw index, so recorded seeds should not be
+// chosen in steps of that constant.
 
 // Closed interval [lo, hi] for one uniform draw. lo == hi realizes exactly
 // that value.
@@ -105,15 +107,30 @@ struct RealizedMarineParameters {
   std::vector<double> thruster_efficiency;
 };
 
-// Fixed draw indices. Thruster i uses kMarineSlotThrusterEfficiency + i, so
-// the thruster count never shifts any other field.
+// Fixed draw indices. NEVER renumber a draw slot: a recorded seed must keep
+// realizing the same value for the same field in every later version. A new
+// scalar field takes the next unused index below the thruster base. Thruster
+// i uses kMarineSlotThrusterBase + i, so the thruster count never shifts any
+// other field and the scalar fields have room to grow.
 inline constexpr uint64_t kMarineSlotMass = 0;
 inline constexpr uint64_t kMarineSlotDisplacedVolume = 1;
 inline constexpr uint64_t kMarineSlotLinearDamping = 2;
 inline constexpr uint64_t kMarineSlotQuadraticDamping = 8;
 inline constexpr uint64_t kMarineSlotCurrentVelocity = 14;
 inline constexpr uint64_t kMarineSlotImuBias = 17;
-inline constexpr uint64_t kMarineSlotThrusterEfficiency = 23;
+inline constexpr uint64_t kMarineSlotThrusterBase = uint64_t{1} << 16;
+
+static_assert(
+    kMarineSlotMass < kMarineSlotThrusterBase &&
+        kMarineSlotDisplacedVolume < kMarineSlotThrusterBase &&
+        kMarineSlotLinearDamping + kMarineLinearDampingDiagonals <=
+            kMarineSlotQuadraticDamping &&
+        kMarineSlotQuadraticDamping + kMarineQuadraticDampingCoefficients <=
+            kMarineSlotCurrentVelocity &&
+        kMarineSlotCurrentVelocity + kMarineCurrentAxes <= kMarineSlotImuBias &&
+        kMarineSlotImuBias + kMarineImuBiasFields <= kMarineSlotThrusterBase,
+    "every scalar draw slot must be below the thruster base and "
+    "must not overlap another field");
 
 // Returns InvalidArgument, never clamps, when:
 //   * a bound is non-finite, lo > hi, or hi - lo overflows;

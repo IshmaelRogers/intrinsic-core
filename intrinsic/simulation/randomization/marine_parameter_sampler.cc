@@ -14,10 +14,10 @@
 #include "intrinsic/simulation/randomization/marine_parameter_sampler.h"
 
 #include <array>
+#include <charconv>
 #include <cmath>
 #include <cstddef>
 #include <cstdint>
-#include <cstdio>
 #include <optional>
 #include <string>
 #include <utility>
@@ -137,9 +137,9 @@ RealizedMarineParameters Realize(const MarineRandomizationConfig& config,
   out.thruster_efficiency.reserve(model.thrusters.size());
   for (size_t i = 0; i < model.thrusters.size(); ++i) {
     out.thruster_efficiency.push_back(
-        config.thruster_efficiency ? pick(*config.thruster_efficiency,
-                                          kMarineSlotThrusterEfficiency + i)
-                                   : model.thrusters[i].efficiency);
+        config.thruster_efficiency
+            ? pick(*config.thruster_efficiency, kMarineSlotThrusterBase + i)
+            : model.thrusters[i].efficiency);
   }
   return out;
 }
@@ -197,9 +197,12 @@ absl::Status ValidateCorner(const char* corner,
 }
 
 void AppendValue(std::string* out, const std::string& path, double value) {
+  // to_chars ignores the C locale, unlike snprintf.
   char buffer[40];
-  std::snprintf(buffer, sizeof(buffer), "%.17g", value);
-  absl::StrAppend(out, path, "=", buffer, "\n");
+  const std::to_chars_result result = std::to_chars(
+      buffer, buffer + sizeof(buffer), value, std::chars_format::general, 17);
+  absl::StrAppend(out, path, "=", std::string_view(buffer, result.ptr - buffer),
+                  "\n");
 }
 
 }  // namespace
@@ -249,6 +252,26 @@ absl::Status ValidateMarineRandomization(
         nominal_result.errors.front().message));
   }
 
+  const double nominal_bias[kMarineImuBiasFields] = {
+      nominal.imu.angular_velocity_bias_x_rad_s,
+      nominal.imu.angular_velocity_bias_y_rad_s,
+      nominal.imu.angular_velocity_bias_z_rad_s,
+      nominal.imu.linear_acceleration_bias_x_m_s2,
+      nominal.imu.linear_acceleration_bias_y_m_s2,
+      nominal.imu.linear_acceleration_bias_z_m_s2};
+  for (int i = 0; i < kMarineImuBiasFields; ++i) {
+    if (!std::isfinite(nominal_bias[i])) {
+      return absl::InvalidArgumentError(
+          absl::StrCat("nominal imu bias [", i, "] must be finite"));
+    }
+  }
+
+  // Two corner checks cover every realized value. ValidateMarineModel has no
+  // check that spans fields, so each randomized field is valid on its own
+  // interval if it is valid at both ends. The one coupled constraint is the
+  // linear damping matrix: raising a diagonal entry of a symmetric
+  // positive-definite matrix keeps it positive definite, so the all-lo corner
+  // is the worst case.
   if (absl::Status status = ValidateCorner(
           "lo", Realize(config, nominal, 0, LoCorner()), nominal);
       !status.ok()) {

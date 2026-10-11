@@ -18,12 +18,13 @@ load("//bazel:cc_macros.bzl", "cc_library", "cc_test")
 # manipulator baseline. Do not add these labels to
 # .github/baseline/manipulator_targets.tsv.
 
-package(default_visibility = ["//visibility:public"])
+package(default_visibility = ["//visibility:private"])
 
 cc_library(
     name = "marine_parameter_sampler",
     srcs = ["marine_parameter_sampler.cc"],
     hdrs = ["marine_parameter_sampler.h"],
+    visibility = ["//intrinsic/simulation:__subpackages__"],
     deps = [
         "//intrinsic/embodiment:frame_policy",
         "//intrinsic/world/current_field_component:current_field_component_policy",

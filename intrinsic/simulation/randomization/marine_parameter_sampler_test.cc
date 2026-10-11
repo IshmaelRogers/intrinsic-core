@@ -15,6 +15,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <cstddef>
 #include <cstdint>
 #include <fstream>
 #include <iterator>
@@ -383,6 +384,35 @@ TEST(MarineParameterSamplerTest, InvalidNominalModelIsRejected) {
       SampleMarineParameters(MarineRandomizationConfig{}, nominal, 1);
   EXPECT_EQ(realized.status().code(), absl::StatusCode::kInvalidArgument);
   EXPECT_THAT(realized.status().message(), HasSubstr("nominal model"));
+}
+
+TEST(MarineParameterSamplerTest, NonFiniteNominalImuBiasIsRejected) {
+  const double nan = std::numeric_limits<double>::quiet_NaN();
+  const double inf = std::numeric_limits<double>::infinity();
+  using Field = double FakeImuConfig::*;
+  const Field fields[] = {&FakeImuConfig::angular_velocity_bias_x_rad_s,
+                          &FakeImuConfig::angular_velocity_bias_y_rad_s,
+                          &FakeImuConfig::angular_velocity_bias_z_rad_s,
+                          &FakeImuConfig::linear_acceleration_bias_x_m_s2,
+                          &FakeImuConfig::linear_acceleration_bias_y_m_s2,
+                          &FakeImuConfig::linear_acceleration_bias_z_m_s2};
+  for (size_t i = 0; i < std::size(fields); ++i) {
+    for (double bad : {nan, inf, -inf}) {
+      MarineNominalParameters nominal = Nominal();
+      nominal.imu.*fields[i] = bad;
+      // Rejected with no bounds, and also when that field is bounded.
+      MarineRandomizationConfig bounded;
+      bounded.imu_bias[i] = UniformBounds{-1.0, 1.0};
+      for (const MarineRandomizationConfig& config :
+           {MarineRandomizationConfig{}, bounded}) {
+        absl::StatusOr<RealizedMarineParameters> realized =
+            SampleMarineParameters(config, nominal, 1);
+        EXPECT_EQ(realized.status().code(), absl::StatusCode::kInvalidArgument)
+            << "field " << i << " value " << bad;
+        EXPECT_THAT(realized.status().message(), HasSubstr("imu bias"));
+      }
+    }
+  }
 }
 
 // Acceptance 5.
