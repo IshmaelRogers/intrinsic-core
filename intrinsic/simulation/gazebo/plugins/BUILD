@@ -36,6 +36,7 @@ cc_library(
         "//intrinsic/simulation/gazebo/components:common_component_registers",
         "//intrinsic/simulation/gazebo/plugins/cameras:camera_plugin_register",
         "//intrinsic/simulation/gazebo/plugins/cameras:multi_camera_plugin",
+        "//intrinsic/simulation/gazebo/plugins/dvl:dvl_plugin_register",
         "//intrinsic/simulation/gazebo/plugins/generic_action:generic_action_plugin",
         "//intrinsic/simulation/gazebo/plugins/grippers:gripper_plugins",
         "//intrinsic/simulation/gazebo/plugins/hydrodynamics:hydrodynamics_plugin_register",
