@@ -1,0 +1,716 @@
+// Copyright 2026 Intrinsic Innovation LLC
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     https://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
+#include "intrinsic/simulation/gazebo/plugins/surface_fix/surface_fix_plugin.h"
+
+#include <atomic>
+#include <chrono>
+#include <cstdint>
+#include <cstdlib>
+#include <memory>
+#include <mutex>
+#include <numbers>
+#include <optional>
+#include <string>
+#include <string_view>
+#include <thread>
+#include <vector>
+
+#include "absl/log/log_entry.h"
+#include "absl/log/log_sink.h"
+#include "absl/log/log_sink_registry.h"
+#include "gtest/gtest.h"
+#include "gz/math/Pose3.hh"
+#include "gz/sim/Entity.hh"
+#include "gz/sim/EntityComponentManager.hh"
+#include "gz/sim/Server.hh"
+#include "gz/sim/ServerConfig.hh"
+#include "gz/sim/System.hh"
+#include "gz/sim/Util.hh"
+#include "gz/sim/components/Link.hh"
+#include "gz/sim/components/Model.hh"
+#include "gz/sim/components/Name.hh"
+#include "gz/sim/components/Pose.hh"
+#include "intrinsic/embodiment/frame_policy.h"
+#include "intrinsic/hardware/marine/measurement_health_policy.h"
+#include "intrinsic/hardware/marine/surface_fix.pb.h"
+#include "intrinsic/hardware/marine/surface_fix_policy.h"
+#include "intrinsic/simulation/gazebo/plugins/surface_fix/surface_fix_adapter.h"
+#include "sdf/Element.hh"
+#include "sdf/Plugin.hh"
+#include "sdf/Root.hh"
+#include "sdf/World.hh"
+
+namespace intrinsic::simulation {
+namespace {
+
+using ::intrinsic::hardware::marine::AssessSurfaceFix;
+using ::intrinsic::hardware::marine::MeasurementStateKind;
+using ::intrinsic::hardware::marine::SourceHealthView;
+using ::intrinsic::hardware::marine::SurfaceFixAssessment;
+using ::intrinsic::hardware::marine::SurfaceFixError;
+using ::intrinsic::hardware::marine::SurfaceFixView;
+using FixProto = ::intrinsic_proto::hardware::marine::SurfaceFix;
+
+constexpr double kHalfPi = std::numbers::pi / 2.0;
+
+// The model starts at z = 3 and rises 0.01 m per step. With the surface plane
+// at z = 3.05 and a 0.1 m limit the link is always inside the gate.
+constexpr std::string_view kValidChildren = R"(
+        <surface_z_m>3.05</surface_z_m>
+        <max_fix_depth_m>0.1</max_fix_depth_m>)";
+
+// The surface plane at z = 3.055 and a limit of 0: the link starts 0.055 m
+// below the plane and the gate opens once it has risen above it.
+constexpr std::string_view kGatedChildren = R"(
+        <surface_z_m>3.055</surface_z_m>
+        <max_fix_depth_m>0</max_fix_depth_m>)";
+
+std::string PluginXml(std::string_view children) {
+  return std::string(R"(
+      <plugin filename="static://intrinsic::simulation::SurfaceFix"
+              name="intrinsic::simulation::SurfaceFix">)") +
+         std::string(children) + R"(
+      </plugin>)";
+}
+
+std::string ModelWorld(std::string_view model_plugin_xml) {
+  return std::string(R"(<?xml version="1.0"?>
+<sdf version="1.11">
+  <world name="surface_fix_test">
+    <physics name="fixed_step" type="ignored">
+      <max_step_size>0.001</max_step_size>
+      <real_time_update_rate>0</real_time_update_rate>
+    </physics>
+    <model name="uuv">
+      <pose>1 2 3 0 0 0</pose>
+      <link name="hull">
+        <inertial>
+          <mass>32</mass>
+          <inertia>
+            <ixx>0.5</ixx>
+            <ixy>0</ixy>
+            <ixz>0</ixz>
+            <iyy>2.4</iyy>
+            <iyz>0</iyz>
+            <izz>2.7</izz>
+          </inertia>
+        </inertial>
+      </link>
+)") + std::string(model_plugin_xml) +
+         R"(
+    </model>
+  </world>
+</sdf>
+)";
+}
+
+struct PoseSample {
+  double values[7] = {};
+  int64_t sim_time_ns = 0;
+};
+
+// Records the link world pose and simulation time after every step.
+class PoseProbe final : public gz::sim::System,
+                        public gz::sim::ISystemPostUpdate {
+ public:
+  explicit PoseProbe(std::vector<PoseSample>* samples) : samples_(samples) {}
+
+  void PostUpdate(const gz::sim::UpdateInfo& info,
+                  const gz::sim::EntityComponentManager& ecm) override {
+    if (info.paused) {
+      return;
+    }
+    const gz::sim::Entity link = ecm.EntityByComponents(
+        gz::sim::components::Name("hull"), gz::sim::components::Link());
+    if (link == gz::sim::kNullEntity) {
+      return;
+    }
+    const gz::math::Pose3d pose = gz::sim::worldPose(link, ecm);
+    PoseSample sample;
+    sample.values[0] = pose.Pos().X();
+    sample.values[1] = pose.Pos().Y();
+    sample.values[2] = pose.Pos().Z();
+    sample.values[3] = pose.Rot().X();
+    sample.values[4] = pose.Rot().Y();
+    sample.values[5] = pose.Rot().Z();
+    sample.values[6] = pose.Rot().W();
+    sample.sim_time_ns =
+        std::chrono::duration_cast<std::chrono::nanoseconds>(info.simTime)
+            .count();
+    samples_->push_back(sample);
+  }
+
+ private:
+  std::vector<PoseSample>* samples_;
+};
+
+// Counts PostUpdate calls made while the simulation is paused and while it
+// is running.
+class PausedCounter final : public gz::sim::System,
+                            public gz::sim::ISystemPostUpdate {
+ public:
+  PausedCounter(std::atomic<int>* paused, std::atomic<int>* running)
+      : paused_(paused), running_(running) {}
+
+  void PostUpdate(const gz::sim::UpdateInfo& info,
+                  const gz::sim::EntityComponentManager& /*ecm*/) override {
+    (info.paused ? paused_ : running_)->fetch_add(1);
+  }
+
+ private:
+  std::atomic<int>* paused_;
+  std::atomic<int>* running_;
+};
+
+// Moves the model so the sensor has non-trivial kinematics without a physics
+// system.
+class Mover final : public gz::sim::System, public gz::sim::ISystemPreUpdate {
+ public:
+  void PreUpdate(const gz::sim::UpdateInfo& info,
+                 gz::sim::EntityComponentManager& ecm) override {
+    if (info.paused) {
+      return;
+    }
+    const gz::sim::Entity model = ecm.EntityByComponents(
+        gz::sim::components::Name("uuv"), gz::sim::components::Model());
+    if (model == gz::sim::kNullEntity) {
+      return;
+    }
+    ecm.SetComponentData<gz::sim::components::Pose>(
+        model, gz::math::Pose3d(0.1 * step_, 0.0, 3.0 + 0.01 * step_, 0.0, 0.0,
+                                kHalfPi));
+    ++step_;
+  }
+
+ private:
+  int step_ = 0;
+};
+
+// Collects the ERROR lines written by this plugin.
+class ErrorSink final : public absl::LogSink {
+ public:
+  void Send(const absl::LogEntry& entry) override {
+    if (entry.log_severity() != absl::LogSeverity::kError) {
+      return;
+    }
+    const std::string text(entry.text_message());
+    if (text.find("SurfaceFix:") == std::string::npos) {
+      return;
+    }
+    std::lock_guard<std::mutex> lock(mutex_);
+    lines_.push_back(text);
+  }
+
+  std::vector<std::string> Lines() {
+    std::lock_guard<std::mutex> lock(mutex_);
+    return lines_;
+  }
+
+ private:
+  std::mutex mutex_;
+  std::vector<std::string> lines_;
+};
+
+class SurfaceFixPartitionEnvironment : public testing::Environment {
+ public:
+  void SetUp() override {
+    // Empty server config skips the default Physics, UserCommands, and
+    // SceneBroadcaster systems. HOME avoids a write to /.gz.
+    setenv("GZ_SIM_SERVER_CONFIG_PATH", "", 1);
+    setenv("HOME", "/tmp", 1);
+    setenv("GZ_PARTITION", "intrinsic_surface_fix_test", 1);
+  }
+};
+
+testing::Environment* const kPartitionEnvironment =
+    testing::AddGlobalTestEnvironment(new SurfaceFixPartitionEnvironment);
+
+std::unique_ptr<gz::sim::Server> MakeServer(const std::string& sdf) {
+  gz::sim::ServerConfig config;
+  config.SetHeadlessRendering(true);
+  if (!config.SetSdfString(sdf)) {
+    return nullptr;
+  }
+  auto server = std::make_unique<gz::sim::Server>(config);
+  server->SetUpdatePeriod(std::chrono::steady_clock::duration::zero());
+  return server;
+}
+
+// Adds the plugin to the model programmatically so a test can read its
+// LastResultForTesting(). The plugin is configured with the same <plugin>
+// element.
+std::shared_ptr<SurfaceFix> AddSurfaceFix(gz::sim::Server* server,
+                                          std::string_view children,
+                                          sdf::Root* root) {
+  const std::string wrapped = "<sdf version=\"1.11\"><world name=\"w\">" +
+                              PluginXml(children) + "</world></sdf>";
+  root->LoadSdfString(wrapped);
+  const sdf::Plugins& plugins = root->WorldByIndex(0)->Plugins();
+  EXPECT_FALSE(plugins.empty());
+  const std::optional<gz::sim::Entity> model = server->EntityByName("uuv");
+  EXPECT_TRUE(model.has_value());
+  auto fix = std::make_shared<SurfaceFix>();
+  if (plugins.empty() || !model.has_value()) {
+    return fix;
+  }
+  std::shared_ptr<const sdf::Element> element = plugins.front().Element();
+  EXPECT_TRUE(server
+                  ->AddSystem(std::static_pointer_cast<gz::sim::System>(fix),
+                              model, element)
+                  .value_or(false));
+  return fix;
+}
+
+SurfaceFixAssessment Assess(const FixProto& sample) {
+  std::vector<double> covariance;
+  std::vector<SourceHealthView> sources;
+  SurfaceFixView view;
+  const auto& health = sample.health();
+  view.health.header_present = health.has_header();
+  view.health.frame_id = health.header().frame_id();
+  view.health.expected_frame_present = true;
+  view.health.expected_frame = "world_enu";
+  view.health.source_time_present = health.header().has_source_time();
+  view.health.source_time =
+      embodiment::ClockReading{health.header().source_time().seconds(),
+                               health.header().source_time().nanos()};
+  view.health.receive_time_present = health.header().has_receive_time();
+  view.health.receive_time =
+      embodiment::ClockReading{health.header().receive_time().seconds(),
+                               health.header().receive_time().nanos()};
+  view.health.header_validity_present = health.header().has_validity();
+  view.health.header_validity_state = health.header().validity().state();
+  view.health.state_present = health.has_state();
+  view.health.state = health.state();
+  view.health.quality_present = health.has_quality();
+  view.health.quality = health.quality();
+  view.health.covariance_present = health.has_covariance();
+  covariance.assign(health.covariance().values().begin(),
+                    health.covariance().values().end());
+  view.health.covariance = covariance;
+  for (const auto& source : health.sources()) {
+    sources.push_back(SourceHealthView{
+        source.source_id(), source.has_validity(), source.validity().state()});
+  }
+  view.health.sources = sources;
+  view.position_x_present = sample.has_position_x_m();
+  view.position_x_m = sample.position_x_m();
+  view.position_y_present = sample.has_position_y_m();
+  view.position_y_m = sample.position_y_m();
+  view.position_z_present = sample.has_position_z_m();
+  view.position_z_m = sample.position_z_m();
+  view.source_present = sample.has_source();
+  view.source = static_cast<int>(sample.source());
+  view.satellite_count_present = sample.has_satellite_count();
+  view.satellite_count = sample.satellite_count();
+  return AssessSurfaceFix(view);
+}
+
+// One recorded plugin output per plugin step.
+struct TraceEntry {
+  SurfaceFixStepResult result;
+  std::optional<std::string> bytes;
+};
+
+TraceEntry EntryOf(const SurfaceFix& fix) {
+  TraceEntry entry;
+  entry.result = fix.LastResultForTesting();
+  if (entry.result.measurement.has_value()) {
+    entry.bytes = entry.result.measurement->SerializeAsString();
+  }
+  return entry;
+}
+
+// Runs single iterations until the plugin has taken `steps` new steps. An
+// iteration in which the plugin did not advance by exactly one step is not
+// recorded. The number of iterations gz-sim runs per request is not assumed.
+std::vector<TraceEntry> StepAndRecord(gz::sim::Server* server,
+                                      const SurfaceFix& fix, int steps) {
+  std::vector<TraceEntry> trace;
+  for (int i = 0; i < steps + 2 && static_cast<int>(trace.size()) < steps;
+       ++i) {
+    const int64_t before = fix.AdapterForTesting().StepIndexForTesting();
+    EXPECT_TRUE(server->Run(/*_blocking=*/true, 1, /*_paused=*/false));
+    if (fix.AdapterForTesting().StepIndexForTesting() == before + 1) {
+      trace.push_back(EntryOf(fix));
+    }
+  }
+  return trace;
+}
+
+// Requests ResetAll and records the first `steps` plugin steps after the
+// simulation has applied it. gz-sim applies a reset one iteration after it
+// is requested: the iteration right after ResetAll is still an ordinary step
+// and is not recorded. The iteration that applies the reset is the one in
+// which the plugin's step index goes back down.
+std::vector<TraceEntry> ResetAndRecord(gz::sim::Server* server,
+                                       const SurfaceFix& fix, int steps) {
+  server->ResetAll();
+  std::vector<TraceEntry> trace;
+  bool reset_applied = false;
+  for (int i = 0; i < steps + 6 && static_cast<int>(trace.size()) < steps;
+       ++i) {
+    const int64_t before = fix.AdapterForTesting().StepIndexForTesting();
+    EXPECT_TRUE(server->Run(/*_blocking=*/true, 1, /*_paused=*/false));
+    const int64_t after = fix.AdapterForTesting().StepIndexForTesting();
+    if (!reset_applied) {
+      reset_applied = after < before;
+      if (reset_applied && after == 1) {
+        trace.push_back(EntryOf(fix));
+      }
+      continue;
+    }
+    if (after == before + 1) {
+      trace.push_back(EntryOf(fix));
+    }
+  }
+  EXPECT_TRUE(reset_applied);
+  return trace;
+}
+
+void ExpectTracesEqual(const std::vector<TraceEntry>& lhs,
+                       const std::vector<TraceEntry>& rhs) {
+  ASSERT_EQ(lhs.size(), rhs.size());
+  for (size_t i = 0; i < lhs.size(); ++i) {
+    EXPECT_EQ(lhs[i].result.step, rhs[i].result.step) << i;
+    EXPECT_EQ(lhs[i].bytes.has_value(), rhs[i].bytes.has_value()) << i;
+    if (lhs[i].bytes.has_value() && rhs[i].bytes.has_value()) {
+      EXPECT_EQ(*lhs[i].bytes, *rhs[i].bytes) << i;
+    }
+  }
+}
+
+void ExpectPosesBitIdentical(const std::vector<PoseSample>& lhs,
+                             const std::vector<PoseSample>& rhs) {
+  ASSERT_EQ(lhs.size(), rhs.size());
+  for (size_t i = 0; i < lhs.size(); ++i) {
+    for (int j = 0; j < 7; ++j) {
+      EXPECT_EQ(lhs[i].values[j], rhs[i].values[j]) << i << " " << j;
+    }
+    EXPECT_EQ(lhs[i].sim_time_ns, rhs[i].sim_time_ns) << i;
+  }
+}
+
+std::vector<PoseSample> RunWorld(const std::string& sdf, int steps,
+                                 bool add_fix,
+                                 std::string_view children = kValidChildren) {
+  std::vector<PoseSample> poses;
+  std::unique_ptr<gz::sim::Server> server = MakeServer(sdf);
+  EXPECT_TRUE(server != nullptr);
+  if (server == nullptr) {
+    return poses;
+  }
+  EXPECT_TRUE(
+      server->AddSystem(std::make_shared<PoseProbe>(&poses)).value_or(false));
+  EXPECT_TRUE(server->AddSystem(std::make_shared<Mover>()).value_or(false));
+  sdf::Root root;
+  if (add_fix) {
+    AddSurfaceFix(server.get(), children, &root);
+  }
+  EXPECT_TRUE(server->Run(/*_blocking=*/true, steps, /*_paused=*/false));
+  return poses;
+}
+
+}  // namespace
+
+// ---- P1: lifecycle --------------------------------------------------------
+
+TEST(SurfaceFixPluginTest, ConfigureStepResetUnloadRunCleanly) {
+  ASSERT_EQ(SurfaceFixStaticPluginAnchorForTesting(), 1);
+  const std::string children = std::string(kValidChildren) +
+                               "<latency_steps>2</latency_steps>"
+                               "<noise_amplitude_m>0.05</noise_amplitude_m>"
+                               "<dropout_window><start_step>4</start_step>"
+                               "<end_step>6</end_step></dropout_window>";
+  std::vector<TraceEntry> first_run;
+  std::vector<TraceEntry> after_reset;
+  {
+    std::unique_ptr<gz::sim::Server> server = MakeServer(ModelWorld(""));
+    ASSERT_TRUE(server != nullptr);
+    sdf::Root root;
+    const std::shared_ptr<SurfaceFix> fix =
+        AddSurfaceFix(server.get(), children, &root);
+    ASSERT_TRUE(fix->AdapterForTesting().ConfigStatusForTesting().ok());
+    first_run = StepAndRecord(server.get(), *fix, 12);
+    EXPECT_EQ(fix->AdapterForTesting().StepIndexForTesting(), 12);
+
+    after_reset = ResetAndRecord(server.get(), *fix, 12);
+  }
+  ASSERT_EQ(first_run.size(), 12u);
+  for (int k = 0; k < 12; ++k) {
+    EXPECT_EQ(first_run[k].result.step, k);
+    EXPECT_TRUE(first_run[k].result.status.ok()) << k;
+    // Latency 2: startup absent. Dropout [4, 6) shifted by the latency.
+    const bool absent = k < 2 || k == 6 || k == 7;
+    EXPECT_EQ(first_run[k].bytes.has_value(), !absent) << k;
+    if (!absent) {
+      const SurfaceFixAssessment assessment =
+          Assess(*first_run[k].result.measurement);
+      EXPECT_EQ(assessment.error, SurfaceFixError::kNone) << k;
+      EXPECT_EQ(assessment.state, MeasurementStateKind::kDegraded) << k;
+      EXPECT_FALSE(assessment.accepted) << k;
+    }
+  }
+  // Reset clears the queue and the step counter: the trace equals a run
+  // from a fresh server, and startup is absent again.
+  ExpectTracesEqual(first_run, after_reset);
+  EXPECT_FALSE(after_reset[0].bytes.has_value());
+  EXPECT_FALSE(after_reset[1].bytes.has_value());
+
+  std::vector<TraceEntry> fresh_run;
+  {
+    std::unique_ptr<gz::sim::Server> server = MakeServer(ModelWorld(""));
+    ASSERT_TRUE(server != nullptr);
+    sdf::Root root;
+    const std::shared_ptr<SurfaceFix> fix =
+        AddSurfaceFix(server.get(), children, &root);
+    fresh_run = StepAndRecord(server.get(), *fix, 12);
+  }
+  ExpectTracesEqual(first_run, fresh_run);
+}
+
+TEST(SurfaceFixPluginTest, PausedStepsDoNotAdvanceTheStepIndex) {
+  std::atomic<int> paused_updates{0};
+  std::atomic<int> running_updates{0};
+  std::unique_ptr<gz::sim::Server> server = MakeServer(ModelWorld(""));
+  ASSERT_TRUE(server != nullptr);
+  ASSERT_TRUE(server
+                  ->AddSystem(std::make_shared<PausedCounter>(&paused_updates,
+                                                              &running_updates))
+                  .value_or(false));
+  sdf::Root root;
+  const std::shared_ptr<SurfaceFix> fix =
+      AddSurfaceFix(server.get(), kValidChildren, &root);
+
+  // A paused blocking run never completes its iterations, so run paused in
+  // the background until the plugin's neighbours have seen paused updates.
+  ASSERT_TRUE(server->Run(/*_blocking=*/false, 0, /*_paused=*/true));
+  for (int i = 0; i < 2000 && paused_updates.load() < 5; ++i) {
+    std::this_thread::sleep_for(std::chrono::milliseconds(5));
+  }
+  server->Stop();
+  for (int i = 0; i < 2000 && server->Running(); ++i) {
+    std::this_thread::sleep_for(std::chrono::milliseconds(5));
+  }
+  ASSERT_FALSE(server->Running());
+  EXPECT_GE(paused_updates.load(), 5);
+  EXPECT_EQ(fix->AdapterForTesting().StepIndexForTesting(), 0);
+  EXPECT_FALSE(fix->LastResultForTesting().measurement.has_value());
+
+  ASSERT_TRUE(server->Run(/*_blocking=*/true, 1, /*_paused=*/false));
+  // The plugin's step index equals the number of non-paused updates the
+  // server made, however many iterations gz-sim ran for the request.
+  const int running = running_updates.load();
+  ASSERT_GE(running, 1);
+  EXPECT_EQ(fix->AdapterForTesting().StepIndexForTesting(), running);
+  ASSERT_TRUE(fix->LastResultForTesting().measurement.has_value());
+  EXPECT_EQ(fix->LastResultForTesting().step, running - 1);
+  EXPECT_EQ(
+      fix->LastResultForTesting().measurement->health().header().sequence(),
+      42u + static_cast<uint64_t>(running - 1));
+}
+
+// ---- P2: reads pose and time ----------------------------------------------
+
+TEST(SurfaceFixPluginTest, ReadsLinkPoseAndSimulationTime) {
+  std::vector<PoseSample> poses;
+  std::unique_ptr<gz::sim::Server> server = MakeServer(ModelWorld(""));
+  ASSERT_TRUE(server != nullptr);
+  ASSERT_TRUE(
+      server->AddSystem(std::make_shared<PoseProbe>(&poses)).value_or(false));
+  ASSERT_TRUE(server->AddSystem(std::make_shared<Mover>()).value_or(false));
+  sdf::Root root;
+  const std::shared_ptr<SurfaceFix> fix =
+      AddSurfaceFix(server.get(), kValidChildren, &root);
+  int checked = 0;
+  for (int i = 0; i < 12 && checked < 6; ++i) {
+    const int64_t before = fix->AdapterForTesting().StepIndexForTesting();
+    ASSERT_TRUE(server->Run(/*_blocking=*/true, 1, /*_paused=*/false));
+    if (fix->AdapterForTesting().StepIndexForTesting() != before + 1) {
+      continue;
+    }
+    ASSERT_EQ(poses.size(), static_cast<size_t>(before + 1));
+    const PoseSample& pose = poses.back();
+    const SurfaceFixStepResult& result = fix->LastResultForTesting();
+    ASSERT_TRUE(result.status.ok()) << result.status.message;
+    ASSERT_TRUE(result.measurement.has_value()) << checked;
+    const FixProto& sample = *result.measurement;
+    EXPECT_EQ(sample.position_x_m(), pose.values[0]) << checked;
+    EXPECT_EQ(sample.position_y_m(), pose.values[1]) << checked;
+    EXPECT_EQ(sample.position_z_m(), pose.values[2]) << checked;
+    EXPECT_EQ(sample.source(), FixProto::FIX_SOURCE_GNSS);
+    EXPECT_EQ(
+        sample.health().header().frame_id(),
+        std::string(embodiment::WorldFrameId(embodiment::WorldFrame::kEnu)));
+    const auto& source = sample.health().header().source_time();
+    EXPECT_EQ(source.seconds() * 1000000000LL + source.nanos(),
+              pose.sim_time_ns)
+        << checked;
+    EXPECT_EQ(sample.health().header().receive_time().seconds(),
+              source.seconds());
+    EXPECT_EQ(sample.health().header().receive_time().nanos(), source.nanos());
+    const SurfaceFixAssessment assessment = Assess(sample);
+    EXPECT_EQ(assessment.error, SurfaceFixError::kNone) << checked;
+    EXPECT_TRUE(assessment.accepted) << checked;
+    ++checked;
+  }
+  EXPECT_EQ(checked, 6);
+}
+
+TEST(SurfaceFixPluginTest, GateFollowsTheLinkHeightAgainstTheSurfacePlane) {
+  std::vector<PoseSample> poses;
+  std::unique_ptr<gz::sim::Server> server = MakeServer(ModelWorld(""));
+  ASSERT_TRUE(server != nullptr);
+  ASSERT_TRUE(
+      server->AddSystem(std::make_shared<PoseProbe>(&poses)).value_or(false));
+  ASSERT_TRUE(server->AddSystem(std::make_shared<Mover>()).value_or(false));
+  sdf::Root root;
+  const std::shared_ptr<SurfaceFix> fix =
+      AddSurfaceFix(server.get(), kGatedChildren, &root);
+  int gated = 0;
+  int emitted = 0;
+  for (int i = 0; i < 30 && gated + emitted < 16; ++i) {
+    const int64_t before = fix->AdapterForTesting().StepIndexForTesting();
+    ASSERT_TRUE(server->Run(/*_blocking=*/true, 1, /*_paused=*/false));
+    if (fix->AdapterForTesting().StepIndexForTesting() != before + 1) {
+      continue;
+    }
+    ASSERT_EQ(poses.size(), static_cast<size_t>(before + 1));
+    const SurfaceFixStepResult& result = fix->LastResultForTesting();
+    ASSERT_TRUE(result.status.ok()) << result.status.message;
+    const bool expect_fix = (3.055 - poses.back().values[2]) <= 0.0;
+    EXPECT_EQ(result.measurement.has_value(), expect_fix) << before;
+    (expect_fix ? emitted : gated) += 1;
+  }
+  EXPECT_GT(gated, 0);
+  EXPECT_GT(emitted, 0);
+}
+
+// ---- P3: opt-in regression ------------------------------------------------
+
+TEST(SurfaceFixPluginTest, SensorIsReadOnlyAndWorldWithoutPluginIsUnchanged) {
+  constexpr int kSteps = 20;
+  const std::vector<PoseSample> bare =
+      RunWorld(ModelWorld(""), kSteps, /*add_fix=*/false);
+  const std::vector<PoseSample> added =
+      RunWorld(ModelWorld(""), kSteps, /*add_fix=*/true);
+  const std::vector<PoseSample> from_sdf =
+      RunWorld(ModelWorld(PluginXml(kValidChildren)), kSteps,
+               /*add_fix=*/false);
+  ASSERT_EQ(bare.size(), static_cast<size_t>(kSteps));
+  ExpectPosesBitIdentical(bare, added);
+  ExpectPosesBitIdentical(bare, from_sdf);
+  // The Mover really moves the link, so identical poses are not trivial.
+  EXPECT_NE(bare.front().values[0], bare.back().values[0]);
+}
+
+TEST(SurfaceFixPluginTest, StaticAliasLoadsFromSdfAndUnloadsCleanly) {
+  {
+    const std::vector<PoseSample> poses =
+        RunWorld(ModelWorld(PluginXml(kValidChildren)), 3, false);
+    EXPECT_EQ(poses.size(), 3u);
+  }
+  const std::vector<PoseSample> again =
+      RunWorld(ModelWorld(PluginXml(kValidChildren)), 2, false);
+  EXPECT_EQ(again.size(), 2u);
+}
+
+// ---- P4: invalid SDF ------------------------------------------------------
+
+TEST(SurfaceFixPluginTest, InvalidConfigurationProducesNoOutputAndOneLogLine) {
+  const std::string bad[] = {
+      "<surface_z_m>nan</surface_z_m><max_fix_depth_m>0.1</max_fix_depth_m>",
+      "<surface_z_m>3</surface_z_m><max_fix_depth_m>-1</max_fix_depth_m>",
+      "<surface_z_m>3</surface_z_m>",
+      "<max_fix_depth_m>0.1</max_fix_depth_m>",
+      std::string(kValidChildren) +
+          "<position_bias_x_m>1.0x</position_bias_x_m>",
+      std::string(kValidChildren) + "<noise_amplitude_m>-1</noise_amplitude_m>",
+      std::string(kValidChildren) + "<latency_steps>1001</latency_steps>",
+      std::string(kValidChildren) +
+          "<dropout_window><start_step>5</start_step><end_step>4</end_step>"
+          "</dropout_window>",
+  };
+  for (const std::string& children : bad) {
+    ErrorSink sink;
+    absl::AddLogSink(&sink);
+    {
+      std::unique_ptr<gz::sim::Server> server = MakeServer(ModelWorld(""));
+      ASSERT_TRUE(server != nullptr);
+      sdf::Root root;
+      const std::shared_ptr<SurfaceFix> fix =
+          AddSurfaceFix(server.get(), children, &root);
+      EXPECT_FALSE(fix->AdapterForTesting().ConfigStatusForTesting().ok())
+          << children;
+      for (int k = 0; k < 3; ++k) {
+        ASSERT_TRUE(server->Run(/*_blocking=*/true, 1, /*_paused=*/false));
+        EXPECT_FALSE(fix->LastResultForTesting().measurement.has_value())
+            << children;
+      }
+      EXPECT_EQ(fix->AdapterForTesting().StepIndexForTesting(), 0) << children;
+      server->ResetAll();
+      ASSERT_TRUE(server->Run(/*_blocking=*/true, 1, /*_paused=*/false));
+      EXPECT_FALSE(fix->LastResultForTesting().measurement.has_value())
+          << children;
+    }
+    absl::RemoveLogSink(&sink);
+    EXPECT_EQ(sink.Lines().size(), 1u) << children;
+  }
+  const std::vector<PoseSample> poses = RunWorld(
+      ModelWorld(PluginXml(std::string(kValidChildren) +
+                           "<position_bias_x_m>nan</position_bias_x_m>")),
+      3, /*add_fix=*/false);
+  EXPECT_EQ(poses.size(), 3u);
+}
+
+TEST(SurfaceFixPluginTest, UnknownLinkIsInvalidStateWithNoSampleAndOneLogLine) {
+  ErrorSink sink;
+  absl::AddLogSink(&sink);
+  {
+    std::unique_ptr<gz::sim::Server> server = MakeServer(ModelWorld(""));
+    ASSERT_TRUE(server != nullptr);
+    sdf::Root root;
+    const std::string children =
+        std::string(kValidChildren) + "<link_name>missing_hull</link_name>";
+    const std::shared_ptr<SurfaceFix> fix =
+        AddSurfaceFix(server.get(), children, &root);
+    ASSERT_TRUE(fix->AdapterForTesting().ConfigStatusForTesting().ok());
+    for (int k = 0; k < 4; ++k) {
+      ASSERT_TRUE(server->Run(/*_blocking=*/true, 1, /*_paused=*/false));
+      EXPECT_EQ(fix->LastResultForTesting().status.code,
+                SurfaceFixSimErrorCode::kInvalidState);
+      EXPECT_FALSE(fix->LastResultForTesting().measurement.has_value());
+    }
+  }
+  absl::RemoveLogSink(&sink);
+  // One line for the unknown link at Configure, and one de-duplicated line
+  // for the repeated invalid state.
+  EXPECT_EQ(sink.Lines().size(), 2u);
+}
+
+TEST(SurfaceFixPluginTest, NamedLinkIsResolved) {
+  std::unique_ptr<gz::sim::Server> server = MakeServer(ModelWorld(""));
+  ASSERT_TRUE(server != nullptr);
+  sdf::Root root;
+  const std::string children =
+      std::string(kValidChildren) + "<link_name>hull</link_name>";
+  const std::shared_ptr<SurfaceFix> fix =
+      AddSurfaceFix(server.get(), children, &root);
+  ASSERT_TRUE(server->Run(/*_blocking=*/true, 2, /*_paused=*/false));
+  ASSERT_TRUE(fix->LastResultForTesting().measurement.has_value());
+  EXPECT_TRUE(Assess(*fix->LastResultForTesting().measurement).accepted);
+}
+
+}  // namespace intrinsic::simulation
