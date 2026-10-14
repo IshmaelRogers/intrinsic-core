@@ -341,7 +341,7 @@ SurfaceFixStepResult SurfaceFixAdapter::Step(
     return invalid_state("derived depth is not finite");
   }
 
-  // 3. Noise. Always drawn by index so that the gate, dropout, and latency
+  // 2. Noise. Always drawn by index so that the gate, dropout, and latency
   // never shift a later step's draws. fma gives one rounding, independent of
   // compiler contraction.
   std::array<double, kSurfaceFixAxes> bias = {};
@@ -358,7 +358,7 @@ SurfaceFixStepResult SurfaceFixAdapter::Step(
     }
   }
 
-  // 2. Gate. Too deep for a fix: no sample is originated. This is the same
+  // 3. Gate. Too deep for a fix: no sample is originated. This is the same
   // empty slot as a dropout, and it is not an error.
   const bool too_deep = depth_m > max_fix_depth_m_;
 

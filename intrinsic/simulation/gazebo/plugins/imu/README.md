@@ -195,6 +195,10 @@ repository links (`@gz-physics//bullet-featherstone`):
 | Same box with `intrinsic::simulation::Hydrodynamics` attached | norm `9.80665` | `+1 g`: neither lost nor doubled. |
 | Box in free fall (no ground), z falling | norm `9.80665` | **Wrong for a physical accelerometer, which reads `0`.** |
 
+Because bullet-featherstone reports zero link acceleration, the I10
+hydrodynamics check cannot detect gravity double-counting or dropping, so the
+#122 gravity question remains open.
+
 The first two rows pass for a reason that needs to be stated plainly: the
 engine reports `WorldLinearAcceleration = 0` for every link, so the adapter
 only ever sees `a_w = 0` and the result is `f_b = R^T (0 - kGravityEnu)`, which

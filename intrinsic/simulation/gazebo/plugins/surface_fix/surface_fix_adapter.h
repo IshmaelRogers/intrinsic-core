@@ -126,12 +126,12 @@ class SurfaceFixAdapter {
   //               quaternion (norm differs from 1 by more than 1e-6, never
   //               normalised), or a time field out of range. The step index
   //               still advances and nothing is emitted.
-  //   2. gate     d = surface_z_m - z (positive is deeper). When
+  //   2. noise    three draws keyed by (4k + i), consumed every step. The
+  //               effective per-axis bias is fma(amp, u, bias).
+  //   3. gate     d = surface_z_m - z (positive is deeper). When
   //               d > max_fix_depth_m no sample is originated: an empty slot,
   //               like a dropout, and not an error. d == max_fix_depth_m
   //               emits. There is no hysteresis.
-  //   3. noise    three draws keyed by (4k + i), consumed every step. The
-  //               effective per-axis bias is fma(amp, u, bias).
   //   4. dropout  the sample for step k is absent.
   //   5. fake     FakeSurfaceFix::Measure with seed + k and the effective
   //               bias, delay 0, dropout false.

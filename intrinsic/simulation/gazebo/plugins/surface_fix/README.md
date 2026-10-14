@@ -88,8 +88,8 @@ with 12 satellites. No beacon count, no accuracy, no velocity.
 * `d > max_fix_depth_m`: no sample is originated. That is an empty slot, the
   same as a dropout, and **not an error**. `d == max_fix_depth_m` emits.
 * There is no hysteresis. The gate looks only at this step's pose.
-* The gate is decided before the noise draws are consumed, but the draws are
-  keyed by step index, so a gated step never shifts a later draw.
+* The noise draws are consumed on every step and are keyed by step index, so a
+  gated step never shifts a later draw.
 
 This is a **simulation gate, not a HAL policy**. The HAL's
 `surface_fix_policy.h` explicitly does not decide whether the vehicle is
@@ -114,11 +114,11 @@ starting at 0. `t_k` is `info.simTime` split into int64 seconds and nanos in
    quaternion, bad time nanos, or a derived position that is not finite gives
    `kInvalidState`, enqueues an empty slot, and emits nothing. `k` still
    advances. The step also drops the delayed sample that was due at `k`.
-2. **Gate.** As above.
-3. **Noise.** `u_{k,i} = ImuSignedUnitNoise(seed + (4k + i) *
+2. **Noise.** `u_{k,i} = ImuSignedUnitNoise(seed + (4k + i) *
    0x9E3779B97F4A7C15)` with uint64 wrap. Slots 0-2 are position x, y, z.
    **Slot 3 is reserved and neither drawn nor reused.** The effective bias of
    axis `i` is `b'_i = std::fma(amp, u_{k,i}, bias_i)`. Draws are stateless.
+3. **Gate.** As above.
 4. **Dropout.** If `k` is in a window, the fake is not called and an empty
    slot is enqueued.
 5. **Produce.** `FakeSurfaceFixConfig{seed + k, effective biases, delay 0,
