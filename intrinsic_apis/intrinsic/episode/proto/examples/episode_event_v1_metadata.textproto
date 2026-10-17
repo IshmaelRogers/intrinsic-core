@@ -1,0 +1,31 @@
+# EpisodeMetadata carrying the #123 seed-42 FormatMarineMetadata text verbatim.
+# config_digest is SHA-256 over exactly that text (pinned value).
+# Accepted: kNone.
+header {
+  sequence: 5
+  source_time {
+    seconds: 1700000105
+    nanos: 250000000
+  }
+  receive_time {
+    seconds: 1700000105
+    nanos: 251000000
+  }
+  source_id: "episode_recorder"
+  frame_id: "world_enu"
+  clock_domain: "monotonic"
+  validity {
+    state: STATE_VALID
+  }
+}
+schema_version: 1
+snapshot_id: "6ceb1af0dca7d2b01d4e876fe699fb8c5d5709d5a4938ea3f46e8d355d3b33de"
+config_digest: "93150ec8e5fd8f6dcc2d9cae50d84de9b89287b187edfa4a807b0da0e8eb5d6a"
+provenance {
+  model_id: "marine_parameter_sampler"
+  model_version: "v1"
+  digest: "sha256:93150ec8e5fd8f6dcc2d9cae50d84de9b89287b187edfa4a807b0da0e8eb5d6a"
+}
+episode_metadata {
+  marine_randomization_metadata: "marine_randomization_metadata_v1\nseed=42\nmass_inertia.mass_kg=17.415648787718233\nbuoyancy.displaced_volume_m3=0.013198207857538401\ndamping.linear_coefficients[0,0]=10.22880904204111\ndamping.linear_coefficients[1,1]=26.883814330472752\ndamping.linear_coefficients[2,2]=25.950754213506155\ndamping.linear_coefficients[3,3]=0.56046842296395971\ndamping.linear_coefficients[4,4]=1.2184051937121843\ndamping.linear_coefficients[5,5]=2.1607582520562039\ndamping.quadratic_coefficients[0]=3.3993103891702061\ndamping.quadratic_coefficients[1]=6.8033027299174824\ndamping.quadratic_coefficients[2]=2.4588219815853063\ndamping.quadratic_coefficients[3]=6.4088594153310012\ndamping.quadratic_coefficients[4]=7.187545628510092\ndamping.quadratic_coefficients[5]=7.8001994940486021\nenvironment.current_velocity_m_s.x=0.16515941079970109\nenvironment.current_velocity_m_s.y=-0.14828244534988466\nenvironment.current_velocity_m_s.z=-0.079285152864145864\nimu.angular_velocity_bias_x_rad_s=0.0048649597444773022\nimu.angular_velocity_bias_y_rad_s=-0.014394340678809868\nimu.angular_velocity_bias_z_rad_s=0.032005173516127187\nimu.linear_acceleration_bias_x_m_s2=0.074879028519390101\nimu.linear_acceleration_bias_y_m_s2=-0.039041934634480274\nimu.linear_acceleration_bias_z_m_s2=0.047966934708076288\nthrusters[0].efficiency=0.83119821355454349\nthrusters[1].efficiency=0.7739264566034032\nthrusters[2].efficiency=0.99001367521289041\nthrusters[3].efficiency=0.84539981114206375\nthrusters[4].efficiency=0.81942687787157087\nthrusters[5].efficiency=0.81284783826888196\n"
+}

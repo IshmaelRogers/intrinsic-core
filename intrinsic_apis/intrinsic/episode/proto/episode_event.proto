@@ -1,0 +1,67 @@
+// Copyright 2026 Intrinsic Innovation LLC
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     https://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
+syntax = "proto3";
+
+package intrinsic_proto.episode;
+
+import "intrinsic/embodiment/proto/model_provenance.proto";
+import "intrinsic/embodiment/proto/stamped_header.proto";
+import "intrinsic/inference/proto/inference_envelope.proto";
+import "intrinsic/safety/proto/safety_decision.proto";
+import "intrinsic/vehicle/proto/vehicle_trajectory.proto";
+
+option go_package = "intrinsic/episode/proto/episode_event_go_proto";
+
+// Episode-level metadata. v1 carries the realized-parameter text only.
+//
+// Every tag, type, and name is permanent. Append fields only. See README.md.
+message EpisodeMetadata {
+  // Exact FormatMarineMetadata output (ASCII,
+  // "marine_randomization_metadata_v1\n..."). Empty means no randomization
+  // was recorded.
+  string marine_randomization_metadata = 1;
+}
+
+// Append-only envelope for one recorded episode event. The payload oneof case
+// is the payload type. There is no separate type enum.
+//
+// Every tag, type, and name is permanent. Append fields only. See README.md.
+// episode_event_schema_freeze_test guards this file.
+message EpisodeEvent {
+  // Sequence, source and receive time, source_id, frame_id, clock_domain,
+  // and validity.
+  intrinsic_proto.embodiment.StampedHeader header = 1;
+
+  // Writers set 1. Newer versions are additive and accepted by v1 readers.
+  uint32 schema_version = 2;
+
+  // Empty, or exactly 64 lowercase hex characters (world snapshot digest).
+  string snapshot_id = 3;
+
+  // Empty, or lowercase hex SHA-256 over exactly the bytes of
+  // EpisodeMetadata.marine_randomization_metadata. See README.md.
+  string config_digest = 4;
+
+  // Unset when not applicable.
+  intrinsic_proto.embodiment.ModelProvenance provenance = 5;
+
+  oneof payload {
+    intrinsic_proto.safety.SafetyDecision safety_decision = 10;
+    intrinsic_proto.vehicle.VehicleTrajectory vehicle_trajectory = 11;
+    intrinsic_proto.inference.InferenceEnvelope inference_envelope = 12;
+    intrinsic_proto.inference.InferenceResult inference_result = 13;
+    EpisodeMetadata episode_metadata = 14;
+  }
+}
