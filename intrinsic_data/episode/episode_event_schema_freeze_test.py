@@ -63,13 +63,33 @@ def _freeze_lines():
   raise AssertionError("missing %s under %s" % (_FREEZE_RELATIVE, root))
 
 
+def _real_oneof_name(message, field):
+  """Like C++ real_containing_oneof: proto3 optional synthetic oneofs excluded."""
+  if field.containing_oneof is None:
+    return None
+  proto = descriptor_pb2.DescriptorProto()
+  message.CopyToProto(proto)
+  field_proto = next(f for f in proto.field if f.name == field.name)
+  if field_proto.proto3_optional:
+    return None
+  return field.containing_oneof.name
+
+
+def _presence_label(message, field):
+  """repeated, oneof:<name>, explicit, or implicit, as in the C++ test."""
+  if field.is_repeated:
+    return "repeated"
+  oneof_name = _real_oneof_name(message, field)
+  if oneof_name is not None:
+    return "oneof:" + oneof_name
+  return "explicit" if field.has_presence else "implicit"
+
+
 def _field_line(message, field):
   type_name = _TYPE_NAMES[field.type]
   if field.type == field.TYPE_MESSAGE:
     type_name += ":" + field.message_type.full_name
-  label = "repeated" if field.is_repeated else "optional"
-  if field.containing_oneof is not None:
-    label = "oneof:" + field.containing_oneof.name
+  label = _presence_label(message, field)
   return "%s.%s %d %s %s" % (
       message.name,
       field.name,
@@ -110,10 +130,12 @@ class EpisodeEventSchemaFreezeTest(unittest.TestCase):
     self.assertEqual(len(file_descriptor.enum_types_by_name), 0)
 
   def test_no_field_is_declared_reserved(self):
-    proto = descriptor_pb2.DescriptorProto()
-    episode_event_pb2.EpisodeEvent.DESCRIPTOR.CopyToProto(proto)
-    self.assertEqual(len(proto.reserved_range), 0)
-    self.assertEqual(len(proto.reserved_name), 0)
+    for message in episode_event_pb2.DESCRIPTOR.message_types_by_name.values():
+      with self.subTest(message=message.name):
+        proto = descriptor_pb2.DescriptorProto()
+        message.CopyToProto(proto)
+        self.assertEqual(len(proto.reserved_range), 0)
+        self.assertEqual(len(proto.reserved_name), 0)
 
 
 if __name__ == "__main__":

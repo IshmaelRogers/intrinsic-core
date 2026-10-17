@@ -74,8 +74,11 @@ std::string FieldLine(const google::protobuf::Descriptor& message,
   if (field.type() == google::protobuf::FieldDescriptor::TYPE_MESSAGE) {
     type += ":" + std::string(field.message_type()->full_name());
   }
-  std::string label = field.is_repeated() ? "repeated" : "optional";
-  if (field.real_containing_oneof() != nullptr) {
+  // repeated, oneof:<name>, explicit, or implicit, as in the Python test.
+  std::string label = field.has_presence() ? "explicit" : "implicit";
+  if (field.is_repeated()) {
+    label = "repeated";
+  } else if (field.real_containing_oneof() != nullptr) {
     label = "oneof:" + std::string(field.real_containing_oneof()->name());
   }
   return std::string(message.name()) + "." + std::string(field.name()) + " " +
@@ -123,10 +126,12 @@ TEST(EpisodeEventSchemaFreezeTest, PackageAndMessagesAreFrozen) {
 }
 
 TEST(EpisodeEventSchemaFreezeTest, NoFieldIsDeclaredReserved) {
-  const google::protobuf::Descriptor* event =
-      intrinsic_proto::episode::EpisodeEvent::descriptor();
-  EXPECT_EQ(event->reserved_range_count(), 0);
-  EXPECT_EQ(event->reserved_name_count(), 0);
+  for (const google::protobuf::Descriptor* message :
+       {intrinsic_proto::episode::EpisodeEvent::descriptor(),
+        intrinsic_proto::episode::EpisodeMetadata::descriptor()}) {
+    EXPECT_EQ(message->reserved_range_count(), 0) << message->name();
+    EXPECT_EQ(message->reserved_name_count(), 0) << message->name();
+  }
 }
 
 }  // namespace

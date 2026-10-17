@@ -63,6 +63,23 @@ A defective event is never skipped, even when its payload is unknown.
   that carries both a known payload and an unknown payload field is treated as
   its known payload.
 
+## Judgement calls
+
+- `config_digest` covers only the `FormatMarineMetadata` text.
+- Empty `snapshot_id` and `config_digest` mean absent, not an error.
+- Empty-digest rule (row 9, payload 14 only): empty metadata text requires an
+  empty digest, and non-empty text requires the matching digest. An empty
+  digest with non-empty text is `kConfigDigestMismatch`, and a non-empty digest
+  with empty text is `kConfigDigestMismatch`. For other payloads an empty
+  digest is always accepted.
+- `schema_version >= 1` is accepted. Newer versions are additive.
+- Envelope `provenance` is optional and not validated.
+- The v2 golden is the v1 metadata envelope without payload 14, plus unknown
+  fields at tags 536870000 and 536870001, so the payload is unknown and
+  skippable.
+- The Python digest hashes UTF-8, which equals ASCII for the sampler output.
+- The freeze file also records presence and oneof membership.
+
 ## Fixtures and tests
 
 `testdata/` is committed and never rewritten by tests.
@@ -71,7 +88,7 @@ A defective event is never skipped, even when its payload is unknown.
 | --- | --- |
 | `episode_event_v1_<payload>.binpb` and `.textproto` | One event per payload case, built from the #91, #101, #118 examples and the #123 seed-42 text. |
 | `episode_event_v2_additive_unknown_payload.binpb` | The v1 metadata event envelope without its payload, plus an unknown length-delimited payload field at tag 536870000 and an unknown varint envelope field at tag 536870001. |
-| `episode_event_schema_freeze.txt` | `<message>.<field> <tag> <type> <label>` for every field, sorted. |
+| `episode_event_schema_freeze.txt` | `<message>.<field> <tag> <type> <label>` for every field, sorted. The type is the scalar name or `message:<full name>`. The label is `implicit`, `explicit`, `oneof:<name>`, or `repeated`, computed the same way in C++ and Python (`real_containing_oneof` semantics). |
 
 | Test | Covers |
 | --- | --- |

@@ -23,6 +23,7 @@ import unittest
 from google.protobuf import message as message_lib
 from google.protobuf import text_format
 from intrinsic.episode.proto import episode_event_pb2
+
 from intrinsic_data.episode import episode_event_policy as policy
 
 _Error = policy.EpisodeEventError
