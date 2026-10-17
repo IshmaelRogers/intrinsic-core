@@ -1,0 +1,84 @@
+# Two-sample VehicleTrajectory example (#101) wrapped in an EpisodeEvent.
+# Accepted: kNone.
+header {
+  sequence: 2
+  source_time {
+    seconds: 1700000102
+    nanos: 250000000
+  }
+  receive_time {
+    seconds: 1700000102
+    nanos: 251000000
+  }
+  source_id: "episode_recorder"
+  frame_id: "world_enu"
+  clock_domain: "monotonic"
+  validity {
+    state: STATE_VALID
+  }
+}
+schema_version: 1
+snapshot_id: "6ceb1af0dca7d2b01d4e876fe699fb8c5d5709d5a4938ea3f46e8d355d3b33de"
+config_digest: "93150ec8e5fd8f6dcc2d9cae50d84de9b89287b187edfa4a807b0da0e8eb5d6a"
+vehicle_trajectory {
+  header {
+    sequence: 11
+    source_time {
+      seconds: 1700000010
+      nanos: 250000000
+    }
+    receive_time {
+      seconds: 1700000011
+    }
+    source_id: "planner"
+    frame_id: "world_enu"
+    clock_domain: "monotonic"
+    validity {
+      state: STATE_VALID
+    }
+  }
+  trajectory_id: "traj_alpha"
+  samples {
+    time {
+      seconds: 1700000010
+    }
+    pose_world_from_body {
+      position {
+        x: 1.0
+        y: 2.0
+        z: -3.0
+      }
+      orientation {
+        w: 1.0
+      }
+    }
+    body_twist {
+      linear_x_m_s: 0.5
+      angular_z_rad_s: 0.125
+    }
+  }
+  samples {
+    time {
+      seconds: 1700000011
+      nanos: 500000000
+    }
+    pose_world_from_body {
+      position {
+        x: 1.5
+        y: 2.0
+        z: -3.0
+      }
+      orientation {
+        w: 1.0
+      }
+    }
+    body_twist {
+      linear_x_m_s: 0.5
+    }
+  }
+  provenance {
+    model_id: "uuv_planner"
+    model_version: "v1"
+    digest: "sha256:traj"
+  }
+}
