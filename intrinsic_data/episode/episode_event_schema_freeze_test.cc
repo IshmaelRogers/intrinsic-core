@@ -19,6 +19,7 @@
 #include <algorithm>
 #include <cstdlib>
 #include <fstream>
+#include <map>
 #include <set>
 #include <sstream>
 #include <string>
@@ -120,14 +121,33 @@ TEST(EpisodeEventSchemaFreezeTest, PackageAndMessagesAreFrozen) {
   for (int i = 0; i < file->message_type_count(); ++i) {
     messages.insert(std::string(file->message_type(i)->name()));
   }
-  EXPECT_EQ(messages,
-            (std::set<std::string>{"EpisodeEvent", "EpisodeMetadata"}));
+  EXPECT_EQ(messages, (std::set<std::string>{"EpisodeEvent", "EpisodeLoss",
+                                             "EpisodeMetadata"}));
   EXPECT_EQ(file->enum_type_count(), 0);
+}
+
+TEST(EpisodeEventSchemaFreezeTest, LossReasonEnumIsFrozen) {
+  const google::protobuf::EnumDescriptor* reason =
+      intrinsic_proto::episode::EpisodeLoss::descriptor()->FindEnumTypeByName(
+          "LossReason");
+  ASSERT_NE(reason, nullptr);
+  std::map<std::string, int> values;
+  for (int i = 0; i < reason->value_count(); ++i) {
+    values[std::string(reason->value(i)->full_name())] =
+        reason->value(i)->number();
+  }
+  EXPECT_EQ(
+      values,
+      (std::map<std::string, int>{
+          {"intrinsic_proto.episode.EpisodeLoss.LOSS_REASON_UNSPECIFIED", 0},
+          {"intrinsic_proto.episode.EpisodeLoss.LOSS_REASON_OVERFLOW", 1},
+          {"intrinsic_proto.episode.EpisodeLoss.LOSS_REASON_TOO_LARGE", 2}}));
 }
 
 TEST(EpisodeEventSchemaFreezeTest, NoFieldIsDeclaredReserved) {
   for (const google::protobuf::Descriptor* message :
        {intrinsic_proto::episode::EpisodeEvent::descriptor(),
+        intrinsic_proto::episode::EpisodeLoss::descriptor(),
         intrinsic_proto::episode::EpisodeMetadata::descriptor()}) {
     EXPECT_EQ(message->reserved_range_count(), 0) << message->name();
     EXPECT_EQ(message->reserved_name_count(), 0) << message->name();

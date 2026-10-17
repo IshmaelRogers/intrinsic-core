@@ -125,9 +125,24 @@ class EpisodeEventSchemaFreezeTest(unittest.TestCase):
     self.assertEqual(file_descriptor.package, "intrinsic_proto.episode")
     self.assertEqual(
         set(file_descriptor.message_types_by_name),
-        {"EpisodeEvent", "EpisodeMetadata"},
+        {"EpisodeEvent", "EpisodeLoss", "EpisodeMetadata"},
     )
     self.assertEqual(len(file_descriptor.enum_types_by_name), 0)
+
+  def test_loss_reason_enum_is_frozen(self):
+    loss = episode_event_pb2.DESCRIPTOR.message_types_by_name["EpisodeLoss"]
+    reason = loss.enum_types_by_name["LossReason"]
+    self.assertEqual(
+        {
+            loss.full_name + "." + value.name: value.number
+            for value in reason.values
+        },
+        {
+            "intrinsic_proto.episode.EpisodeLoss.LOSS_REASON_UNSPECIFIED": 0,
+            "intrinsic_proto.episode.EpisodeLoss.LOSS_REASON_OVERFLOW": 1,
+            "intrinsic_proto.episode.EpisodeLoss.LOSS_REASON_TOO_LARGE": 2,
+        },
+    )
 
   def test_no_field_is_declared_reserved(self):
     for message in episode_event_pb2.DESCRIPTOR.message_types_by_name.values():
