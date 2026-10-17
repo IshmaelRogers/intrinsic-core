@@ -40,6 +40,7 @@ inline constexpr int kPayloadCaseVehicleTrajectory = 11;
 inline constexpr int kPayloadCaseInferenceEnvelope = 12;
 inline constexpr int kPayloadCaseInferenceResult = 13;
 inline constexpr int kPayloadCaseEpisodeMetadata = 14;
+inline constexpr int kPayloadCaseEpisodeLoss = 15;
 
 inline constexpr size_t kSha256HexLength = 64;
 
@@ -69,6 +70,9 @@ enum class PayloadKind {
   // The oneof is not set but the message carries unknown fields: a payload
   // case this reader does not know.
   kUnknown,
+  // Writer-emitted loss record (case 15). Appended after kUnknown so no
+  // existing number changes.
+  kEpisodeLoss = 7,
 };
 
 struct EpisodeEventAssessment {
@@ -152,6 +156,8 @@ inline PayloadKind ClassifyPayload(int payload_case, bool has_unknown_fields) {
       return PayloadKind::kInferenceResult;
     case kPayloadCaseEpisodeMetadata:
       return PayloadKind::kEpisodeMetadata;
+    case kPayloadCaseEpisodeLoss:
+      return PayloadKind::kEpisodeLoss;
     default:
       return has_unknown_fields ? PayloadKind::kUnknown : PayloadKind::kNone;
   }

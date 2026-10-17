@@ -39,6 +39,7 @@ PAYLOAD_CASE_VEHICLE_TRAJECTORY = 11
 PAYLOAD_CASE_INFERENCE_ENVELOPE = 12
 PAYLOAD_CASE_INFERENCE_RESULT = 13
 PAYLOAD_CASE_EPISODE_METADATA = 14
+PAYLOAD_CASE_EPISODE_LOSS = 15
 
 SHA256_HEX_LENGTH = 64
 
@@ -70,6 +71,9 @@ class PayloadKind(enum.Enum):
   # The oneof is not set but the message carries unknown fields: a payload
   # case this reader does not know.
   UNKNOWN = 6
+  # Writer-emitted loss record (case 15). Appended after UNKNOWN so no
+  # existing number changes.
+  EPISODE_LOSS = 7
 
 
 @dataclass(frozen=True)
@@ -113,6 +117,7 @@ _PAYLOAD_KINDS = {
     PAYLOAD_CASE_INFERENCE_ENVELOPE: PayloadKind.INFERENCE_ENVELOPE,
     PAYLOAD_CASE_INFERENCE_RESULT: PayloadKind.INFERENCE_RESULT,
     PAYLOAD_CASE_EPISODE_METADATA: PayloadKind.EPISODE_METADATA,
+    PAYLOAD_CASE_EPISODE_LOSS: PayloadKind.EPISODE_LOSS,
 }
 
 

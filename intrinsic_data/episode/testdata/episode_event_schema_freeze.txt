@@ -1,4 +1,5 @@
 EpisodeEvent.config_digest 4 string implicit
+EpisodeEvent.episode_loss 15 message:intrinsic_proto.episode.EpisodeLoss oneof:payload
 EpisodeEvent.episode_metadata 14 message:intrinsic_proto.episode.EpisodeMetadata oneof:payload
 EpisodeEvent.header 1 message:intrinsic_proto.embodiment.StampedHeader explicit
 EpisodeEvent.inference_envelope 12 message:intrinsic_proto.inference.InferenceEnvelope oneof:payload
@@ -8,4 +9,8 @@ EpisodeEvent.safety_decision 10 message:intrinsic_proto.safety.SafetyDecision on
 EpisodeEvent.schema_version 2 uint32 implicit
 EpisodeEvent.snapshot_id 3 string implicit
 EpisodeEvent.vehicle_trajectory 11 message:intrinsic_proto.vehicle.VehicleTrajectory oneof:payload
+EpisodeLoss.dropped_count 1 uint64 implicit
+EpisodeLoss.first_dropped_writer_index 2 uint64 implicit
+EpisodeLoss.last_dropped_writer_index 3 uint64 implicit
+EpisodeLoss.reason 4 enum implicit
 EpisodeMetadata.marine_randomization_metadata 1 string implicit
