@@ -670,7 +670,8 @@ TEST(EpisodeEventSerializationTest, S3ReplayPayloadsAreLengthDelimitedTags) {
 
 TEST(EpisodeEventSerializationTest, S3PreSchemaViewClassifiesAsUnknownSkip) {
   for (const PayloadCase& payload : kReplayPayloads) {
-    EpisodeEventView view = ViewOf(Golden(payload.name));
+    const EpisodeEvent message = Golden(payload.name);
+    EpisodeEventView view = ViewOf(message);
     view.payload_case = kPayloadCaseNotSet;
     view.has_unknown_fields = true;
     const EpisodeEventAssessment assessment = AssessEpisodeEvent(view);
