@@ -214,6 +214,97 @@ cc_test(
     ],
 )
 
+cc_library(
+    name = "episode_replay_adapter_common",
+    hdrs = ["episode_replay_adapter_common.h"],
+    visibility = ["//visibility:private"],
+    deps = [
+        ":episode_event_policy",
+        ":episode_replay",
+        "@com_google_protobuf//:protobuf",
+        "@intrinsic_apis//intrinsic/episode/proto:episode_event_cc_proto",
+    ],
+)
+
+cc_library(
+    name = "estimator_replay_adapter",
+    srcs = ["estimator_replay_adapter.cc"],
+    hdrs = ["estimator_replay_adapter.h"],
+    visibility = ["//visibility:private"],
+    deps = [
+        ":episode_replay",
+        ":episode_replay_adapter_common",
+        "//intrinsic/estimation:estimator_cc_proto",
+        "//intrinsic/estimation:estimator_service",
+        "@com_google_protobuf//:protobuf",
+    ],
+)
+
+cc_test(
+    name = "estimator_replay_adapter_test",
+    size = "small",
+    srcs = ["estimator_replay_adapter_test.cc"],
+    data = [":testdata"],
+    visibility = ["//visibility:private"],
+    deps = [
+        ":episode_event_policy",
+        ":episode_reader",
+        ":episode_replay",
+        ":episode_replay_adapter_common",
+        ":episode_writer",
+        ":estimator_replay_adapter",
+        "//intrinsic/estimation:estimator_cc_proto",
+        "//intrinsic/estimation:estimator_service",
+        "//intrinsic/estimation:fake_estimator_service",
+        "@com_google_googletest//:gtest_main",
+        "@com_google_protobuf//:protobuf",
+        "@intrinsic_apis//intrinsic/episode/proto:episode_event_cc_proto",
+    ],
+)
+
+cc_library(
+    name = "world_replay_adapter",
+    srcs = ["world_replay_adapter.cc"],
+    hdrs = ["world_replay_adapter.h"],
+    visibility = ["//visibility:private"],
+    deps = [
+        ":episode_event_policy",
+        ":episode_replay",
+        ":episode_replay_adapter_common",
+        "//intrinsic/world/marine_component_validity:marine_component_validity_policy",
+        "//intrinsic/world/world_snapshot:world_snapshot_builder",
+        "//intrinsic/world/world_snapshot:world_snapshot_policy",
+        "//intrinsic/world/world_snapshot:world_snapshot_skew_assessor",
+        "//intrinsic/world/world_snapshot:world_snapshot_skew_policy",
+        "@intrinsic_apis//intrinsic/world/proto:world_snapshot_descriptor_cc_proto",
+    ],
+)
+
+cc_test(
+    name = "world_replay_adapter_test",
+    size = "small",
+    srcs = ["world_replay_adapter_test.cc"],
+    data = [":testdata"],
+    visibility = ["//visibility:private"],
+    deps = [
+        ":episode_event_policy",
+        ":episode_reader",
+        ":episode_replay",
+        ":episode_replay_adapter_common",
+        ":episode_writer",
+        ":world_replay_adapter",
+        "//intrinsic/world/marine_component_validity:marine_component_validity_policy",
+        "//intrinsic/world/world_snapshot:world_snapshot_builder",
+        "//intrinsic/world/world_snapshot:world_snapshot_policy",
+        "//intrinsic/world/world_snapshot:world_snapshot_skew_assessor",
+        "//intrinsic/world/world_snapshot:world_snapshot_skew_policy",
+        "@com_google_googletest//:gtest_main",
+        "@com_google_protobuf//:protobuf",
+        "@intrinsic_apis//intrinsic/episode/proto:episode_event_cc_proto",
+        "@intrinsic_apis//intrinsic/world/proto:world_snapshot_descriptor_cc_proto",
+    ],
+)
+
 py_library(
     name = "episode_event_policy_py",
     srcs = ["episode_event_policy.py"],

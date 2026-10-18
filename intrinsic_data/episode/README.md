@@ -705,3 +705,177 @@ The fixed `MeasurementEnvelope` inside `episode_event_v1_recorded_message`
 | S3 | Each golden's payload is one top-level field with the allocated tag and wire type 2. A view with `payload_case = 0` and `has_unknown_fields = true` (the pre-#244 view) is `kUnknown` and skipped. |
 | S4 | The freeze file and freeze tests (message set and the 11 new lines). |
 | S5 | C++ only, `episode_replay_payloads_test`: write the three goldens with `EpisodeWriter`, read them with `EpisodeReader` (kinds 8, 9, 10, known), and emit them with `EpisodeReplayer` in `kStep` with `skipped_unknown == 0`. |
+
+## Replay adapters (#131)
+
+Lock id `episode-replay-adapters-estimator-world-v1`. Two passive, host-only
+adapters turn replayed episode events into estimator and World calls. C++ only,
+namespace `intrinsic::episode`, `//visibility:private`, sim and test only. The
+adapters add no schema, writer, reader, replay, estimator or World change, and
+`schema_version` stays 1. They start no thread, never sleep, and read no clock
+and no randomness. They never modify recorded bytes or timestamps, never reorder
+events, and never synthesize, interpolate or hold-last.
+
+| Target | Contents |
+| --- | --- |
+| `episode_replay_adapter_common` | Header-only. `ReplayAdapterStatus`, `ReplayCompatibilityConfig`, `ParseReplayRecord`, `CheckCompatibility`. |
+| `estimator_replay_adapter` | `EstimatorReplayAdapter`, fed with `EpisodeReplayEvent`s. |
+| `world_replay_adapter` | `WorldReplayAdapter`, fed with `EpisodeReplayEvent`s. |
+| `estimator_replay_adapter_test` | RA1 to RA6, RA8 to RA13 (estimator side). |
+| `world_replay_adapter_test` | RA2 to RA5, RA7 to RA10, RA12 (World side). |
+
+```cpp
+// Both adapters.
+static std::unique_ptr<Adapter> Create(..., ReplayAdapterStatus* status);
+StepType Feed(const EpisodeReplayEvent& event);  // from EpisodeReplayer::Step()
+SummaryType Finish();                            // idempotent
+```
+
+`EstimatorReplayAdapter::Create(EstimatorService*, EstimatorReplayConfig,
+status, EstimatorResult* init_result = nullptr)` and
+`WorldReplayAdapter::Create(WorldReplayConfig, status)`. The adapters own no
+replayer, buffer or clock. A test drives `EpisodeReplayer` in `kStep` and passes
+each `Step()` event to `Feed`.
+
+`ReplayAdapterStatus` numbers are append-only: `kOk` 0, `kInvalidConfig` 1,
+`kIgnoredPayload` 2, `kIncompatibleSchema` 3, `kConfigDigestMismatch` 4,
+`kSnapshotIdMismatch` 5, `kInvalidRecord` 6, `kMissingRequiredStream` 7,
+`kLatched` 8, `kLossRecord` 9, `kFinished` 10.
+
+### Per-`Feed` order
+
+Identical in both adapters. The first match wins.
+
+| Step | Rule | Result |
+| --- | --- | --- |
+| 1 | After `Finish()`. Nothing is counted or traced. | `kFinished`, `writer_index` 0 |
+| 2 | The adapter is latched. Counted in `stats.after_latch`. | `kLatched` |
+| 3 | `event.loss != nullptr`. `gaps += 1`, `gap_dropped += dropped_count`, `degraded = true`. No synthesis, no `Reset`, replay continues. | `kLossRecord` |
+| 4 | `ParseReplayRecord` fails. `invalid_records += 1`, `degraded = true`. | `kInvalidRecord` |
+| 5 | `CheckCompatibility` on every parsed record, ignored kinds and `EpisodeMetadata` (case 14) included. `schema_version != 1`, or a non-empty event `config_digest` that differs from a non-empty `expected_config_digest`. | `kIncompatibleSchema` or `kConfigDigestMismatch`, and the adapter latches |
+| 6 | Dispatch on `record->payload_kind`. A kind the adapter does not own (also kind 10, `desired_motion`, and `EpisodeMetadata`) is counted in `stats.ignored`. | `kIgnoredPayload` |
+
+Only the two compatibility statuses latch. Every other status is per record. An
+empty event `config_digest` is always accepted (#127 "absent"). An empty
+`expected_config_digest` disables the digest check. A non-empty
+`expected_config_digest` that is not 64 lowercase hex characters is
+`kInvalidConfig`, never clamped.
+
+### Estimator adapter
+
+- `Create` calls `EstimatorService::Initialize(estimator_config)` exactly once
+  and never calls `Predict`, `Reset` or `Initialize` again. A null service, an
+  invalid compatibility config, an empty or duplicate `required_sources` entry,
+  or an `Initialize` result with `ok == false` gives `nullptr` and
+  `kInvalidConfig`. The `Initialize` result is returned in `*init_result`. The
+  other checks run before `Initialize`, so a config the adapter rejects never
+  touches the service.
+- It owns only `PayloadKind::kRecordedMessage` (8). A `RecordedMessage` whose
+  `message_type` is not `intrinsic_proto.estimation.MeasurementEnvelope` is
+  `kIgnoredPayload` and counted in `stats.ignored_message_type`. Bytes that do
+  not parse as a `MeasurementEnvelope` are `kInvalidRecord`.
+- Each `MeasurementEnvelope` gets exactly one `Ingest`, with the parsed envelope
+  unmodified. There is no restamp and no cross-check against the `EpisodeEvent`
+  header. The estimator validates its own envelope. Estimator rejects are data:
+  a `kOk` step with `result.ok == false`, counted in `stats.rejected`, never an
+  adapter error and never `degraded`.
+- `envelope.source_id()` counts as seen even when the estimator rejects it.
+  `Finish` reports `kMissingRequiredStream` with the sorted unique list in
+  `missing_required_sources` when a `required_sources` entry never appeared. A
+  latched status takes precedence for `summary.status` (the list is still
+  filled). Absent sources that are not required are fine, and the estimator's
+  own source-health policy applies.
+- Each `Ingest` appends an `EstimatorTraceEntry` `(writer_index, ok, reason,
+  epoch, state_digest)`.
+
+### World adapter
+
+- `Create` validates the policy with `world::snapshot_skew_internal::PolicyValid`
+  (the #114 rules), and an invalid compatibility config. Either is
+  `kInvalidConfig` and `nullptr`.
+- It owns only `PayloadKind::kWorldSnapshotRecord` (9). With `d = record.snapshot()`:
+  1. No `snapshot`, or `AssessWorldSnapshotDescriptor(d)` does not accept:
+     `kInvalidRecord`, with `descriptor_error` set, `invalid_records += 1`,
+     `degraded = true`.
+  2. A non-empty envelope `snapshot_id` that differs from `d.snapshot_id()`:
+     `kSnapshotIdMismatch`.
+  3. `ComputeSnapshotId(d.state_epoch(), WorldSnapshotViewFromProto(d, true).components)`
+     differs from `d.snapshot_id()`: `kSnapshotIdMismatch`. The assessors do
+     not recompute the id, so this is an explicit comparison.
+
+  Steps 2 and 3 increment `snapshot_id_mismatches`, set `degraded`, do not latch,
+  and the policy does not run.
+  4. `timings` convert one to one into `world::ComponentTimings`, in record
+     order. An unset timestamp or duration is `{0, 0}`. Nothing is dropped,
+     deduplicated or reordered. The assessor judges duplicates
+     (`kInvalidTimings`).
+  5. `query_time` is the event's `header.receive_time`. No wall clock.
+  6. `AssessWorldSnapshotDescriptorSkew(d, timings, query_time, policy)`. The step
+     is `kOk` with `assessed == true`, and a non-`kNone` `assessment.error` is
+     still `kOk` at adapter level (status `kUnspecified`, `withhold` true in the
+     trace). Missing, stale and partial kinds follow #114 exactly.
+- Each assessed record appends a `WorldTraceEntry` `(writer_index, snapshot_id,
+  status, withhold)`. There is no stream-level requirement beyond #114, and zero
+  World records is `kOk`.
+
+### Digests
+
+- **Estimator state digest (R6).** `EstimatorStateDigest` in
+  `estimator_replay_adapter.cc` reads only `service->GetState()`. It is 0 when
+  `state` is unset. Otherwise it is FNV-1a 64 (offset `0xCBF29CE484222325`, prime
+  `0x100000001B3`) over `state()` serialized with
+  `SetSerializationDeterministic(true)`. This is byte for byte
+  `FakeEstimatorService::StateDigest()` and does not downcast to the fake. RA3
+  asserts `step.state_digest == fake.StateDigest()` after every `Ingest`. The
+  digest follows `VehicleState.sources`, so it moves with per-source health even
+  though `Ingest` never changes the published pose, mode or epoch.
+- **World chain digest (R7).** Lowercase hex SHA-256 (`internal::EpisodeSha256Hex`)
+  over `"v1\n"` followed by `snapshot_id + "\n"` for each assessed record in feed
+  order. Withheld snapshots are included. Invalid and mismatched records are
+  excluded. With no assessed record it is the SHA-256 of `"v1\n"`
+  (`2d27fbdf4e8ca207afbfa388ca9172fbcc6c70e534af2476b3b704f87debadcf`).
+
+### Fixtures and tests
+
+No file is added under `testdata/`. The tests build every episode in memory with
+`EpisodeWriter` and an in-memory `EpisodeSink`, read it with `EpisodeReader` and
+replay it with `EpisodeReplayer` in `kStep`. Event envelopes copy the v1
+metadata golden identity (`source_id`, `clock_domain "monotonic"`, the pinned
+seed-42 `config_digest`, provenance, `schema_version` 1). Only the sequence, the
+times and the payload vary. Estimator measurements are the #244 113-byte
+`MeasurementEnvelope` with other `source_id` and times. Positive World records
+recompute their `snapshot_id`. The `episode_event_v1_world_snapshot_record`
+golden is read only as the `kSnapshotIdMismatch` negative case (see
+Limitations) and is not modified.
+
+| Test | Covers |
+| --- | --- |
+| RA1 | Estimator nominal: metadata, 3 measurements from 2 sources and a World event (ignored). The trace equals the committed table. A call-counting wrapper sees 1 `Initialize`, 3 `Ingest`, 0 `Predict` and 0 `Reset`. |
+| RA2 | World nominal: one FRESH and one PARTIAL snapshot, the trace and chain digest equal the committed table, a measurement event is ignored. |
+| RA3 | Determinism: the same bytes replayed twice into fresh adapters give identical steps, traces, stats and digests. `state_digest == fake.StateDigest()` after every `Ingest`, also after the test faults the fake between two events. |
+| RA4 | Compatibility: `schema_version 2` and a wrong non-empty `config_digest`, each on a measurement or World event, an ignored kind and a case-14 metadata event, give their status and latch. An empty event digest is accepted, and an empty `expected_config_digest` disables the check. |
+| RA5 | World integrity: envelope id mismatch, the #244 golden, a wrong `state_epoch` and the structural defects (duplicate or empty kind, no creation time, no id, no snapshot). None latch, and replay continues. |
+| RA6 | Required sources: a missing source, a source seen only as rejects, and absent sources that are not required. |
+| RA7 | #114 statuses: INCOMPLETE, STALE (horizon expired, no timing), EXCESSIVE_SKEW, duplicate timings (`kInvalidTimings`) and an unset horizon equal a direct `AssessWorldSnapshotDescriptorSkew` call with `query_time = receive_time`. |
+| RA8 | Loss: a writer overflow gives a loss record, `kLossRecord`, `gaps == 1`, `gap_dropped == dropped_count`, `degraded`, and later events are consumed. |
+| RA9 | Ignored: other kinds (safety, trajectory, inference, `desired_motion` 18) and another `RecordedMessage` type are counted with no `Ingest` and no assessment. |
+| RA10 | Boundaries: an empty episode, a single event, `kFinished` after `Finish()`, and an idempotent `Finish()`. |
+| RA11 | Estimator rejects: out-of-order, duplicate-timestamp and clock-domain-mismatch inner envelopes are `kOk` steps with the matching `RejectReason`. |
+| RA12 | Config: a null service, a bad `expected_config_digest`, empty or duplicate `required_sources`, an `Initialize` the estimator rejects, and an invalid #114 policy. |
+| RA13 | Unparsable `MeasurementEnvelope` bytes give `kInvalidRecord` and `degraded`, with no `Ingest`. |
+
+### Limitations
+
+- Loss records cannot attribute the lost source, so `degraded` is episode-wide.
+- `query_time` is `header.receive_time`. A replayed #114 status equals the live
+  status only if live assessed at `receive_time`.
+- The state digests are fake-estimator digests. Real-estimator replay digests
+  are a later concern.
+- The #244 golden `episode_event_v1_world_snapshot_record` does not recompute
+  its `snapshot_id` (`6ceb1af0...33de`, the recomputed id for `state_epoch 7`,
+  `bathymetry_reference=3`, `current_field=5` is
+  `02ed8cd9476beeb4395573244f1744c052d41a16387c5fc1c1375319836a9900`). Under
+  this adapter it is a `kSnapshotIdMismatch` case, not a valid World snapshot.
+- Out of scope: the #132 adapters (planner, safety, inference, `desired_motion`;
+  kind 10 is ignored), Python, `.gitattributes`, and any schema, writer, reader,
+  replay, estimator or World change.
