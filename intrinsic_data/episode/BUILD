@@ -74,12 +74,24 @@ cc_test(
 )
 
 cc_library(
+    name = "episode_event_view",
+    hdrs = ["episode_event_view.h"],
+    visibility = ["//visibility:private"],
+    deps = [
+        ":episode_event_policy",
+        "@com_google_protobuf//:protobuf",
+        "@intrinsic_apis//intrinsic/episode/proto:episode_event_cc_proto",
+    ],
+)
+
+cc_library(
     name = "episode_writer",
     srcs = ["episode_writer.cc"],
     hdrs = ["episode_writer.h"],
     visibility = ["//visibility:private"],
     deps = [
         ":episode_event_policy",
+        ":episode_event_view",
         "//intrinsic/embodiment:frame_policy",
         "@abseil-cpp//absl/crc:crc32c",
         "@abseil-cpp//absl/status",
@@ -103,6 +115,45 @@ cc_test(
         "//intrinsic/embodiment:frame_policy",
         "@abseil-cpp//absl/crc:crc32c",
         "@abseil-cpp//absl/status",
+        "@abseil-cpp//absl/types:span",
+        "@com_google_googletest//:gtest_main",
+        "@com_google_protobuf//:protobuf",
+        "@intrinsic_apis//intrinsic/episode/proto:episode_event_cc_proto",
+    ],
+)
+
+cc_library(
+    name = "episode_reader",
+    srcs = ["episode_reader.cc"],
+    hdrs = ["episode_reader.h"],
+    visibility = ["//visibility:private"],
+    deps = [
+        ":episode_event_policy",
+        ":episode_event_view",
+        "//intrinsic/embodiment:frame_policy",
+        "@abseil-cpp//absl/crc:crc32c",
+        "@abseil-cpp//absl/status",
+        "@abseil-cpp//absl/status:statusor",
+        "@abseil-cpp//absl/types:span",
+        "@com_google_protobuf//:protobuf",
+        "@intrinsic_apis//intrinsic/episode/proto:episode_event_cc_proto",
+    ],
+)
+
+cc_test(
+    name = "episode_reader_test",
+    size = "small",
+    srcs = ["episode_reader_test.cc"],
+    data = [":testdata"],
+    visibility = ["//visibility:private"],
+    deps = [
+        ":episode_event_policy",
+        ":episode_reader",
+        ":episode_writer",
+        "//intrinsic/embodiment:frame_policy",
+        "@abseil-cpp//absl/crc:crc32c",
+        "@abseil-cpp//absl/status",
+        "@abseil-cpp//absl/status:statusor",
         "@abseil-cpp//absl/types:span",
         "@com_google_googletest//:gtest_main",
         "@com_google_protobuf//:protobuf",

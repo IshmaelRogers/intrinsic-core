@@ -11,8 +11,9 @@ check sequence advance, does not order times, does not convert frames, and does
 not re-validate inner payloads. Consumers use the existing `SafetyDecision`,
 `VehicleTrajectory`, and Inference policies for those. The bounded writer
 (`episode_writer`, see [Bounded episode writer](#bounded-episode-writer))
-writes a stream. There is still no reader, replay clock, or digest equality
-(#129 to #132).
+writes a stream and the episode reader (`episode_reader`, see
+[Episode reader](#episode-reader)) reads it back and detects corruption. There
+is still no replay clock or digest equality (#130 to #132).
 
 ## API
 
@@ -94,6 +95,7 @@ A defective event is never skipped, even when its payload is unknown.
 | `episode_event_v2_additive_unknown_payload.binpb` | The v1 metadata event envelope without its payload, plus an unknown length-delimited payload field at tag 536870000 and an unknown varint envelope field at tag 536870001. |
 | `episode_writer_v1_nominal.iepisod` | The five v1 goldens written in sequence order 1 to 5 by one source, then `Close`. 4069 bytes. |
 | `episode_writer_v1_overflow.iepisod` | The same five events with `capacity = 4`: three records, then the `OVERFLOW` loss record. 1607 bytes. |
+| `episode_reader_v1_*.iepisod` | Thirteen corruption and edge fixtures for the reader, see [Reader fixtures](#reader-fixtures). |
 | `episode_event_schema_freeze.txt` | `<message>.<field> <tag> <type> <label>` for every field, sorted. The type is the scalar name or `message:<full name>`. The label is `implicit`, `explicit`, `oneof:<name>`, or `repeated`, computed the same way in C++ and Python (`real_containing_oneof` semantics). |
 
 | Test | Covers |
@@ -108,6 +110,7 @@ A defective event is never skipped, even when its payload is unknown.
 | E8 | SHA-256 of the seed-42 text equals the pinned hex in both languages. A one-byte change is `kConfigDigestMismatch`. |
 | E9 | The descriptor equals `episode_event_schema_freeze.txt`. |
 | W1 to W14 | The bounded writer, see below. |
+| RT1 to RT14 | The episode reader, see [Reader tests](#reader-tests). |
 
 ## Bounded episode writer
 
@@ -248,6 +251,198 @@ were built outside the writer, from the committed `.binpb` goldens, a CRC32C
 reference, and a hand-encoded loss record, and the writer output is compared
 with them byte for byte.
 
+## Episode reader
+
+`episode_reader.h` (lock id `episode-reader-v1`, #129) reads a whole
+`IEPISOD1` version 1 buffer, validates every record, and reports the longest
+structurally valid prefix. It is **host-only**: never call it from an ICON
+cycle, never link it into a real-time part. It reads no clock, starts no
+thread, and has no sleep, timer, or retry. It is C++ only. It reads the format
+exactly as the writer produces it. It changes no schema, proto, or file format.
+
+### API
+
+- `ReadEpisode(bytes, config, filter)` is pure. The returned
+  `EpisodeRecordEntry::event_bytes` spans point into `bytes`, which must
+  outlive the result. Reading the same input twice gives identical results.
+- `EpisodeReaderConfig`: `max_event_bytes` in `[1, 16 MiB]` (default 16 MiB),
+  `max_records` in `[1, 16777216]` (default 1,000,000), `max_file_bytes` in
+  `[12, 4 GiB]` (default 1 GiB). An out-of-range value gives
+  `status = kInvalidConfig` and nothing else is filled. It never clamps. A
+  buffer larger than `max_file_bytes` gives `kInputTooLarge`. In both cases no
+  record is read and `defect` stays `kNone`.
+- `EpisodeReadFilter` selects which valid records appear in `records`: a set of
+  `source_id`s, a set of `PayloadKind`s, and an inclusive `writer_index` range.
+  The parts are AND-ed, and an empty part matches all. A name that matches
+  nothing is not an error. An index range with `first > last` is
+  `kInvalidConfig`. The filter never hides a defect: every record is validated,
+  and the defect, the last-good fields, `stats`, and `losses` always describe
+  the whole valid prefix. Loss records are always in `losses`, and appear in
+  `records` only if they pass the filter (kind `kEpisodeLoss`, source
+  `episode_writer`).
+- `LoadEpisodeFile(path, max_file_bytes)` does `open(O_RDONLY | O_CLOEXEC)`,
+  `fstat`, then reads the whole file, looping over partial reads and `EINTR`. A
+  size above `max_file_bytes` is `FailedPreconditionError` and nothing is read.
+  An invalid `max_file_bytes` is `InvalidArgumentError`, checked first. I/O
+  errors map like `FileEpisodeSink`: `ENOENT` is `NotFound`, `EACCES` and
+  `EPERM` are `PermissionDenied`, `EEXIST` is `AlreadyExists`, anything else is
+  `Internal`.
+- `MaxEpisodeLossRecordBytes()` is the serialized size of the largest possible
+  writer loss record (122 bytes), computed exactly as `EpisodeWriter::Create`
+  computes its `largest` template. A record length limit is
+  `max(max_event_bytes, MaxEpisodeLossRecordBytes())`, so a loss record is
+  readable even with a tiny `max_event_bytes`.
+
+`EpisodeReaderStatus` and `EpisodeReadDefect` numbers are append-only.
+
+### Result fields
+
+- `good_records`: valid records before the defect, loss records included.
+- `good_end_offset`: the byte just past the last valid record. 12 for a
+  header-only file, 0 when the header itself is bad.
+- `has_last_good_index` and `last_good_writer_index`: the index of the last
+  valid record, if any. `next_expected_writer_index` is the index the next
+  record would need.
+- `defect_offset`: where the defective header or record starts. It equals
+  `good_end_offset`, and is 0 when there is no defect.
+- `event_error`: the `AssessEpisodeEvent` error, set for `kInvalidEvent`.
+- `stats` covers the whole valid prefix and ignores the filter. `records` is
+  every valid record, so it equals `good_records`. `loss_records`,
+  `unknown_skipped`, and `producer_sources` are subsets or counts within it.
+  The three `dropped_*` counters sum `dropped_count` by loss reason (reasons
+  above 2 go to `dropped_other_reason`).
+- The loss source `episode_writer` is not counted in `producer_sources`.
+
+### Check order
+
+The first failure wins and reading stops. Everything before the defect is
+returned and trusted, nothing after it is. There is no resync and no repair.
+
+Header:
+
+| Order | Check | Defect |
+| --- | --- | --- |
+| 1 | fewer than 12 bytes, including 0 bytes | `kTruncatedHeader` |
+| 2 | magic is not `IEPISOD1` | `kBadMagic` |
+| 3 | version is not 1 (including 0) | `kUnsupportedVersion` |
+
+A header-only file is a valid empty episode.
+
+Each record, from `good_end_offset` while bytes remain:
+
+| Order | Check | Defect |
+| --- | --- | --- |
+| 1 | fewer than 16 bytes left | `kTruncatedRecord` |
+| 2 | `N == 0` or `N > max(max_event_bytes, MaxEpisodeLossRecordBytes())` | `kLengthOutOfRange` |
+| 3 | fewer than `16 + N` bytes left | `kTruncatedRecord` |
+| 4 | CRC32C of the N bytes differs from the stored CRC | `kCrcMismatch` |
+| 5 | `ParseFromArray` fails | `kParseFailed` |
+| 6 | `AssessEpisodeEvent` is not engaged or has an error (echoed in `event_error`) | `kInvalidEvent` |
+| 7 | case 15 from a source other than `episode_writer`, or `episode_writer` with any other payload (an unknown payload too) | `kReservedEvent` |
+| 7 | a loss record fails a loss rule below | `kLossRecordInvalid` |
+| 8 | `writer_index < expected` / `> expected` | `kIndexNotIncreasing` / `kIndexGap` |
+| 9 | a new producer source while 64 are tracked / a known source whose sequence does not advance | `kTooManySources` / `kOrderViolation` |
+| 10 | this would be record number `max_records + 1` | `kTooManyRecords` |
+
+A valid record updates the counters, the source table, and `expected`, then the
+filter decides whether it appears in `records`. The source table is updated
+only for valid records. The first sequence of a source may be any value,
+including 0. A valid unknown payload (`skip = true`) is a valid record: it
+takes its index and passes the source and sequence checks, and its entry keeps
+the exact bytes. The reader fills its `EpisodeEventView` with the same helper
+as the writer (`episode_event_view.h`, `EpisodeEventViewOf`).
+
+Loss records (case 15 from `episode_writer`) must satisfy all of these, or the
+record is `kLossRecordInvalid`:
+
+- `first_dropped_writer_index == expected`
+- `last_dropped_writer_index >= first_dropped_writer_index`, and `last` is not
+  the largest `uint64`
+- `writer_index == last + 1`
+- `dropped_count == last - first + 1`
+- `reason` is not `LOSS_REASON_UNSPECIFIED`. Reasons above 2 are accepted.
+- `header.sequence` is the previous loss `header.sequence` plus one, and the
+  first loss has 1
+- `source_time == receive_time`, seconds and nanos
+
+Then `expected = writer_index + 1`. The loss checks run before the index check,
+so a damaged loss record reports `kLossRecordInvalid`. Every index computation
+is overflow-checked. A record whose next expected index would wrap is a
+defect: a loss record with `writer_index` equal to the largest `uint64` is
+`kLossRecordInvalid`, and an ordinary record with that index is
+`kIndexNotIncreasing`.
+
+### Reading the result
+
+- `kNone` means a **structurally intact prefix**, not a cleanly closed
+  episode. v1 has no trailer and no sync marker, so the reader cannot tell a
+  file that ended on a record boundary from a file that was cut on one. A
+  truncation exactly on a record boundary is `kNone` with fewer records.
+- The writer legitimately leaves a **0-byte file** after `Cancel` before any
+  flush, or after a failed header write. The reader reports it as
+  `kTruncatedHeader` with `good_end_offset = 0`. That is a missing episode, not
+  a corrupt record.
+- The CRC covers only the N event bytes, not `N` or `writer_index`. Damage to
+  those fields shows up as `kLengthOutOfRange`, `kTruncatedRecord`, or (with
+  overwhelming probability) `kCrcMismatch` or `kParseFailed` of the misframed
+  bytes, and a damaged `writer_index` as `kIndexGap`, `kIndexNotIncreasing`, or
+  `kLossRecordInvalid`. There is a 2^-32 chance that a misframed `N` over
+  garbage still passes the CRC. The parse, assessment, and index checks then
+  catch it with high probability, but not with certainty.
+- After a later change to how `AssessEpisodeEvent` classifies unknown payloads
+  (#240), a file written before it that holds a payload-less event with only
+  unknown envelope fields stops at that record with `kInvalidEvent` and
+  `kMissingPayload`.
+- The whole file is read into memory. At the default `max_file_bytes` that is
+  up to 1 GiB resident.
+
+### Reader fixtures
+
+The `episode_reader_v1_*.iepisod` files are committed and never rewritten by
+tests. They were built outside the reader and the writer by a throwaway Python
+script with its own CRC32C and protobuf wire walker. Inputs are the two
+committed writer goldens and the committed v2 unknown-payload `.binpb`. The
+script checks its CRC32C against the check value `0xE3069283` and against every
+record of both writer goldens before it writes anything. Tests assert the
+expected results below. Tests that need other damage (for example `N` changes,
+duplicate indices, each loss-field corruption, the 65th source) cut or build
+buffers in memory and never write fixtures.
+
+| Fixture | Built from | Defect | `good_records` | `good_end_offset` | Last index |
+| --- | --- | --- | --- | --- | --- |
+| `header_only` | nominal, first 12 bytes | `kNone` | 0 | 12 | none |
+| `bad_magic` | nominal, last magic byte `1` changed to `X` | `kBadMagic` | 0 | 0 | none |
+| `version_0` | nominal, version 0 | `kUnsupportedVersion` | 0 | 0 | none |
+| `version_2` | nominal, version 2 | `kUnsupportedVersion` | 0 | 0 | none |
+| `crc_flip` | nominal, one bit of record 2's CRC flipped | `kCrcMismatch` | 2 | 903 | 1 |
+| `index_gap_uncovered` | nominal with record 2 removed | `kIndexGap` | 2 | 903 | 1 |
+| `sequence_regression` | nominal, record 2 replaced by record 1's event at index 2 | `kOrderViolation` | 2 | 903 | 1 |
+| `forged_loss` | overflow golden, loss record's `source_id` changed to `episode_forger`, CRC recomputed | `kReservedEvent` | 3 | 1517 | 2 |
+| `bad_loss_count` | overflow golden, loss `dropped_count` 2 changed to 3, CRC recomputed | `kLossRecordInvalid` | 3 | 1517 | 2 |
+| `unknown_payload_record` | header, then the v2 golden at index 0 | `kNone` | 1 | 367 | 0 |
+| `index_bit_flip_gap` | nominal, record 2 `writer_index` 2 xor 4 (6), CRC valid | `kIndexGap` | 2 | 903 | 1 |
+| `index_bit_flip_decrease` | nominal, record 2 `writer_index` 2 xor 2 (0), CRC valid | `kIndexNotIncreasing` | 2 | 903 | 1 |
+| `index_bit_flip_loss` | overflow golden, loss `writer_index` 5 xor 1 (4), CRC valid | `kLossRecordInvalid` | 3 | 1517 | 2 |
+
+### Reader tests
+
+| Test | Covers |
+| --- | --- |
+| RT1 | The nominal golden: `kNone`, indices 0 to 4, each `event_bytes` equals its `.binpb`, `good_end_offset = 4069`. |
+| RT2 | The overflow golden: indices 0, 1, 2, 5, one loss `{5, 3, 4, 2, OVERFLOW, seq 1}`, `dropped_overflow = 2`, `good_end_offset = 1607`. |
+| RT3 | Header-only is a valid empty episode. 0 and 11 bytes (and every length below 12) are `kTruncatedHeader`. |
+| RT4 | Bad magic, version 0, and version 2. |
+| RT5 | The nominal golden cut at every length 0 to 4068. A cut inside a record is `kTruncatedRecord`, a cut on a record boundary is `kNone` with fewer records. No crash. |
+| RT6 | CRC flip, event byte flip, `N = 0`, `N` above the limit, a tiny `max_event_bytes`, `N + 1` and `N - 1`, a trailing partial header. |
+| RT7 | Duplicate, decreasing, and uncovered-gap indices. Each loss-record rule, the loss sequence, and the index overflow cases. |
+| RT8 | Sequence regression, the 65th producer source, a forged case 15, and `episode_writer` with another or an unknown payload. |
+| RT9 | A v2 unknown-payload record: `skip`, `kUnknown`, exact bytes, and its part in the index and sequence checks. |
+| RT10 | Filters by source, kind, index range, and combined. Defects, stats, and `losses` do not change. An invalid range is `kInvalidConfig`. |
+| RT11 | Config bounds, `kInputTooLarge`, `max_records`, the pinned `MaxEpisodeLossRecordBytes()`, and a loss record read with `max_event_bytes = 1`. |
+| RT12 | Two reads of the same buffer are field-for-field equal. |
+| RT13 | Writer round trip with an in-memory sink: the `TOO_LARGE` to `OVERFLOW` switch, an accept after a drop, cancel and empty close. `LoadEpisodeFile` equals the in-memory bytes, with the size limit, missing path, and invalid limit errors. |
+| RT14 | A flipped `writer_index` bit with a valid CRC: the three fixtures, and all 64 bits of a record index and of a loss index. |
+
 ## Targets
 
 All targets are opt-in. None is listed in
@@ -261,6 +456,9 @@ All targets are opt-in. None is listed in
 | `episode_event_schema_freeze_test`, `episode_event_schema_freeze_test_py` | E9. |
 | `episode_writer` | Bounded writer, `EpisodeSink`, `FileEpisodeSink`. Visibility is private until a later issue widens it with review. |
 | `episode_writer_test` | W1 to W14. |
+| `episode_event_view` | Header-only helper that fills `EpisodeEventView` from an `EpisodeEvent`, shared by the writer and the reader. Private. |
+| `episode_reader` | Whole-buffer reader, filters, and `LoadEpisodeFile`. Visibility is private until a later issue widens it with review. |
+| `episode_reader_test` | RT1 to RT14. |
 
 ```
 bazel test //intrinsic_data/episode/...
