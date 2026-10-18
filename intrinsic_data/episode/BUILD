@@ -161,6 +161,41 @@ cc_test(
     ],
 )
 
+cc_library(
+    name = "episode_replay",
+    srcs = ["episode_replay.cc"],
+    hdrs = ["episode_replay.h"],
+    visibility = ["//visibility:private"],
+    deps = [
+        ":episode_event_policy",
+        ":episode_event_view",
+        ":episode_reader",
+        "//intrinsic/embodiment:frame_policy",
+        "@abseil-cpp//absl/types:span",
+        "@com_google_protobuf//:protobuf",
+        "@intrinsic_apis//intrinsic/episode/proto:episode_event_cc_proto",
+    ],
+)
+
+cc_test(
+    name = "episode_replay_test",
+    size = "small",
+    srcs = ["episode_replay_test.cc"],
+    data = [":testdata"],
+    visibility = ["//visibility:private"],
+    deps = [
+        ":episode_event_policy",
+        ":episode_reader",
+        ":episode_replay",
+        "//intrinsic/embodiment:frame_policy",
+        "@abseil-cpp//absl/crc:crc32c",
+        "@abseil-cpp//absl/types:span",
+        "@com_google_googletest//:gtest_main",
+        "@com_google_protobuf//:protobuf",
+        "@intrinsic_apis//intrinsic/episode/proto:episode_event_cc_proto",
+    ],
+)
+
 py_library(
     name = "episode_event_policy_py",
     srcs = ["episode_event_policy.py"],

@@ -12,8 +12,10 @@ not re-validate inner payloads. Consumers use the existing `SafetyDecision`,
 `VehicleTrajectory`, and Inference policies for those. The bounded writer
 (`episode_writer`, see [Bounded episode writer](#bounded-episode-writer))
 writes a stream and the episode reader (`episode_reader`, see
-[Episode reader](#episode-reader)) reads it back and detects corruption. There
-is still no replay clock or digest equality (#130 to #132).
+[Episode reader](#episode-reader)) reads it back and detects corruption. The
+replay clock (`episode_replay`, see [Replay clock](#replay-clock)) hands the
+events back in file order with deterministic timing. There is still no
+subsystem or replay adapter and no digest equality (#131, #132).
 
 ## API
 
@@ -443,6 +445,189 @@ buffers in memory and never write fixtures.
 | RT13 | Writer round trip with an in-memory sink: the `TOO_LARGE` to `OVERFLOW` switch, an accept after a drop, cancel and empty close. `LoadEpisodeFile` equals the in-memory bytes, with the size limit, missing path, and invalid limit errors. |
 | RT14 | A flipped `writer_index` bit with a valid CRC: the three fixtures, and all 64 bits of a record index and of a loss index. |
 
+## Replay clock
+
+Deterministic episode replay (#130, lock id `episode-replay-clock-v1`). Host
+only, sim and test only. Never call it from an ICON cycle and never link it
+into a real-time part. It adds no format, schema, reader, or writer change.
+
+The replayer is passive. It starts no thread, never sleeps, and reads no clock.
+The caller owns the clock and passes `now` (an `embodiment::ClockReading`) to
+`Poll`, so a test with a fake clock is fully deterministic and a real-time
+caller decides how to wait.
+
+### API
+
+C++, namespace `intrinsic::episode`, in `episode_replay.h`.
+
+```cpp
+std::unique_ptr<EpisodeReplayer> EpisodeReplayer::Create(
+    absl::Span<const uint8_t> bytes, const EpisodeReaderConfig& reader_config,
+    const EpisodeReadFilter& filter, const EpisodeReplayConfig& config,
+    EpisodeReplayStatus* status);
+EpisodeReplayResult Step();                              // kStep only
+EpisodeReplayStatus Start(embodiment::ClockReading now);  // kTimed only, once
+EpisodeReplayResult Poll(embodiment::ClockReading now);   // kTimed only
+uint64_t Cancel();
+EpisodeReplayStats Stats() const;
+```
+
+`Create` calls `ReadEpisode` twice on the same buffer with the same reader
+config: once with the filter (the replayed records and the defect) and once
+without a filter (the offset of every record, so a loss record that the filter
+dropped can still be timed). The replayer keeps both results and does not copy
+or own the bytes. The caller keeps the buffer alive, as with the reader's
+spans. `Create` returns `nullptr` and sets `*status` on any rejection, and
+never clamps. It also parses every emitted header once and computes every due
+offset, so `Step`, `Start`, `Poll`, and `Cancel` do not allocate.
+
+An `EpisodeReplayEvent` has `record` (an entry of the filtered read, for a loss
+record only when the filtered read contains it), `loss` (set for loss records,
+always an entry of the unfiltered read), `writer_index`, `recorded_offset_ns`,
+`due_offset_ns`, and `ordinal` (0, 1, 2, ... in emission order). The pointers
+point into the replayer's own read results, which are never modified after
+`Create`, so they stay valid for the replayer's lifetime.
+
+`EpisodeReplayStatus` numbers are append-only: `kOk` 0, `kInvalidConfig` 1,
+`kDefectiveStream` 2, `kMixedClockDomain` 3, `kTimeOutOfRange` 4, `kWrongMode`
+5, `kNotStarted` 6, `kNotDue` 7, `kEndOfStream` 8, `kEndOfTrustedPrefix` 9,
+`kCancelled` 10, `kInvalidTime` 11.
+
+### Which records are emitted
+
+- The reader's `records` for the filter. Stream filtering is the reader's
+  filter, not a second one.
+- Plus every loss record, even when the filter excludes it, merged by
+  `writer_index`. A gap therefore stays visible.
+- A valid unknown-payload record (`skip = true`) is not emitted and takes no
+  timeline slot. `stats.skipped_unknown` counts the ones that pass the filter.
+- Always in file order (`writer_index`). Time never reorders events.
+
+### Timestamp policy
+
+- **T1, order.** File order only. Time spaces events out and never reorders
+  them. Recorded timestamps and bytes are never modified.
+- **T2, timeline.** `header.receive_time`, as an offset from the first emitted
+  event (after the unknown-payload skip and the loss merge). The arithmetic is
+  exact integer nanoseconds in `__int128`, with no floating point.
+  `recorded_offset_ns = receive_time - first receive_time`. An offset outside
+  `int64` nanoseconds gives `kTimeOutOfRange` at `Create`.
+- **T3, receive time that goes backwards.** `scaled_k = recorded_offset_ns *
+  speed_den / speed_num`, truncated toward zero. `due_0 = 0` and
+  `due_k = max(due_(k-1), scaled_k)`, so a regression is due immediately after
+  its predecessor. A regression is `recorded_offset_k < recorded_offset_(k-1)`,
+  strictly less than the previous event, and is counted in
+  `stats.time_regressions` (at `Create`, over the whole timeline). Both
+  `recorded_offset_ns` and `due_offset_ns` are reported. A scaled `due` that
+  does not fit `int64` nanoseconds also gives `kTimeOutOfRange`.
+- **T4, clock domains.** All emitted non-loss records must share one non-empty
+  `clock_domain` (`utc`, `monotonic`, or any other non-empty string, compared
+  exactly). Otherwise, including an empty domain on such a record, `Create`
+  returns `kMixedClockDomain`. A stream of only loss records has no domain and
+  is accepted. Loss records have an empty domain and take their time from the
+  last dropped event. The domain of a loss record is not checked. No wall
+  clock is ever read.
+
+### Modes
+
+| Mode | Calls | Behavior |
+| --- | --- | --- |
+| `kStep` | `Step()` | Emits exactly the next event and ignores time. `Poll` and `Start` return `kWrongMode`. The same offsets are computed and reported. |
+| `kTimed` | `Start(now)` once, then `Poll(now)` | `Start` anchors replay time, `due_time = start + due_offset`, and an event is due when `now >= due_time`. `Poll` returns at most one due event, or `kNotDue` with `next_due`. `Step` returns `kWrongMode`. |
+
+Speed is an integer ratio `speed_num / speed_den`, each in [1, 1000]. Real time
+is 1/1, 10/1 is ten times faster, and 1/2 is slow motion. Anything outside
+[1, 1000] is `kInvalidConfig` and is checked in both modes. An unknown mode
+number is `kInvalidConfig`. A reader config that the reader rejects (reader
+status other than `kOk`) is `kInvalidConfig` too, whatever
+`allow_defective_prefix` says.
+
+`Start(now)` rejects a `start + last due offset` that overflows `ClockReading`
+with `kTimeOutOfRange` and does not start. A `now` with nanos outside
+[0, 1e9) is `kInvalidTime`. A `now` earlier than the previous `now` is allowed:
+nothing becomes due early, and it is not an error. `next_due` is normalized
+(nanos in [0, 1e9)).
+
+### Defective input
+
+By default `Create` rejects a read with `defect != kNone` as
+`kDefectiveStream`. With `allow_defective_prefix = true` it replays the trusted
+prefix, the end status is `kEndOfTrustedPrefix`, and `reader_defect` carries
+the reader's defect. A clean file ends with `kEndOfStream`. The defect is the
+filtered read's defect.
+
+### Call precedence, end, and cancel rules
+
+The first match wins.
+
+| Call | Order |
+| --- | --- |
+| `Step` | cancelled: `kCancelled`. Mode is not `kStep`: `kWrongMode`. No events left: the end status. Otherwise `kOk`. |
+| `Start` | cancelled: `kCancelled`. Mode is not `kTimed` or already started: `kWrongMode`. Bad nanos: `kInvalidTime`. Overflow: `kTimeOutOfRange`. Otherwise `kOk`. |
+| `Poll` | cancelled: `kCancelled`. Mode is not `kTimed`: `kWrongMode`. Not started: `kNotStarted`. Bad nanos: `kInvalidTime`. No events left: the end status. Next event not due: `kNotDue` with `next_due`. Otherwise `kOk`. |
+
+- End of stream is sticky: `kEndOfStream` or `kEndOfTrustedPrefix` on every
+  later call. An empty stream (header only, everything filtered out or
+  skipped) creates fine and ends on the first call.
+- `Cancel()` is idempotent. The first call returns the number of events not yet
+  emitted (also in `stats.cancelled_remaining`), later calls return 0. After
+  it, `Step`, `Poll`, and `Start` return `kCancelled`, even at the end of the
+  stream.
+- No rewind, no pause, and no `Reset()`. A repeated replay is a new replayer
+  over the same buffer.
+
+### Limitations
+
+- `receive_time` is producer-filled. Replay timing is only as faithful as the
+  producers' clocks, and T3 hides small regressions behind a count.
+- Episodes that mix `utc` and `monotonic` producers are rejected.
+- Integer speed ratios cap acceleration at 1000x.
+- A loss record takes the last dropped event's time, so a long loss burst shows
+  up as one late event.
+- The passive model puts the waiting loop in the caller. Real-time pacing
+  quality is the caller's to own.
+- Two reads cost two passes and up to twice the entry memory.
+- No time-range filtering beyond the reader's filter, no subsystem or replay
+  adapter, and no digest equality (#131, #132). C++ only, no Python replayer.
+
+### Replay tests
+
+`episode_replay_test` builds its extra streams in memory (framing with a
+recomputed CRC32C). The replayer never writes a stream and no new fixture is
+committed.
+
+| Test | Covers |
+| --- | --- |
+| RC1 | `Step` on the nominal golden: indices 0 to 4, one per call, then sticky `kEndOfStream`. |
+| RC2 | `kTimed` 1/1 with a fake clock: due exactly at the recorded offsets, 1 ns early is `kNotDue` with the exact `next_due`. |
+| RC3 | Speeds 10/1, 1000/1, 1/2: same order, exact truncated offsets. |
+| RC4 | The overflow golden: loss record (index 5) in file order, with the last dropped event's time. |
+| RC5 | A loss record survives a filter that excludes it. An unknown-payload record is skipped and counted. |
+| RC6 | A decreasing `receive_time`: monotone due offsets, kept recorded offsets, `time_regressions`. |
+| RC7 | `kMixedClockDomain`. A loss record with an empty domain is accepted. |
+| RC8 | Defective input: `kDefectiveStream` by default, the trusted prefix and `kEndOfTrustedPrefix` with the opt-in. |
+| RC9 | Cancel mid-stream, idempotent, remaining counts. Wrong-mode, not-started, and invalid-time calls. |
+| RC10 | Config bounds, reader config, empty stream, `kTimeOutOfRange` at `Create` and at `Start`. |
+| RC11 | Two replays give equal `(writer_index, recorded_offset_ns, due_offset_ns)` sequences. |
+| RC12 | An allocation guard that replaces the throwing and the nothrow `operator new` forms counts 0 allocations in `Step`, `Start`, `Poll`, and `Cancel`. |
+
+### Expected results for the goldens
+
+Each row is `(ordinal, writer_index, recorded_offset_ns, due_offset_ns)`. The
+recorded offsets do not depend on the mode. `kStep` reports the due offsets of
+its configured speed (1/1 by default), the same numbers as `kTimed` at that
+speed. The goldens are spaced one second apart (receive times 1700000101.251 s
+to 1700000105.251 s). The numbers come from an independent throwaway script
+that reads the golden bytes, not from the replayer.
+
+| Golden | `kStep` and `kTimed` 1/1 | `kTimed` 10/1 | `kTimed` 1000/1 | `kTimed` 1/2 |
+| --- | --- | --- | --- | --- |
+| `episode_writer_v1_nominal` | (0, 0, 0, 0)<br>(1, 1, 1000000000, 1000000000)<br>(2, 2, 2000000000, 2000000000)<br>(3, 3, 3000000000, 3000000000)<br>(4, 4, 4000000000, 4000000000) | (0, 0, 0, 0)<br>(1, 1, 1000000000, 100000000)<br>(2, 2, 2000000000, 200000000)<br>(3, 3, 3000000000, 300000000)<br>(4, 4, 4000000000, 400000000) | (0, 0, 0, 0)<br>(1, 1, 1000000000, 1000000)<br>(2, 2, 2000000000, 2000000)<br>(3, 3, 3000000000, 3000000)<br>(4, 4, 4000000000, 4000000) | (0, 0, 0, 0)<br>(1, 1, 1000000000, 2000000000)<br>(2, 2, 2000000000, 4000000000)<br>(3, 3, 3000000000, 6000000000)<br>(4, 4, 4000000000, 8000000000) |
+| `episode_writer_v1_overflow` | (0, 0, 0, 0)<br>(1, 1, 1000000000, 1000000000)<br>(2, 2, 2000000000, 2000000000)<br>(3, 5, 4000000000, 4000000000) | (0, 0, 0, 0)<br>(1, 1, 1000000000, 100000000)<br>(2, 2, 2000000000, 200000000)<br>(3, 5, 4000000000, 400000000) | (0, 0, 0, 0)<br>(1, 1, 1000000000, 1000000)<br>(2, 2, 2000000000, 2000000)<br>(3, 5, 4000000000, 4000000) | (0, 0, 0, 0)<br>(1, 1, 1000000000, 2000000000)<br>(2, 2, 2000000000, 4000000000)<br>(3, 5, 4000000000, 8000000000) |
+
+The overflow golden's loss record (index 5, dropped 3 and 4) carries the
+receive time of dropped event 4, which is 4 s after event 0.
+
 ## Targets
 
 All targets are opt-in. None is listed in
@@ -459,6 +644,8 @@ All targets are opt-in. None is listed in
 | `episode_event_view` | Header-only helper that fills `EpisodeEventView` from an `EpisodeEvent`, shared by the writer and the reader. Private. |
 | `episode_reader` | Whole-buffer reader, filters, and `LoadEpisodeFile`. Visibility is private until a later issue widens it with review. |
 | `episode_reader_test` | RT1 to RT14. |
+| `episode_replay` | Deterministic replay clock. Visibility is private until a later issue widens it with review. |
+| `episode_replay_test` | RC1 to RC12. |
 
 ```
 bazel test //intrinsic_data/episode/...
