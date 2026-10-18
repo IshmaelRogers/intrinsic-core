@@ -74,12 +74,24 @@ cc_test(
 )
 
 cc_library(
+    name = "episode_event_view",
+    hdrs = ["episode_event_view.h"],
+    visibility = ["//visibility:private"],
+    deps = [
+        ":episode_event_policy",
+        "@com_google_protobuf//:protobuf",
+        "@intrinsic_apis//intrinsic/episode/proto:episode_event_cc_proto",
+    ],
+)
+
+cc_library(
     name = "episode_writer",
     srcs = ["episode_writer.cc"],
     hdrs = ["episode_writer.h"],
     visibility = ["//visibility:private"],
     deps = [
         ":episode_event_policy",
+        ":episode_event_view",
         "//intrinsic/embodiment:frame_policy",
         "@abseil-cpp//absl/crc:crc32c",
         "@abseil-cpp//absl/status",

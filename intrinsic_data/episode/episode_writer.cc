@@ -36,11 +36,10 @@
 #include "absl/status/statusor.h"
 #include "absl/strings/str_cat.h"
 #include "absl/types/span.h"
-#include "google/protobuf/message.h"
-#include "google/protobuf/unknown_field_set.h"
 #include "intrinsic/embodiment/stamped_header_policy.h"
 #include "intrinsic/episode/proto/episode_event.pb.h"
 #include "intrinsic_data/episode/episode_event_policy.h"
+#include "intrinsic_data/episode/episode_event_view.h"
 
 namespace intrinsic::episode {
 namespace {
@@ -61,33 +60,6 @@ void PutU64(uint64_t value, uint8_t* out) {
   for (int i = 0; i < 8; ++i) {
     out[i] = static_cast<uint8_t>((value >> (8 * i)) & 0xff);
   }
-}
-
-// Same fields as the #127 serialization tests fill.
-EpisodeEventView ViewOf(const EpisodeEvent& message) {
-  const auto& header = message.header();
-  EpisodeEventView view;
-  view.header_present = message.has_header();
-  view.source_id = header.source_id();
-  view.frame_id = header.frame_id();
-  view.source_time_present = header.has_source_time();
-  view.source_time = {header.source_time().seconds(),
-                      header.source_time().nanos()};
-  view.receive_time_present = header.has_receive_time();
-  view.receive_time = {header.receive_time().seconds(),
-                       header.receive_time().nanos()};
-  view.schema_version = message.schema_version();
-  view.snapshot_id = message.snapshot_id();
-  view.config_digest = message.config_digest();
-  view.provenance_present = message.has_provenance();
-  view.payload_case = static_cast<int>(message.payload_case());
-  view.has_unknown_fields =
-      !message.GetReflection()->GetUnknownFields(message).empty();
-  if (message.has_episode_metadata()) {
-    view.marine_randomization_metadata =
-        message.episode_metadata().marine_randomization_metadata();
-  }
-  return view;
 }
 
 absl::Status ErrnoStatus(int error, std::string_view what) {
@@ -270,7 +242,7 @@ struct EpisodeWriter::Impl {
       return result;
     }
 
-    const EpisodeEventView view = ViewOf(event);
+    const EpisodeEventView view = EpisodeEventViewOf(event);
     const EpisodeEventAssessment assessment = AssessEpisodeEvent(view);
     if (!assessment.engaged || assessment.error != EpisodeEventError::kNone) {
       result.status = EpisodeWriterStatus::kInvalidEvent;
