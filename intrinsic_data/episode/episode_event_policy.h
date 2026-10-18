@@ -41,6 +41,9 @@ inline constexpr int kPayloadCaseInferenceEnvelope = 12;
 inline constexpr int kPayloadCaseInferenceResult = 13;
 inline constexpr int kPayloadCaseEpisodeMetadata = 14;
 inline constexpr int kPayloadCaseEpisodeLoss = 15;
+inline constexpr int kPayloadCaseRecordedMessage = 16;
+inline constexpr int kPayloadCaseWorldSnapshotRecord = 17;
+inline constexpr int kPayloadCaseDesiredMotion = 18;
 
 inline constexpr size_t kSha256HexLength = 64;
 
@@ -73,6 +76,11 @@ enum class PayloadKind {
   // Writer-emitted loss record (case 15). Appended after kUnknown so no
   // existing number changes.
   kEpisodeLoss = 7,
+  // Replay payloads (#244). Cases 16, 17 and 18. Appended so no existing
+  // number changes.
+  kRecordedMessage = 8,
+  kWorldSnapshotRecord = 9,
+  kDesiredMotion = 10,
 };
 
 struct EpisodeEventAssessment {
@@ -158,6 +166,12 @@ inline PayloadKind ClassifyPayload(int payload_case, bool has_unknown_fields) {
       return PayloadKind::kEpisodeMetadata;
     case kPayloadCaseEpisodeLoss:
       return PayloadKind::kEpisodeLoss;
+    case kPayloadCaseRecordedMessage:
+      return PayloadKind::kRecordedMessage;
+    case kPayloadCaseWorldSnapshotRecord:
+      return PayloadKind::kWorldSnapshotRecord;
+    case kPayloadCaseDesiredMotion:
+      return PayloadKind::kDesiredMotion;
     default:
       return has_unknown_fields ? PayloadKind::kUnknown : PayloadKind::kNone;
   }

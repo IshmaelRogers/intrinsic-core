@@ -31,7 +31,11 @@ proto_library(
         "//intrinsic/embodiment/proto:stamped_header_proto",
         "//intrinsic/inference/proto:inference_envelope_proto",
         "//intrinsic/safety/proto:safety_decision_proto",
+        "//intrinsic/vehicle/proto:vehicle_command_proto",
         "//intrinsic/vehicle/proto:vehicle_trajectory_proto",
+        "//intrinsic/world/proto:world_snapshot_descriptor_proto",
+        "@com_google_protobuf//:duration_proto",
+        "@com_google_protobuf//:timestamp_proto",
     ],
 )
 
@@ -54,17 +58,24 @@ go_proto_library(
         "//intrinsic/embodiment/proto:stamped_header_go_proto",
         "//intrinsic/inference/proto:inference_envelope_go_proto",
         "//intrinsic/safety/proto:safety_decision_go_proto",
+        "//intrinsic/vehicle/proto:vehicle_command_go_proto",
         "//intrinsic/vehicle/proto:vehicle_trajectory_go_proto",
+        "//intrinsic/world/proto:world_snapshot_descriptor_go_proto",
+        "@org_golang_google_protobuf//types/known/durationpb",
+        "@org_golang_google_protobuf//types/known/timestamppb",
     ],
 )
 
 filegroup(
     name = "examples",
     srcs = [
+        "examples/episode_event_v1_desired_motion.textproto",
         "examples/episode_event_v1_inference_envelope.textproto",
         "examples/episode_event_v1_inference_result.textproto",
         "examples/episode_event_v1_metadata.textproto",
+        "examples/episode_event_v1_recorded_message.textproto",
         "examples/episode_event_v1_safety_decision.textproto",
         "examples/episode_event_v1_vehicle_trajectory.textproto",
+        "examples/episode_event_v1_world_snapshot_record.textproto",
     ],
 )

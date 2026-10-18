@@ -108,6 +108,12 @@ class EpisodeEventPolicyTest(unittest.TestCase):
         (policy.PAYLOAD_CASE_VEHICLE_TRAJECTORY, _Kind.VEHICLE_TRAJECTORY),
         (policy.PAYLOAD_CASE_INFERENCE_ENVELOPE, _Kind.INFERENCE_ENVELOPE),
         (policy.PAYLOAD_CASE_INFERENCE_RESULT, _Kind.INFERENCE_RESULT),
+        (policy.PAYLOAD_CASE_RECORDED_MESSAGE, _Kind.RECORDED_MESSAGE),
+        (
+            policy.PAYLOAD_CASE_WORLD_SNAPSHOT_RECORD,
+            _Kind.WORLD_SNAPSHOT_RECORD,
+        ),
+        (policy.PAYLOAD_CASE_DESIRED_MOTION, _Kind.DESIRED_MOTION),
     )
     for payload_case, kind in cases:
       with self.subTest(payload_case=payload_case):
@@ -256,6 +262,58 @@ class EpisodeEventPolicyTest(unittest.TestCase):
   def test_well_formed_but_wrong_digest_is_a_mismatch(self):
     view = _metadata_view(config_digest=_SNAPSHOT, snapshot_id="")
     self.assertIs(_error(view), _Error.CONFIG_DIGEST_MISMATCH)
+
+  def test_replay_payload_case_numbers_are_stable(self):
+    self.assertEqual(policy.PAYLOAD_CASE_EPISODE_LOSS, 15)
+    self.assertEqual(policy.PAYLOAD_CASE_RECORDED_MESSAGE, 16)
+    self.assertEqual(policy.PAYLOAD_CASE_WORLD_SNAPSHOT_RECORD, 17)
+    self.assertEqual(policy.PAYLOAD_CASE_DESIRED_MOTION, 18)
+
+  def test_payload_kind_numbers_are_stable(self):
+    self.assertEqual(
+        {k.name: k.value for k in _Kind},
+        {
+            "NONE": 0,
+            "SAFETY_DECISION": 1,
+            "VEHICLE_TRAJECTORY": 2,
+            "INFERENCE_ENVELOPE": 3,
+            "INFERENCE_RESULT": 4,
+            "EPISODE_METADATA": 5,
+            "UNKNOWN": 6,
+            "EPISODE_LOSS": 7,
+            "RECORDED_MESSAGE": 8,
+            "WORLD_SNAPSHOT_RECORD": 9,
+            "DESIRED_MOTION": 10,
+        },
+    )
+
+  def test_replay_payloads_classify_to_their_kinds(self):
+    for case, kind, number in (
+        (policy.PAYLOAD_CASE_RECORDED_MESSAGE, _Kind.RECORDED_MESSAGE, 8),
+        (
+            policy.PAYLOAD_CASE_WORLD_SNAPSHOT_RECORD,
+            _Kind.WORLD_SNAPSHOT_RECORD,
+            9,
+        ),
+        (policy.PAYLOAD_CASE_DESIRED_MOTION, _Kind.DESIRED_MOTION, 10),
+    ):
+      for has_unknown in (False, True):
+        with self.subTest(case=case, has_unknown=has_unknown):
+          self.assertIs(policy.classify_payload(case, has_unknown), kind)
+          self.assertEqual(kind.value, number)
+          assessment = policy.assess_episode_event(
+              _view(payload_case=case, has_unknown_fields=has_unknown)
+          )
+          self.assertIs(assessment.error, _Error.NONE)
+          self.assertIs(assessment.payload_kind, kind)
+          self.assertFalse(assessment.skip)
+          self.assertTrue(assessment.engaged)
+
+  def test_cases_past_the_known_range_stay_unknown(self):
+    for case in (9, 19, 99, 536870000):
+      with self.subTest(case=case):
+        self.assertIs(policy.classify_payload(case, True), _Kind.UNKNOWN)
+        self.assertIs(policy.classify_payload(case, False), _Kind.NONE)
 
   def test_views_are_frozen(self):
     with self.assertRaises(dataclasses.FrozenInstanceError):

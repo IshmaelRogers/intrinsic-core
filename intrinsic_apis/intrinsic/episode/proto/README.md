@@ -9,8 +9,9 @@ the marine parameter sampler. It follows
 (`intrinsic_data` owns the episode schema).
 
 Package: `intrinsic_proto.episode`. Imports `StampedHeader`, `ModelProvenance`,
-`SafetyDecision`, `VehicleTrajectory`, `InferenceEnvelope`, and
-`InferenceResult`. No other proto imports `episode_event.proto`.
+`SafetyDecision`, `VehicleTrajectory`, `InferenceEnvelope`, `InferenceResult`,
+`DesiredMotion`, `WorldSnapshotDescriptor`, `Timestamp`, and `Duration`. No
+other proto imports `episode_event.proto`.
 
 Lock id: `episode-event-envelope-v1`. This is **serialization and validation
 only**. There is no reader, replay clock, digest equality, or digest over
@@ -33,7 +34,10 @@ tag, type, name, or oneof change fails CI.
 | `EpisodeMetadata` | `marine_randomization_metadata` 1 (`string`) |
 | `EpisodeLoss` | `dropped_count` 1 (`uint64`), `first_dropped_writer_index` 2 (`uint64`), `last_dropped_writer_index` 3 (`uint64`), `reason` 4 (`LossReason`) |
 | `EpisodeEvent` | `header` 1 (`StampedHeader`), `schema_version` 2 (`uint32`), `snapshot_id` 3 (`string`), `config_digest` 4 (`string`), `provenance` 5 (`ModelProvenance`) |
-| `EpisodeEvent.payload` oneof | `safety_decision` 10, `vehicle_trajectory` 11, `inference_envelope` 12, `inference_result` 13, `episode_metadata` 14, `episode_loss` 15 |
+| `RecordedMessage` | `message_type` 1 (`string`), `message_bytes` 2 (`bytes`) |
+| `RecordedComponentTiming` | `component_kind` 1 (`string`), `observation_time` 2 (`Timestamp`), `validity_horizon` 3 (`Duration`), `source_id` 4 (`string`) |
+| `WorldSnapshotRecord` | `snapshot` 1 (`WorldSnapshotDescriptor`), `timings` 2 (repeated `RecordedComponentTiming`) |
+| `EpisodeEvent.payload` oneof | `safety_decision` 10, `vehicle_trajectory` 11, `inference_envelope` 12, `inference_result` 13, `episode_metadata` 14, `episode_loss` 15, `recorded_message` 16, `world_snapshot_record` 17, `desired_motion` 18 |
 
 The payload type is the oneof case. There is no separate enum, so the type and
 the payload can never disagree. Every oneof member is a message type, so a
@@ -42,15 +46,17 @@ future member can be added without changing existing wire bytes. There is no
 
 ## Tag plan
 
-Except for the allocated tag 15 below, this is documentation only: nothing here
-is declared in the `.proto`, and nothing is `reserved`: `reserved` forbids
-future use, and the repository policy is to use it only for removed fields.
+Except for the allocated tags 15 to 18 below, this is documentation only:
+nothing here is declared in the `.proto`, and nothing is `reserved`:
+`reserved` forbids future use, and the repository policy is to use it only for
+removed fields.
 
 | Range | Plan |
 | --- | --- |
 | Envelope tags 6 to 9 | The next envelope fields. |
 | Payload tag 15 | **Allocated** to `episode_loss` (`EpisodeLoss`), #128, approved 2026-10-17. |
-| Payload tags 16 to 99 | Future payload categories. Candidates, not commitments: marine HAL measurements (#73 to #80), thruster commands, episode start and end lifecycle markers. |
+| Payload tags 16 to 18 | **Allocated** to #244 (`episode-replay-payloads-v1`, approved 2026-10-18): `recorded_message` 16, `world_snapshot_record` 17, `desired_motion` 18. |
+| Payload tags 19 to 99 | Future payload categories. Candidates, not commitments: marine HAL measurements (#73 to #80), thruster commands, episode start and end lifecycle markers. |
 
 ### EpisodeLoss
 
@@ -68,6 +74,34 @@ A reader built before tag 15 existed sees the payload as unknown fields, so
 the record is skippable and its bytes are kept (see Unknown payloads). Producers
 cannot send tag 15: the writer rejects it as reserved.
 
+### Replay payloads (#244)
+
+Lock id `episode-replay-payloads-v1`. Three additive payloads let the replay
+adapters (#131, #132) read recorded estimator measurements, World snapshots and
+intent from an episode. `schema_version` stays 1. A reader built before #244
+sees them as unknown payloads: skippable, bytes kept (see Unknown payloads).
+
+- `recorded_message` (16): `RecordedMessage` is an episode-local opaque
+  wrapper. `message_type` is the bare fully qualified proto name, for example
+  `intrinsic_proto.estimation.MeasurementEnvelope`, with no
+  `type.googleapis.com/` prefix, as in `MeasurementEnvelope.payload_type`.
+  `message_bytes` are the serialized message, kept exact. There is no `Any`.
+  It carries messages that `@intrinsic_apis` cannot import. The adapter parses
+  and validates the bytes.
+- `world_snapshot_record` (17): `WorldSnapshotRecord` is the
+  `WorldSnapshotDescriptor` as served plus one `RecordedComponentTiming` per
+  component kind. `RecordedComponentTiming` matches
+  `world_snapshot::ComponentTiming` field for field. There is no query-time
+  field: the assessment query time is the event's `header.receive_time`. The
+  field is named `snapshot`, not `descriptor`, because `descriptor` collides
+  with the generated C++ `Message::descriptor()` accessor.
+- `desired_motion` (18): `intrinsic_proto.vehicle.DesiredMotion`, recorded
+  verbatim. Its inner `header` is not cross-checked against the envelope
+  header.
+
+No new envelope field, enum, or `reserved` statement is added, and
+`AssessEpisodeEvent` does no inner validation of these payloads.
+
 ## Rules
 
 | Field | Rule |
@@ -77,7 +111,7 @@ cannot send tag 15: the writer rejects it as reserved.
 | `snapshot_id` | Empty, or exactly 64 lowercase hex characters. Same rule as `InferenceEnvelope.world_snapshot_id` and the `world_snapshot_policy` digest. The envelope does not recompute it. |
 | `config_digest` | Empty, or exactly 64 lowercase hex characters. See below. |
 | `provenance` | Optional. Unset when not applicable, and not validated here. |
-| payload | One of the six cases (`episode_loss` is writer-only), or unknown fields only (see Unknown payloads). |
+| payload | One of the nine cases (`episode_loss` is writer-only), or unknown fields only (see Unknown payloads). |
 
 ### Config digest
 
@@ -131,6 +165,9 @@ assert that. The `.binpb` goldens are committed and never rewritten by tests.
 | `episode_event_v1_inference_envelope.textproto` | Nominal `InferenceEnvelope` example (#118). |
 | `episode_event_v1_inference_result.textproto` | Nominal `InferenceResult` example (#118). |
 | `episode_event_v1_metadata.textproto` | `EpisodeMetadata` with the seed-42 text verbatim and the pinned digest. |
+| `episode_event_v1_recorded_message.textproto` | `RecordedMessage` wrapping a fixed hand-encoded `MeasurementEnvelope` (#244). |
+| `episode_event_v1_world_snapshot_record.textproto` | `WorldSnapshotRecord` with a two-component descriptor and matching timings (#244). |
+| `episode_event_v1_desired_motion.textproto` | `DesiredMotion` with a twist objective and a horizon (#244). |
 
 ## Protected surface
 

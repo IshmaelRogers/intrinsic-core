@@ -131,6 +131,9 @@ TEST(EpisodeEventPolicyTest, NominalEventsAreAcceptedForEveryKnownCase) {
       {kPayloadCaseVehicleTrajectory, PayloadKind::kVehicleTrajectory},
       {kPayloadCaseInferenceEnvelope, PayloadKind::kInferenceEnvelope},
       {kPayloadCaseInferenceResult, PayloadKind::kInferenceResult},
+      {kPayloadCaseRecordedMessage, PayloadKind::kRecordedMessage},
+      {kPayloadCaseWorldSnapshotRecord, PayloadKind::kWorldSnapshotRecord},
+      {kPayloadCaseDesiredMotion, PayloadKind::kDesiredMotion},
   };
   for (const Case& c : cases) {
     EpisodeEventView view = NominalView();
@@ -201,6 +204,62 @@ TEST(EpisodeEventPolicyTest, EveryErrorRowHasExactlyOneMutation) {
     EXPECT_EQ(AssessEpisodeEvent(view).error, Error::kMissingPayload);
     EXPECT_EQ(AssessEpisodeEvent(view).payload_kind, PayloadKind::kNone);
     EXPECT_FALSE(AssessEpisodeEvent(view).skip);
+  }
+}
+
+static_assert(kPayloadCaseEpisodeLoss == 15);
+static_assert(kPayloadCaseRecordedMessage == 16);
+static_assert(kPayloadCaseWorldSnapshotRecord == 17);
+static_assert(kPayloadCaseDesiredMotion == 18);
+
+TEST(EpisodeEventPolicyTest, PayloadKindNumbersAreStable) {
+  EXPECT_EQ(static_cast<int>(PayloadKind::kNone), 0);
+  EXPECT_EQ(static_cast<int>(PayloadKind::kSafetyDecision), 1);
+  EXPECT_EQ(static_cast<int>(PayloadKind::kVehicleTrajectory), 2);
+  EXPECT_EQ(static_cast<int>(PayloadKind::kInferenceEnvelope), 3);
+  EXPECT_EQ(static_cast<int>(PayloadKind::kInferenceResult), 4);
+  EXPECT_EQ(static_cast<int>(PayloadKind::kEpisodeMetadata), 5);
+  EXPECT_EQ(static_cast<int>(PayloadKind::kUnknown), 6);
+  EXPECT_EQ(static_cast<int>(PayloadKind::kEpisodeLoss), 7);
+  EXPECT_EQ(static_cast<int>(PayloadKind::kRecordedMessage), 8);
+  EXPECT_EQ(static_cast<int>(PayloadKind::kWorldSnapshotRecord), 9);
+  EXPECT_EQ(static_cast<int>(PayloadKind::kDesiredMotion), 10);
+}
+
+TEST(EpisodeEventPolicyTest, ReplayPayloadsClassifyToTheirKinds) {
+  struct Case {
+    int payload_case;
+    PayloadKind kind;
+    int number;
+  };
+  const Case cases[] = {
+      {kPayloadCaseRecordedMessage, PayloadKind::kRecordedMessage, 8},
+      {kPayloadCaseWorldSnapshotRecord, PayloadKind::kWorldSnapshotRecord, 9},
+      {kPayloadCaseDesiredMotion, PayloadKind::kDesiredMotion, 10},
+  };
+  for (const Case& c : cases) {
+    for (const bool has_unknown : {false, true}) {
+      EXPECT_EQ(ClassifyPayload(c.payload_case, has_unknown), c.kind)
+          << c.payload_case;
+      EXPECT_EQ(static_cast<int>(c.kind), c.number);
+      EpisodeEventView view = NominalView();
+      view.payload_case = c.payload_case;
+      view.has_unknown_fields = has_unknown;
+      const EpisodeEventAssessment assessment = AssessEpisodeEvent(view);
+      EXPECT_EQ(assessment.error, Error::kNone) << c.payload_case;
+      EXPECT_EQ(assessment.payload_kind, c.kind) << c.payload_case;
+      EXPECT_FALSE(assessment.skip) << c.payload_case;
+      EXPECT_TRUE(assessment.engaged) << c.payload_case;
+    }
+  }
+}
+
+TEST(EpisodeEventPolicyTest, CasesPastTheKnownRangeStayUnknown) {
+  for (const int payload_case : {9, 19, 99, 536870000}) {
+    EXPECT_EQ(ClassifyPayload(payload_case, true), PayloadKind::kUnknown)
+        << payload_case;
+    EXPECT_EQ(ClassifyPayload(payload_case, false), PayloadKind::kNone)
+        << payload_case;
   }
 }
 

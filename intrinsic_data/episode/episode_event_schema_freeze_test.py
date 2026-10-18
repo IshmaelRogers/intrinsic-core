@@ -125,7 +125,14 @@ class EpisodeEventSchemaFreezeTest(unittest.TestCase):
     self.assertEqual(file_descriptor.package, "intrinsic_proto.episode")
     self.assertEqual(
         set(file_descriptor.message_types_by_name),
-        {"EpisodeEvent", "EpisodeLoss", "EpisodeMetadata"},
+        {
+            "EpisodeEvent",
+            "EpisodeLoss",
+            "EpisodeMetadata",
+            "RecordedComponentTiming",
+            "RecordedMessage",
+            "WorldSnapshotRecord",
+        },
     )
     self.assertEqual(len(file_descriptor.enum_types_by_name), 0)
 

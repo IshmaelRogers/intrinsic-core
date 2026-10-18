@@ -121,8 +121,10 @@ TEST(EpisodeEventSchemaFreezeTest, PackageAndMessagesAreFrozen) {
   for (int i = 0; i < file->message_type_count(); ++i) {
     messages.insert(std::string(file->message_type(i)->name()));
   }
-  EXPECT_EQ(messages, (std::set<std::string>{"EpisodeEvent", "EpisodeLoss",
-                                             "EpisodeMetadata"}));
+  EXPECT_EQ(messages,
+            (std::set<std::string>{"EpisodeEvent", "EpisodeLoss",
+                                   "EpisodeMetadata", "RecordedComponentTiming",
+                                   "RecordedMessage", "WorldSnapshotRecord"}));
   EXPECT_EQ(file->enum_type_count(), 0);
 }
 

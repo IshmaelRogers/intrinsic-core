@@ -1,0 +1,66 @@
+# WorldSnapshotRecord (#244): a two-component descriptor whose snapshot_id
+# equals the envelope's, with one timing per component. The query time is the
+# envelope header.receive_time. Accepted: kNone.
+header {
+  sequence: 7
+  source_time {
+    seconds: 1700000107
+    nanos: 250000000
+  }
+  receive_time {
+    seconds: 1700000107
+    nanos: 251000000
+  }
+  source_id: "episode_recorder"
+  frame_id: "world_enu"
+  clock_domain: "monotonic"
+  validity {
+    state: STATE_VALID
+  }
+}
+schema_version: 1
+snapshot_id: "6ceb1af0dca7d2b01d4e876fe699fb8c5d5709d5a4938ea3f46e8d355d3b33de"
+config_digest: "93150ec8e5fd8f6dcc2d9cae50d84de9b89287b187edfa4a807b0da0e8eb5d6a"
+provenance {
+  model_id: "marine_parameter_sampler"
+  model_version: "v1"
+  digest: "sha256:93150ec8e5fd8f6dcc2d9cae50d84de9b89287b187edfa4a807b0da0e8eb5d6a"
+}
+world_snapshot_record {
+  snapshot {
+    snapshot_id: "6ceb1af0dca7d2b01d4e876fe699fb8c5d5709d5a4938ea3f46e8d355d3b33de"
+    creation_time {
+      seconds: 1700000100
+    }
+    state_epoch: 7
+    components {
+      component_kind: "bathymetry_reference"
+      revision: 3
+    }
+    components {
+      component_kind: "current_field"
+      revision: 5
+    }
+  }
+  timings {
+    component_kind: "bathymetry_reference"
+    observation_time {
+      seconds: 1700000099
+      nanos: 500000000
+    }
+    validity_horizon {
+      seconds: 30
+    }
+    source_id: "bathymetry_store"
+  }
+  timings {
+    component_kind: "current_field"
+    observation_time {
+      seconds: 1700000100
+    }
+    validity_horizon {
+      seconds: 10
+    }
+    source_id: "current_model"
+  }
+}

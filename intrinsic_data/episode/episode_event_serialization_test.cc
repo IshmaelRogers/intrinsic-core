@@ -39,6 +39,7 @@ namespace {
 
 using Error = EpisodeEventError;
 using intrinsic_proto::episode::EpisodeEvent;
+using intrinsic_proto::episode::RecordedComponentTiming;
 
 constexpr std::string_view kPinnedSeed42Digest =
     "93150ec8e5fd8f6dcc2d9cae50d84de9b89287b187edfa4a807b0da0e8eb5d6a";
@@ -190,7 +191,20 @@ TEST(EpisodeEventSerializationTest, PayloadCaseNumbersMatchTheGeneratedSchema) {
             kPayloadCaseInferenceResult);
   EXPECT_EQ(static_cast<int>(EpisodeEvent::kEpisodeMetadata),
             kPayloadCaseEpisodeMetadata);
+  EXPECT_EQ(static_cast<int>(EpisodeEvent::kRecordedMessage),
+            kPayloadCaseRecordedMessage);
+  EXPECT_EQ(static_cast<int>(EpisodeEvent::kWorldSnapshotRecord),
+            kPayloadCaseWorldSnapshotRecord);
+  EXPECT_EQ(static_cast<int>(EpisodeEvent::kDesiredMotion),
+            kPayloadCaseDesiredMotion);
 }
+
+static_assert(static_cast<int>(EpisodeEvent::kRecordedMessage) ==
+              kPayloadCaseRecordedMessage);
+static_assert(static_cast<int>(EpisodeEvent::kWorldSnapshotRecord) ==
+              kPayloadCaseWorldSnapshotRecord);
+static_assert(static_cast<int>(EpisodeEvent::kDesiredMotion) ==
+              kPayloadCaseDesiredMotion);
 
 TEST(EpisodeEventSerializationTest, E1RoundTripPerPayload) {
   for (const PayloadCase& payload : kPayloads) {
@@ -468,6 +482,224 @@ TEST(EpisodeEventSerializationTest, E8OneByteTextChangeIsAMismatch) {
   message.mutable_episode_metadata()->set_marine_randomization_metadata(text +
                                                                         "\n");
   EXPECT_EQ(Assess(message).error, Error::kConfigDigestMismatch);
+}
+
+// #244: replay payloads. These goldens carry the metadata envelope identity
+// (provenance and config digest) with their own sequence and times, so they
+// are kept apart from kPayloads.
+constexpr PayloadCase kReplayPayloads[] = {
+    {"recorded_message", PayloadKind::kRecordedMessage},
+    {"world_snapshot_record", PayloadKind::kWorldSnapshotRecord},
+    {"desired_motion", PayloadKind::kDesiredMotion},
+};
+
+struct ReplayWireCase {
+  const char* name;
+  uint32_t tag;
+  int kind_number;
+};
+
+constexpr ReplayWireCase kReplayWire[] = {
+    {"recorded_message", 16, 8},
+    {"world_snapshot_record", 17, 9},
+    {"desired_motion", 18, 10},
+};
+
+// The fixed MeasurementEnvelope listed byte by byte in the testdata README.
+constexpr uint8_t kMeasurementEnvelopeBytes[] = {
+    0x0a, 0x38, 0x08, 0x01, 0x12, 0x0b, 0x08, 0xe4, 0xe2, 0xcf, 0xaa, 0x06,
+    0x10, 0x80, 0xe5, 0x9a, 0x77, 0x1a, 0x0b, 0x08, 0xe4, 0xe2, 0xcf, 0xaa,
+    0x06, 0x10, 0xc0, 0xe9, 0xd7, 0x77, 0x22, 0x05, 0x64, 0x76, 0x6c, 0x5f,
+    0x30, 0x2a, 0x04, 0x62, 0x6f, 0x64, 0x79, 0x32, 0x09, 0x6d, 0x6f, 0x6e,
+    0x6f, 0x74, 0x6f, 0x6e, 0x69, 0x63, 0x3a, 0x02, 0x08, 0x01, 0x12, 0x05,
+    0x64, 0x76, 0x6c, 0x5f, 0x30, 0x18, 0x03, 0x22, 0x21, 0x69, 0x6e, 0x74,
+    0x72, 0x69, 0x6e, 0x73, 0x69, 0x63, 0x5f, 0x70, 0x72, 0x6f, 0x74, 0x6f,
+    0x2e, 0x76, 0x65, 0x68, 0x69, 0x63, 0x6c, 0x65, 0x2e, 0x42, 0x6f, 0x64,
+    0x79, 0x54, 0x77, 0x69, 0x73, 0x74, 0x2a, 0x09, 0x09, 0x00, 0x00, 0x00,
+    0x00, 0x00, 0x00, 0xe0, 0x3f};
+
+struct WireField {
+  uint32_t number;
+  uint32_t wire_type;
+};
+
+// Top-level fields of one serialized message, in wire order.
+std::vector<WireField> TopLevelFields(const std::string& bytes) {
+  std::vector<WireField> fields;
+  google::protobuf::io::CodedInputStream in(
+      reinterpret_cast<const uint8_t*>(bytes.data()),
+      static_cast<int>(bytes.size()));
+  for (uint32_t tag = in.ReadTag(); tag != 0; tag = in.ReadTag()) {
+    fields.push_back({tag >> 3, tag & 7});
+    switch (tag & 7) {
+      case 0: {
+        uint64_t ignored = 0;
+        EXPECT_TRUE(in.ReadVarint64(&ignored));
+        break;
+      }
+      case 1:
+        EXPECT_TRUE(in.Skip(8));
+        break;
+      case 2: {
+        uint32_t length = 0;
+        EXPECT_TRUE(in.ReadVarint32(&length));
+        EXPECT_TRUE(in.Skip(static_cast<int>(length)));
+        break;
+      }
+      case 5:
+        EXPECT_TRUE(in.Skip(4));
+        break;
+      default:
+        ADD_FAILURE() << "unexpected wire type " << (tag & 7);
+        return fields;
+    }
+  }
+  return fields;
+}
+
+TEST(EpisodeEventSerializationTest, S1ReplayGoldensRoundTripByteExactly) {
+  for (const PayloadCase& payload : kReplayPayloads) {
+    const std::string bytes = GoldenBytes(payload.name);
+    ASSERT_FALSE(bytes.empty()) << payload.name;
+    const EpisodeEvent message = Parse(bytes);
+    EXPECT_EQ(Serialize(message), bytes) << payload.name;
+    std::string reserialized;
+    ASSERT_TRUE(message.SerializeToString(&reserialized));
+    EXPECT_EQ(reserialized, bytes) << payload.name;
+    EXPECT_TRUE(message.GetReflection()->GetUnknownFields(message).empty())
+        << payload.name;
+
+    EpisodeEvent from_text;
+    ASSERT_TRUE(google::protobuf::TextFormat::ParseFromString(
+        GoldenText(payload.name), &from_text))
+        << payload.name;
+    EXPECT_EQ(Serialize(from_text), bytes) << payload.name;
+    EXPECT_EQ(ExampleText(payload.name), GoldenText(payload.name))
+        << payload.name;
+  }
+}
+
+TEST(EpisodeEventSerializationTest, S1ReplayGoldensShareTheMetadataIdentity) {
+  const EpisodeEvent metadata = Golden("metadata");
+  for (const PayloadCase& payload : kReplayPayloads) {
+    const EpisodeEvent message = Golden(payload.name);
+    EXPECT_EQ(message.schema_version(), 1u) << payload.name;
+    EXPECT_EQ(message.snapshot_id(), metadata.snapshot_id()) << payload.name;
+    EXPECT_EQ(message.config_digest(), kPinnedSeed42Digest) << payload.name;
+    EXPECT_EQ(message.provenance().SerializeAsString(),
+              metadata.provenance().SerializeAsString())
+        << payload.name;
+    EXPECT_EQ(message.header().source_id(), "episode_recorder");
+    EXPECT_EQ(message.header().frame_id(), "world_enu");
+    EXPECT_EQ(message.header().clock_domain(), "monotonic");
+  }
+}
+
+TEST(EpisodeEventSerializationTest, S1RecordedMessageCarriesTheFixedBytes) {
+  const EpisodeEvent message = Golden("recorded_message");
+  ASSERT_EQ(message.payload_case(), EpisodeEvent::kRecordedMessage);
+  EXPECT_EQ(message.recorded_message().message_type(),
+            "intrinsic_proto.estimation.MeasurementEnvelope");
+  EXPECT_EQ(
+      message.recorded_message().message_bytes(),
+      std::string(reinterpret_cast<const char*>(kMeasurementEnvelopeBytes),
+                  sizeof(kMeasurementEnvelopeBytes)));
+  EXPECT_EQ(sizeof(kMeasurementEnvelopeBytes), 113u);
+}
+
+TEST(EpisodeEventSerializationTest, S1WorldSnapshotRecordMatchesItsTimings) {
+  const EpisodeEvent message = Golden("world_snapshot_record");
+  ASSERT_EQ(message.payload_case(), EpisodeEvent::kWorldSnapshotRecord);
+  const auto& record = message.world_snapshot_record();
+  EXPECT_EQ(record.snapshot().snapshot_id(), message.snapshot_id());
+  ASSERT_EQ(record.snapshot().components_size(), 2);
+  ASSERT_EQ(record.timings_size(), 2);
+  for (int i = 0; i < 2; ++i) {
+    EXPECT_EQ(record.timings(i).component_kind(),
+              record.snapshot().components(i).component_kind())
+        << i;
+    EXPECT_TRUE(record.timings(i).has_observation_time()) << i;
+    EXPECT_TRUE(record.timings(i).has_validity_horizon()) << i;
+    EXPECT_FALSE(record.timings(i).source_id().empty()) << i;
+  }
+}
+
+TEST(EpisodeEventSerializationTest, S1DesiredMotionHasATwistAndAHorizon) {
+  const EpisodeEvent message = Golden("desired_motion");
+  ASSERT_EQ(message.payload_case(), EpisodeEvent::kDesiredMotion);
+  const auto& motion = message.desired_motion();
+  EXPECT_TRUE(motion.has_twist());
+  EXPECT_DOUBLE_EQ(motion.twist().body_twist().linear_x_m_s(), 0.5);
+  EXPECT_DOUBLE_EQ(motion.twist().body_twist().angular_z_rad_s(), 0.125);
+  EXPECT_TRUE(motion.has_horizon());
+  EXPECT_EQ(motion.horizon().seconds(), 2);
+  EXPECT_EQ(motion.header().frame_id(), "body");
+  EXPECT_NE(motion.header().SerializeAsString(),
+            message.header().SerializeAsString())
+      << "the inner header is recorded verbatim, not cross-checked";
+}
+
+TEST(EpisodeEventSerializationTest, S2ReplayPayloadsAreEngagedAndAccepted) {
+  for (const PayloadCase& payload : kReplayPayloads) {
+    const EpisodeEventAssessment assessment = Assess(Golden(payload.name));
+    EXPECT_EQ(assessment.error, Error::kNone) << payload.name;
+    EXPECT_NE(assessment.error, Error::kMissingPayload) << payload.name;
+    EXPECT_EQ(assessment.payload_kind, payload.kind) << payload.name;
+    EXPECT_FALSE(assessment.skip) << payload.name;
+    EXPECT_TRUE(assessment.engaged) << payload.name;
+  }
+}
+
+TEST(EpisodeEventSerializationTest, S3ReplayPayloadsAreLengthDelimitedTags) {
+  for (const ReplayWireCase& c : kReplayWire) {
+    const std::vector<WireField> fields = TopLevelFields(GoldenBytes(c.name));
+    int payload_fields = 0;
+    for (const WireField& field : fields) {
+      if (field.number >= 10) {
+        ++payload_fields;
+        EXPECT_EQ(field.number, c.tag) << c.name;
+        EXPECT_EQ(field.wire_type, 2u) << c.name;
+      }
+    }
+    EXPECT_EQ(payload_fields, 1) << c.name;
+    EXPECT_EQ(static_cast<int>(ClassifyPayload(static_cast<int>(c.tag), false)),
+              c.kind_number)
+        << c.name;
+  }
+}
+
+TEST(EpisodeEventSerializationTest, S3PreSchemaViewClassifiesAsUnknownSkip) {
+  for (const PayloadCase& payload : kReplayPayloads) {
+    EpisodeEventView view = ViewOf(Golden(payload.name));
+    view.payload_case = kPayloadCaseNotSet;
+    view.has_unknown_fields = true;
+    const EpisodeEventAssessment assessment = AssessEpisodeEvent(view);
+    EXPECT_EQ(assessment.error, Error::kNone) << payload.name;
+    EXPECT_EQ(assessment.payload_kind, PayloadKind::kUnknown) << payload.name;
+    EXPECT_TRUE(assessment.skip) << payload.name;
+    EXPECT_TRUE(assessment.engaged) << payload.name;
+  }
+}
+
+TEST(EpisodeEventSerializationTest, S3ReplayPayloadsDoNotMoveTheV2Boundary) {
+  EXPECT_LT(static_cast<uint64_t>(kPayloadCaseDesiredMotion),
+            kUnknownPayloadTag);
+  EXPECT_EQ(Assess(Parse(TestdataBytes(std::string(kV2Name)))).payload_kind,
+            PayloadKind::kUnknown);
+}
+
+TEST(EpisodeEventSerializationTest, S3SnapshotFieldIsNotNamedDescriptor) {
+  // The field is named snapshot: a field named descriptor would collide with
+  // Message::descriptor().
+  const RecordedComponentTiming timing;
+  EXPECT_EQ(timing.GetDescriptor()->full_name(),
+            "intrinsic_proto.episode.RecordedComponentTiming");
+  EXPECT_NE(intrinsic_proto::episode::WorldSnapshotRecord::descriptor()
+                ->FindFieldByName("snapshot"),
+            nullptr);
+  EXPECT_EQ(intrinsic_proto::episode::WorldSnapshotRecord::descriptor()
+                ->FindFieldByName("descriptor"),
+            nullptr);
 }
 
 }  // namespace
