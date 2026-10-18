@@ -16,11 +16,15 @@ syntax = "proto3";
 
 package intrinsic_proto.episode;
 
+import "google/protobuf/duration.proto";
+import "google/protobuf/timestamp.proto";
 import "intrinsic/embodiment/proto/model_provenance.proto";
 import "intrinsic/embodiment/proto/stamped_header.proto";
 import "intrinsic/inference/proto/inference_envelope.proto";
 import "intrinsic/safety/proto/safety_decision.proto";
+import "intrinsic/vehicle/proto/vehicle_command.proto";
 import "intrinsic/vehicle/proto/vehicle_trajectory.proto";
+import "intrinsic/world/proto/world_snapshot_descriptor.proto";
 
 option go_package = "intrinsic/episode/proto/episode_event_go_proto";
 
@@ -46,6 +50,27 @@ message EpisodeLoss {
   uint64 first_dropped_writer_index = 2;  // inclusive
   uint64 last_dropped_writer_index = 3;   // inclusive
   LossReason reason = 4;
+}
+
+// Opaque recorded message (#244). See README.md.
+message RecordedMessage {
+  string message_type = 1;
+  bytes message_bytes = 2;
+}
+
+// Per-kind timing of one World component, as served with a snapshot (#244).
+// Field for field the world_snapshot ComponentTiming. See README.md.
+message RecordedComponentTiming {
+  string component_kind = 1;
+  google.protobuf.Timestamp observation_time = 2;
+  google.protobuf.Duration validity_horizon = 3;
+  string source_id = 4;
+}
+
+// World snapshot as served, plus its component timings (#244).
+message WorldSnapshotRecord {
+  intrinsic_proto.world.WorldSnapshotDescriptor snapshot = 1;
+  repeated RecordedComponentTiming timings = 2;
 }
 
 // Append-only envelope for one recorded episode event. The payload oneof case
@@ -78,5 +103,16 @@ message EpisodeEvent {
     intrinsic_proto.inference.InferenceResult inference_result = 13;
     EpisodeMetadata episode_metadata = 14;
     EpisodeLoss episode_loss = 15;
+    // Opaque recorded message (#244, S2-A). message_type is the fully
+    // qualified proto message name; message_bytes are its serialized bytes,
+    // kept exact. Used for messages @intrinsic_apis cannot import (e.g.
+    // intrinsic_proto.estimation.MeasurementEnvelope).
+    RecordedMessage recorded_message = 16;
+    // World snapshot as served, with the per-kind timings the #114 skew
+    // assessor needs (#244, S3-A). The assessment query time is this event's
+    // header.receive_time; there is no separate field.
+    WorldSnapshotRecord world_snapshot_record = 17;
+    // Desired-motion intent (ADR 0001), recorded verbatim (#244).
+    intrinsic_proto.vehicle.DesiredMotion desired_motion = 18;
   }
 }

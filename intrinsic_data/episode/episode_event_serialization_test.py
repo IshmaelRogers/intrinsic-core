@@ -17,6 +17,7 @@
 Keep in sync with episode_event_serialization_test.cc.
 """
 
+import dataclasses
 import os
 import unittest
 
@@ -43,6 +44,23 @@ _PAYLOADS = (
     ("inference_envelope", _Kind.INFERENCE_ENVELOPE),
     ("inference_result", _Kind.INFERENCE_RESULT),
     ("metadata", _Kind.EPISODE_METADATA),
+)
+
+# #244: replay payloads. These goldens carry the metadata envelope identity
+# (provenance and config digest) with their own sequence and times, so they
+# are kept apart from _PAYLOADS.
+_REPLAY_PAYLOADS = (
+    ("recorded_message", _Kind.RECORDED_MESSAGE, 16, 8),
+    ("world_snapshot_record", _Kind.WORLD_SNAPSHOT_RECORD, 17, 9),
+    ("desired_motion", _Kind.DESIRED_MOTION, 18, 10),
+)
+
+# The fixed MeasurementEnvelope listed byte by byte in the testdata README.
+_MEASUREMENT_ENVELOPE_HEX = (
+    "0a380801120b08e4e2cfaa061080e59a771a0b08e4e2cfaa0610c0e9d777"
+    "220564766c5f302a04626f647932096d6f6e6f746f6e69633a0208011205"
+    "64766c5f3018032221696e7472696e7369635f70726f746f2e7665686963"
+    "6c652e426f647954776973742a0909000000000000e03f"
 )
 
 _V2_NAME = "episode_event_v2_additive_unknown_payload.binpb"
@@ -240,6 +258,18 @@ class EpisodeEventSerializationTest(unittest.TestCase):
     self.assertEqual(
         fields["episode_metadata"].number,
         policy.PAYLOAD_CASE_EPISODE_METADATA,
+    )
+    self.assertEqual(
+        fields["recorded_message"].number,
+        policy.PAYLOAD_CASE_RECORDED_MESSAGE,
+    )
+    self.assertEqual(
+        fields["world_snapshot_record"].number,
+        policy.PAYLOAD_CASE_WORLD_SNAPSHOT_RECORD,
+    )
+    self.assertEqual(
+        fields["desired_motion"].number,
+        policy.PAYLOAD_CASE_DESIRED_MOTION,
     )
 
   def test_e1_round_trip_per_payload(self):
@@ -471,6 +501,124 @@ class EpisodeEventSerializationTest(unittest.TestCase):
     self.assertIs(_assess(message).error, _Error.CONFIG_DIGEST_MISMATCH)
     message.episode_metadata.marine_randomization_metadata = text + "\n"
     self.assertIs(_assess(message).error, _Error.CONFIG_DIGEST_MISMATCH)
+
+  def test_s1_replay_goldens_round_trip_byte_exactly(self):
+    metadata = _golden("metadata")
+    for payload, _, _, _ in _REPLAY_PAYLOADS:
+      with self.subTest(payload=payload):
+        data = _golden_bytes(payload)
+        self.assertTrue(data)
+        message = _parse(data)
+        self.assertEqual(_serialize(message), data)
+        self.assertEqual(message.SerializeToString(), data)
+        self.assertFalse(_has_unknown_top_level_fields(message))
+        from_text = _Event()
+        text_format.Parse(_golden_text(payload), from_text)
+        self.assertEqual(_serialize(from_text), data)
+        self.assertEqual(_example_text(payload), _golden_text(payload))
+        self.assertEqual(message.schema_version, 1)
+        self.assertEqual(message.snapshot_id, metadata.snapshot_id)
+        self.assertEqual(message.config_digest, _PINNED_SEED_42_DIGEST)
+        self.assertEqual(
+            message.provenance.SerializeToString(),
+            metadata.provenance.SerializeToString(),
+        )
+        self.assertEqual(message.header.source_id, "episode_recorder")
+        self.assertEqual(message.header.frame_id, "world_enu")
+        self.assertEqual(message.header.clock_domain, "monotonic")
+
+  def test_s1_recorded_message_carries_the_fixed_bytes(self):
+    message = _golden("recorded_message")
+    self.assertEqual(message.WhichOneof("payload"), "recorded_message")
+    self.assertEqual(
+        message.recorded_message.message_type,
+        "intrinsic_proto.estimation.MeasurementEnvelope",
+    )
+    self.assertEqual(
+        message.recorded_message.message_bytes.hex(), _MEASUREMENT_ENVELOPE_HEX
+    )
+    self.assertEqual(len(message.recorded_message.message_bytes), 113)
+
+  def test_s1_world_snapshot_record_matches_its_timings(self):
+    message = _golden("world_snapshot_record")
+    self.assertEqual(message.WhichOneof("payload"), "world_snapshot_record")
+    record = message.world_snapshot_record
+    self.assertEqual(record.snapshot.snapshot_id, message.snapshot_id)
+    self.assertEqual(len(record.snapshot.components), 2)
+    self.assertEqual(len(record.timings), 2)
+    for component, timing in zip(record.snapshot.components, record.timings):
+      self.assertEqual(timing.component_kind, component.component_kind)
+      self.assertTrue(timing.HasField("observation_time"))
+      self.assertTrue(timing.HasField("validity_horizon"))
+      self.assertTrue(timing.source_id)
+
+  def test_s1_desired_motion_has_a_twist_and_a_horizon(self):
+    message = _golden("desired_motion")
+    self.assertEqual(message.WhichOneof("payload"), "desired_motion")
+    motion = message.desired_motion
+    self.assertEqual(motion.WhichOneof("objective"), "twist")
+    self.assertEqual(motion.twist.body_twist.linear_x_m_s, 0.5)
+    self.assertEqual(motion.twist.body_twist.angular_z_rad_s, 0.125)
+    self.assertTrue(motion.HasField("horizon"))
+    self.assertEqual(motion.horizon.seconds, 2)
+    self.assertEqual(motion.header.frame_id, "body")
+    self.assertNotEqual(
+        motion.header.SerializeToString(), message.header.SerializeToString()
+    )
+
+  def test_s2_replay_payloads_are_engaged_and_accepted(self):
+    for payload, kind, _, _ in _REPLAY_PAYLOADS:
+      with self.subTest(payload=payload):
+        assessment = _assess(_golden(payload))
+        self.assertIs(assessment.error, _Error.NONE)
+        self.assertIs(assessment.payload_kind, kind)
+        self.assertFalse(assessment.skip)
+        self.assertTrue(assessment.engaged)
+
+  def test_s3_replay_payloads_are_length_delimited_tags(self):
+    for payload, _, tag, kind_number in _REPLAY_PAYLOADS:
+      with self.subTest(payload=payload):
+        data = _golden_bytes(payload)
+        fields = []
+        offset = 0
+        while offset < len(data):
+          key, offset = _read_varint(data, offset)
+          fields.append((key >> 3, key & 7))
+          wire_type = key & 7
+          if wire_type == _WIRE_TYPE_VARINT:
+            _, offset = _read_varint(data, offset)
+          elif wire_type == _WIRE_TYPE_LENGTH_DELIMITED:
+            length, offset = _read_varint(data, offset)
+            offset += length
+          else:
+            self.fail("unexpected wire type %d" % wire_type)
+        payload_fields = [f for f in fields if f[0] >= 10]
+        self.assertEqual(payload_fields, [(tag, _WIRE_TYPE_LENGTH_DELIMITED)])
+        self.assertEqual(policy.classify_payload(tag, False).value, kind_number)
+
+  def test_s3_pre_schema_view_classifies_as_unknown_skip(self):
+    for payload, _, _, _ in _REPLAY_PAYLOADS:
+      with self.subTest(payload=payload):
+        view = dataclasses.replace(
+            _view(_golden(payload)),
+            payload_case=policy.PAYLOAD_CASE_NOT_SET,
+            has_unknown_fields=True,
+        )
+        assessment = policy.assess_episode_event(view)
+        self.assertIs(assessment.error, _Error.NONE)
+        self.assertIs(assessment.payload_kind, _Kind.UNKNOWN)
+        self.assertTrue(assessment.skip)
+        self.assertTrue(assessment.engaged)
+
+  def test_s3_replay_payloads_do_not_move_the_v2_boundary(self):
+    self.assertLess(policy.PAYLOAD_CASE_DESIRED_MOTION, _UNKNOWN_PAYLOAD_TAG)
+    data = _read(_testdata_path(_V2_NAME), "rb")
+    self.assertIs(_assess(_parse(data)).payload_kind, _Kind.UNKNOWN)
+
+  def test_s3_snapshot_field_is_not_named_descriptor(self):
+    fields = episode_event_pb2.WorldSnapshotRecord.DESCRIPTOR.fields_by_name
+    self.assertIn("snapshot", fields)
+    self.assertNotIn("descriptor", fields)
 
 
 if __name__ == "__main__":

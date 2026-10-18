@@ -1,0 +1,54 @@
+# DesiredMotion (#244) with a twist objective and a horizon. The inner header
+# is recorded verbatim and is not cross-checked against the envelope header.
+# Accepted: kNone.
+header {
+  sequence: 8
+  source_time {
+    seconds: 1700000108
+    nanos: 250000000
+  }
+  receive_time {
+    seconds: 1700000108
+    nanos: 251000000
+  }
+  source_id: "episode_recorder"
+  frame_id: "world_enu"
+  clock_domain: "monotonic"
+  validity {
+    state: STATE_VALID
+  }
+}
+schema_version: 1
+snapshot_id: "6ceb1af0dca7d2b01d4e876fe699fb8c5d5709d5a4938ea3f46e8d355d3b33de"
+config_digest: "93150ec8e5fd8f6dcc2d9cae50d84de9b89287b187edfa4a807b0da0e8eb5d6a"
+provenance {
+  model_id: "marine_parameter_sampler"
+  model_version: "v1"
+  digest: "sha256:93150ec8e5fd8f6dcc2d9cae50d84de9b89287b187edfa4a807b0da0e8eb5d6a"
+}
+desired_motion {
+  header {
+    sequence: 1
+    source_time {
+      seconds: 1700000100
+    }
+    receive_time {
+      seconds: 1700000100
+    }
+    source_id: "planner"
+    frame_id: "body"
+    clock_domain: "monotonic"
+    validity {
+      state: STATE_VALID
+    }
+  }
+  twist {
+    body_twist {
+      linear_x_m_s: 0.5
+      angular_z_rad_s: 0.125
+    }
+  }
+  horizon {
+    seconds: 2
+  }
+}

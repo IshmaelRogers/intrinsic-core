@@ -196,6 +196,24 @@ cc_test(
     ],
 )
 
+cc_test(
+    name = "episode_replay_payloads_test",
+    size = "small",
+    srcs = ["episode_replay_payloads_test.cc"],
+    data = [":testdata"],
+    visibility = ["//visibility:private"],
+    deps = [
+        ":episode_event_policy",
+        ":episode_reader",
+        ":episode_replay",
+        ":episode_writer",
+        "@abseil-cpp//absl/status",
+        "@abseil-cpp//absl/types:span",
+        "@com_google_googletest//:gtest_main",
+        "@intrinsic_apis//intrinsic/episode/proto:episode_event_cc_proto",
+    ],
+)
+
 py_library(
     name = "episode_event_policy_py",
     srcs = ["episode_event_policy.py"],

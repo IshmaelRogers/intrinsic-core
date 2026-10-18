@@ -50,7 +50,7 @@ The first defect wins. The error numbers are append-only.
 | 7 | `snapshot_id` empty or 64 lowercase hex | `kSnapshotId` (7) |
 | 8 | `config_digest` empty or 64 lowercase hex | `kConfigDigest` (8) |
 | 9 | case 14: `config_digest == SHA256Hex(text)`, both empty allowed | `kConfigDigestMismatch` (9) |
-| 10 | case 10 to 15 known. Case not set with unknown fields is skippable (`kNone`, `payload_kind = kUnknown`, `skip = true`). Otherwise not set. | `kMissingPayload` (10) |
+| 10 | case 10 to 18 known. Case not set with unknown fields is skippable (`kNone`, `payload_kind = kUnknown`, `skip = true`). Otherwise not set. | `kMissingPayload` (10) |
 
 A defective event is never skipped, even when its payload is unknown.
 
@@ -94,6 +94,9 @@ A defective event is never skipped, even when its payload is unknown.
 | Fixture | Content |
 | --- | --- |
 | `episode_event_v1_<payload>.binpb` and `.textproto` | One event per payload case, built from the #91, #101, #118 examples and the #123 seed-42 text. |
+| `episode_event_v1_recorded_message.binpb` and `.textproto` | #244. `RecordedMessage` (case 16) carrying the fixed 113-byte `MeasurementEnvelope` listed in [Replay payload fixtures](#replay-payload-fixtures). Sequence 6. |
+| `episode_event_v1_world_snapshot_record.binpb` and `.textproto` | #244. `WorldSnapshotRecord` (case 17): a two-component descriptor (`bathymetry_reference` revision 3, `current_field` revision 5) whose `snapshot_id` equals the envelope's, and one timing per component. Sequence 7. |
+| `episode_event_v1_desired_motion.binpb` and `.textproto` | #244. `DesiredMotion` (case 18) with a body `twist` objective and a 2 s `horizon`. Sequence 8. |
 | `episode_event_v2_additive_unknown_payload.binpb` | The v1 metadata event envelope without its payload, plus an unknown length-delimited payload field at tag 536870000 and an unknown varint envelope field at tag 536870001. |
 | `episode_writer_v1_nominal.iepisod` | The five v1 goldens written in sequence order 1 to 5 by one source, then `Close`. 4069 bytes. |
 | `episode_writer_v1_overflow.iepisod` | The same five events with `capacity = 4`: three records, then the `OVERFLOW` loss record. 1607 bytes. |
@@ -111,6 +114,7 @@ A defective event is never skipped, even when its payload is unknown.
 | E7 | v1 goldens parse identically from text and bytes. `schema_version = 2` on a v1 payload is `kNone`. |
 | E8 | SHA-256 of the seed-42 text equals the pinned hex in both languages. A one-byte change is `kConfigDigestMismatch`. |
 | E9 | The descriptor equals `episode_event_schema_freeze.txt`. |
+| S1 to S5 | The #244 replay payloads, see [Replay payload fixtures](#replay-payload-fixtures). |
 | W1 to W14 | The bounded writer, see below. |
 | RT1 to RT14 | The episode reader, see [Reader tests](#reader-tests). |
 
@@ -650,3 +654,54 @@ All targets are opt-in. None is listed in
 ```
 bazel test //intrinsic_data/episode/...
 ```
+
+## Replay payload fixtures
+
+Lock id `episode-replay-payloads-v1` (#244). The schema gains three oneof
+cases, all additive and all still `schema_version` 1:
+
+| Case | Arm | `PayloadKind` |
+| --- | --- | --- |
+| 16 | `recorded_message` (`RecordedMessage`) | `kRecordedMessage` = 8 |
+| 17 | `world_snapshot_record` (`WorldSnapshotRecord`) | `kWorldSnapshotRecord` = 9 |
+| 18 | `desired_motion` (`intrinsic_proto.vehicle.DesiredMotion`) | `kDesiredMotion` = 10 |
+
+`AssessEpisodeEvent` adds no error code and no inner validation: a new case
+is a payload (never `kMissingPayload`), and the adapters (#131, #132) check the
+wrapper, the record, and the intent. `DesiredMotion.header` is recorded
+verbatim and not cross-checked against the envelope header. The writer, reader,
+and replayer need no change: the new kinds are known, so they are emitted and
+not counted in `skipped_unknown`. A reader built before #244 sees these records
+as unknown payloads and skips them with the bytes kept (#127 E6).
+
+The three goldens share the v1 metadata envelope identity: source
+`episode_recorder`, frame `world_enu`, clock `monotonic`, `schema_version` 1,
+the same `snapshot_id`, `config_digest` and `provenance`. Only the sequence
+(6, 7, 8) and the times (1700000106 to 1700000108 s) differ. The `.binpb` files
+were produced by an independent throwaway script that encodes the wire bytes by
+hand, never by code under test, and are never rewritten by tests.
+
+The fixed `MeasurementEnvelope` inside `episode_event_v1_recorded_message`
+(`message_bytes`, 113 bytes). It has header (sequence 1, source `dvl_0`, frame
+`body`, clock `monotonic`, valid), `source_id` `dvl_0`, `kind` DVL (3),
+`payload_type` `intrinsic_proto.vehicle.BodyTwist`, and a `payload` of one
+`BodyTwist` with `linear_x_m_s = 0.5`:
+
+```
+0a 38 08 01 12 0b 08 e4 e2 cf aa 06 10 80 e5 9a
+77 1a 0b 08 e4 e2 cf aa 06 10 c0 e9 d7 77 22 05
+64 76 6c 5f 30 2a 04 62 6f 64 79 32 09 6d 6f 6e
+6f 74 6f 6e 69 63 3a 02 08 01 12 05 64 76 6c 5f
+30 18 03 22 21 69 6e 74 72 69 6e 73 69 63 5f 70
+72 6f 74 6f 2e 76 65 68 69 63 6c 65 2e 42 6f 64
+79 54 77 69 73 74 2a 09 09 00 00 00 00 00 00 e0
+3f
+```
+
+| Test | Covers |
+| --- | --- |
+| S1 | Each new golden parses and re-serializes byte-exactly, and the textproto equals the binpb. C++ and Python. |
+| S2 | Cases 16, 17, 18 classify to kinds 8, 9, 10, are engaged, `kNone`, and not `kMissingPayload`. The kind numbers are pinned. |
+| S3 | Each golden's payload is one top-level field with the allocated tag and wire type 2. A view with `payload_case = 0` and `has_unknown_fields = true` (the pre-#244 view) is `kUnknown` and skipped. |
+| S4 | The freeze file and freeze tests (message set and the 11 new lines). |
+| S5 | C++ only, `episode_replay_payloads_test`: write the three goldens with `EpisodeWriter`, read them with `EpisodeReader` (kinds 8, 9, 10, known), and emit them with `EpisodeReplayer` in `kStep` with `skipped_unknown == 0`. |
