@@ -879,3 +879,216 @@ Limitations) and is not modified.
 - Out of scope: the #132 adapters (planner, safety, inference, `desired_motion`;
   kind 10 is ignored), Python, `.gitattributes`, and any schema, writer, reader,
   replay, estimator or World change.
+
+## Replay adapters (#132)
+
+Lock id `episode-replay-adapters-planning-safety-inference-v1`. Three more
+passive, host-only adapters verify replayed planning, safety and inference
+records. They follow the #131 shape and reuse `episode_replay_adapter_common.h`
+unchanged (the R2 `Feed` order, `ReplayAdapterStatus`, `ReplayCompatibilityConfig`,
+`ParseReplayRecord`, `CheckCompatibility`). C++ only, namespace
+`intrinsic::episode`, `//visibility:private`, sim and test only. They add no
+schema, proto, freeze-file, writer, reader, replay, view-helper or policy
+change, no #131 adapter change, and `schema_version` stays 1. They start no
+thread, never sleep, and read no clock and no randomness. They never modify
+recorded bytes or timestamps, never reorder events, and never synthesize.
+
+No planner, safety supervisor, rule aggregation, `InferenceClient`, queue or
+`ReplayWorker` is linked or called. Each config has one field, the
+compatibility rules, so there is nothing to inject.
+
+| Target | Contents |
+| --- | --- |
+| `planning_replay_adapter` | `PlanningReplayAdapter`. Owns kinds 2 (`vehicle_trajectory`) and 10 (`desired_motion`). |
+| `safety_replay_adapter` | `SafetyReplayAdapter`. Owns kinds 1 (`safety_decision`) and 10. |
+| `inference_replay_adapter` | `InferenceReplayAdapter`. Owns kinds 3 (`inference_envelope`) and 4 (`inference_result`). |
+| `planning_replay_adapter_test`, `safety_replay_adapter_test`, `inference_replay_adapter_test` | RB1 to RB14. |
+
+### API
+
+```cpp
+// All three adapters (X is Planning, Safety or Inference).
+static std::unique_ptr<XReplayAdapter> Create(const XReplayConfig& config,
+                                              ReplayAdapterStatus* status);
+XReplayStep Feed(const EpisodeReplayEvent& event);  // from EpisodeReplayer::Step()
+XReplaySummary Finish();                            // idempotent
+```
+
+`XReplayConfig` holds only `ReplayCompatibilityConfig compatibility`. A
+non-empty `expected_config_digest` that is not 64 lowercase hex characters gives
+`nullptr` and `kInvalidConfig`, never clamped. `Feed` follows the #131 order
+(finished, latched, loss, parse, compatibility, dispatch). Only
+`kIncompatibleSchema` and `kConfigDigestMismatch` latch. A kind the adapter does
+not own, including `recorded_message`, `world_snapshot_record` and
+`EpisodeMetadata`, gives `kIgnoredPayload`. A loss record gives `kLossRecord`
+(`gaps`, `gap_dropped`, `degraded`).
+
+Domain outcomes live in step and trace fields. The status is `kOk` for every
+owned, parsed and compatible record, even when its assessment fails (the same
+pattern as the #131 World and estimator rejects). A rejected record never
+enters a chain or the pending list.
+
+### Digests and chains
+
+`payload_sha256` is the lowercase hex SHA-256 (`internal::EpisodeSha256Hex`) of
+the payload message's deterministic serialization
+(`SetSerializationDeterministic(true)`). For a `DesiredMotion` it equals
+`safety::ComputeOriginalIntentDigest` (a test asserts it). A chain is the
+SHA-256 of `"v1\n"` followed by one `payload_sha256 + "\n"` line per record
+that enters the chain, in feed order. The empty chain is the SHA-256 of `"v1\n"`
+(`2d27fbdf4e8ca207afbfa388ca9172fbcc6c70e534af2476b3b704f87debadcf`).
+
+| Chain | Adapter | Records that enter it |
+| --- | --- | --- |
+| `plan_chain` | planning | Accepted trajectories. |
+| `intent_chain` | planning | Accepted motions. |
+| `decision_chain` | safety | Accepted decisions, linked or not. |
+| `inference_chain` | inference | `kComplete` and `kReplayExpired` results. |
+
+### Planning adapter (P1-A)
+
+Verify and digest. There is no planner call.
+
+- `desired_motion`: `vehicle::AssessDesiredMotion(safety::DesiredMotionViewFromProto(m))`.
+- `vehicle_trajectory`: an adapter-private `VehicleTrajectoryViewFromProto`
+  (field for field, presence flags from proto `has_*`, a copy of the view in
+  `trajectory_contract_serialization_test.cc`), then
+  `vehicle::AssessVehicleTrajectory`.
+- Step and trace entry: `(writer_index, payload_kind, error, accepted,
+  payload_sha256)`. `error` is the `TrajectoryContractError` or
+  `vehicle::ContractError` number.
+- Stats: `fed`, `trajectories`, `trajectories_accepted`, `motions`,
+  `motions_accepted`, `ignored`, `invalid_records`, `gaps`, `gap_dropped`,
+  `after_latch`. `degraded` is set by a loss record or an unparsable record.
+
+### Safety adapter (P2-A)
+
+Verify, and link each decision to an earlier motion. There is no
+`AggregateSafetyRuleResults` call and no supervisor.
+
+- `desired_motion`: assessed as in the planning adapter. Every motion, accepted
+  or not, adds `ComputeOriginalIntentDigest(motion)` to the seen set (the
+  recorded intent is what the filter digested). A motion trace entry leaves
+  `kind`, `original_intent_digest`, `intent_linked` and `snapshot_id` at their
+  defaults.
+- `safety_decision`: `AssessSafetyDecisionProto`. `intent_linked` is true when
+  the decision's `original_intent_digest` is in the seen set. The set is checked
+  only against earlier records, so a decision recorded before its motion is
+  unlinked. An unlinked decision sets `degraded`, counts in
+  `unlinked_decisions`, and never latches.
+- Trace entry: `(writer_index, payload_kind, error, accepted, kind,
+  original_intent_digest, intent_linked, snapshot_id, payload_sha256)`.
+  `snapshot_id` is trace only, never compared (P5-A).
+- Stats: the planning stats without `trajectories*`, plus `decisions`,
+  `decisions_accepted` and `unlinked_decisions`.
+
+### Inference adapter (P3-A, P4-A, P6-A)
+
+Direct evaluation with the #118 assessors and a mirror of the #120 key and
+expiry predicate. There is no `InferenceClient`, no `ReplayWorker`, no
+`//intrinsic_inference/queue` dependency, and no #119 or #120 change.
+
+- Views: adapter-private `CommonViewOf` overloads, identical field for field to
+  `inference_envelope_contract_serialization_test.cc`. The OIP views come from
+  `oip_request` and `oip_result`. Then `AssessInferenceEnvelope` or
+  `AssessInferenceResult`.
+- Pairing key: `(provenance.model_id, input_digest, state_epoch)`. Pairing takes
+  the oldest pending entry with an equal key.
+- Clock: `now` is the inner `header.receive_time` of the inference record being
+  processed (P4-A), never the episode envelope time.
+- Accepted envelope: run the missing sweep over the existing pending entries
+  with `now` = its inner `receive_time`, then append it to `pending` with its
+  key, `deadline`, `provenance.digest`, `world_snapshot_id` and `writer_index`.
+  The new entry is never judged against its own `receive_time`.
+- Accepted result, `now` = its inner `receive_time`:
+  1. Run the missing sweep, excluding pending entries whose key equals the
+     result's key, so a late result is `kReplayExpired` and not `kMissing` plus
+     an orphan.
+  2. No pending entry with an equal key: `kReplayMiss` (orphan, not chained).
+     Otherwise remove the oldest equal-key entry. The outcome is
+     `TimeBefore(result.deadline, now) ? kReplayExpired : kComplete`. The test
+     is strict, so an equal deadline is complete.
+  3. When the envelope `provenance.digest` is non-empty and differs from the
+     result's, set `model_digest_mismatch` and `degraded`. This never latches.
+  The result is never modified.
+- Missing sweep: every pending entry with `TimeBefore(deadline, now)` is removed
+  in pending order and reported as `kMissing` with `expired = true`. Each sets
+  `degraded` and counts in `missing_expired`. A record whose `receive_time` is
+  absent or has nanos out of range skips the sweep. `Finish()` reports every
+  remaining pending entry, in pending order, as `kMissing` with
+  `expired = false` (`missing_unresolved`, `degraded`).
+- `InferenceOutcome` (append-only): `kNone` 0, `kComplete` 1, `kReplayExpired` 2,
+  `kReplayMiss` 3, `kMissing` 4.
+- Trace entries: `trace` holds `(writer_index, payload_kind, error, accepted)`
+  for each owned record. `outcomes` holds `(writer_index, outcome, expired,
+  model_digest_mismatch, envelope_writer_index, world_snapshot_id)` for each
+  pairing and each missing entry, in order of occurrence. `writer_index` is the
+  result's, or the envelope's for `kMissing`. `envelope_writer_index` is 0 for
+  an orphan, which `outcome == kReplayMiss` tells apart from a paired envelope
+  whose own writer index is 0. `world_snapshot_id` is trace only (P5-A).
+  `InferenceReplayStep::outcomes` lists, in order, the `kMissing` entries the
+  record swept, then the result's pairing entry.
+- Stats: `fed`, `envelopes`, `envelopes_accepted`, `results`,
+  `results_accepted`, `complete`, `expired`, `orphans`, `missing_expired`,
+  `missing_unresolved`, `model_digest_mismatches`, `ignored`, `invalid_records`,
+  `gaps`, `gap_dropped`, `after_latch`.
+
+### Why the inner `receive_time` is the clock (G4)
+
+In the #127 goldens the episode envelope `receive_time` is `1700000103/104.251 s`
+(the recorder), while the inner inference header `receive_time` is
+`1700000000.001 s` with `deadline 1700000000.5 s` (the producer). Both say
+`clock_domain "monotonic"` but they are different timelines, so judging the
+inner deadline against the envelope time would make the golden pair expired.
+The golden pair is `kComplete` under P4-A. The inner `world_snapshot_id`
+(`0123...cdef`) also differs from the envelope `snapshot_id` (`6ceb...33de`),
+which is why snapshot ids are trace only.
+
+### Fixtures and tests
+
+No file is added under `testdata/`. The tests build every episode in memory with
+`EpisodeWriter` and an in-memory `EpisodeSink`, read it with `EpisodeReader` and
+replay it with `EpisodeReplayer` in `kStep`. Envelopes copy the v1 metadata
+golden identity (the pinned seed-42 `config_digest`, `schema_version` 1). The
+#127/#244 goldens `episode_event_v1_{safety_decision,vehicle_trajectory,
+inference_envelope,inference_result,desired_motion}` are read unmodified. Other
+records are built from them with proto setters. The expected digests and chains
+are committed as test constants and were recomputed independently of the C++
+code.
+
+| Test | Covers |
+| --- | --- |
+| RB1 | Planning nominal: the golden trajectory, the golden motion and a built trajectory. Trace and both chains equal the committed table. |
+| RB2 | Safety nominal: the golden decision (before any motion) is unlinked, then the golden motion, then a decision with `original_intent_digest = ComputeOriginalIntentDigest(motion)` is linked. |
+| RB3 | Inference nominal: the golden envelope and result give `kComplete`. |
+| RB4 | Determinism: two replays into fresh adapters give identical steps, traces, stats and chains. A motion's `payload_sha256` equals `ComputeOriginalIntentDigest`. |
+| RB5 | Compatibility (all three): `schema_version 2` and a wrong `config_digest`, each on an owned kind, an ignored kind and a metadata event, latch. Then `kLatched`, and `Finish` reports the latched status. |
+| RB6 | Invalid payloads (all three): an invalid trajectory, motion, decision, envelope and result, and empty messages, give `kOk` with `accepted == false` and the policy error number. None enters a chain or pending. |
+| RB7 | Intent linkage: a decision before its motion is unlinked and degraded. A decision for an earlier rejected motion is linked. |
+| RB8 | Late: a result deadline strictly before its inner `receive_time` is `kReplayExpired`, unchanged and chained. An equal deadline is `kComplete`. |
+| RB9 | Missing: a pending envelope whose deadline passes before a later record's inner `receive_time` (an envelope, or a result with another key) is `kMissing` with `expired`, swept before that record. Still pending at `Finish` is `expired == false`. |
+| RB10 | Orphan and FIFO: a result with no pending envelope is `kReplayMiss` and not chained. Two same-key envelopes pair with the results oldest first. |
+| RB11 | Model digest: differing non-empty digests set `model_digest_mismatch` and `degraded`. An empty envelope digest is not flagged. |
+| RB12 | Ignored kinds and loss (all three): unowned kinds are ignored, and a writer overflow gives `kLossRecord`, `degraded`, and replay continues. |
+| RB13 | Boundaries (all three): an empty episode, a single event, `kFinished` after `Finish()`, and an idempotent `Finish()`. |
+| RB14 | Config and isolation (all three): a bad `expected_config_digest` is `kInvalidConfig`. Each config is the size of `ReplayCompatibilityConfig`, so there is nothing to inject, and the test reads `BUILD` to assert the adapter's `deps` have no queue, planner, worker, `motion_planning` or `rule_aggregation` label. |
+
+### Limitations
+
+- Verify only. There is no re-planning and no re-aggregation. The episode
+  schema holds no planner start state, bounds, fence or dynamics, and no
+  per-rule `SafetyRuleResult`.
+- Linkage proves reference, not safety correctness. A digest in the seen set
+  shows that a motion with that digest was replayed earlier, not that the
+  decision is right.
+- The inference pairing and expiry mirror the #120 predicate
+  (`intrinsic_inference/queue`: exact `(model_id, input_digest, state_epoch)`
+  key, `kReplayExpired` when the recorded deadline is strictly before `now`).
+  Any #120 change needs a matching change here.
+- The producer's inner `receive_time` is trusted (P4-A). A result whose
+  `receive_time` is absent is judged with `now` read as stored (the epoch), so
+  it skips the sweep and is `kComplete`.
+- Loss records cannot attribute the lost stream, so `degraded` is episode-wide.
+- Out of scope: schema changes, re-planning, re-running safety aggregation, the
+  inference queue or worker, Python, #240, `.gitattributes`, and manipulator
+  targets.

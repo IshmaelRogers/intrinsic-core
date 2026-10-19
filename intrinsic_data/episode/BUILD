@@ -305,6 +305,135 @@ cc_test(
     ],
 )
 
+cc_library(
+    name = "planning_replay_adapter",
+    srcs = ["planning_replay_adapter.cc"],
+    hdrs = ["planning_replay_adapter.h"],
+    visibility = ["//visibility:private"],
+    deps = [
+        ":episode_event_policy",
+        ":episode_replay",
+        ":episode_replay_adapter_common",
+        "//intrinsic/safety:safety_decision_assessor",
+        "//intrinsic/vehicle:trajectory_contract_policy",
+        "//intrinsic/vehicle:vehicle_contract_policy",
+        "@com_google_protobuf//:protobuf",
+        "@intrinsic_apis//intrinsic/vehicle/proto:vehicle_command_cc_proto",
+        "@intrinsic_apis//intrinsic/vehicle/proto:vehicle_trajectory_cc_proto",
+    ],
+)
+
+cc_test(
+    name = "planning_replay_adapter_test",
+    size = "small",
+    srcs = ["planning_replay_adapter_test.cc"],
+    data = [
+        "BUILD",
+        ":testdata",
+    ],
+    visibility = ["//visibility:private"],
+    deps = [
+        ":episode_event_policy",
+        ":episode_reader",
+        ":episode_replay",
+        ":episode_replay_adapter_common",
+        ":episode_writer",
+        ":planning_replay_adapter",
+        "//intrinsic/safety:safety_decision_assessor",
+        "//intrinsic/vehicle:trajectory_contract_policy",
+        "//intrinsic/vehicle:vehicle_contract_policy",
+        "@com_google_googletest//:gtest_main",
+        "@com_google_protobuf//:protobuf",
+        "@intrinsic_apis//intrinsic/episode/proto:episode_event_cc_proto",
+        "@intrinsic_apis//intrinsic/vehicle/proto:vehicle_command_cc_proto",
+        "@intrinsic_apis//intrinsic/vehicle/proto:vehicle_trajectory_cc_proto",
+    ],
+)
+
+cc_library(
+    name = "safety_replay_adapter",
+    srcs = ["safety_replay_adapter.cc"],
+    hdrs = ["safety_replay_adapter.h"],
+    visibility = ["//visibility:private"],
+    deps = [
+        ":episode_event_policy",
+        ":episode_replay",
+        ":episode_replay_adapter_common",
+        "//intrinsic/safety:safety_decision_assessor",
+        "//intrinsic/safety:safety_decision_policy",
+        "@com_google_protobuf//:protobuf",
+        "@intrinsic_apis//intrinsic/safety/proto:safety_decision_cc_proto",
+        "@intrinsic_apis//intrinsic/vehicle/proto:vehicle_command_cc_proto",
+    ],
+)
+
+cc_test(
+    name = "safety_replay_adapter_test",
+    size = "small",
+    srcs = ["safety_replay_adapter_test.cc"],
+    data = [
+        "BUILD",
+        ":testdata",
+    ],
+    visibility = ["//visibility:private"],
+    deps = [
+        ":episode_event_policy",
+        ":episode_reader",
+        ":episode_replay",
+        ":episode_replay_adapter_common",
+        ":episode_writer",
+        ":safety_replay_adapter",
+        "//intrinsic/safety:safety_decision_assessor",
+        "//intrinsic/safety:safety_decision_policy",
+        "//intrinsic/vehicle:vehicle_contract_policy",
+        "@com_google_googletest//:gtest_main",
+        "@com_google_protobuf//:protobuf",
+        "@intrinsic_apis//intrinsic/episode/proto:episode_event_cc_proto",
+        "@intrinsic_apis//intrinsic/safety/proto:safety_decision_cc_proto",
+        "@intrinsic_apis//intrinsic/vehicle/proto:vehicle_command_cc_proto",
+    ],
+)
+
+cc_library(
+    name = "inference_replay_adapter",
+    srcs = ["inference_replay_adapter.cc"],
+    hdrs = ["inference_replay_adapter.h"],
+    visibility = ["//visibility:private"],
+    deps = [
+        ":episode_event_policy",
+        ":episode_replay",
+        ":episode_replay_adapter_common",
+        "//intrinsic/embodiment:frame_policy",
+        "//intrinsic_inference/envelope:inference_envelope_contract_policy",
+        "@com_google_protobuf//:protobuf",
+        "@intrinsic_apis//intrinsic/inference/proto:inference_envelope_cc_proto",
+    ],
+)
+
+cc_test(
+    name = "inference_replay_adapter_test",
+    size = "small",
+    srcs = ["inference_replay_adapter_test.cc"],
+    data = [
+        "BUILD",
+        ":testdata",
+    ],
+    visibility = ["//visibility:private"],
+    deps = [
+        ":episode_event_policy",
+        ":episode_reader",
+        ":episode_replay",
+        ":episode_replay_adapter_common",
+        ":episode_writer",
+        ":inference_replay_adapter",
+        "//intrinsic_inference/envelope:inference_envelope_contract_policy",
+        "@com_google_googletest//:gtest_main",
+        "@com_google_protobuf//:protobuf",
+        "@intrinsic_apis//intrinsic/episode/proto:episode_event_cc_proto",
+        "@intrinsic_apis//intrinsic/inference/proto:inference_envelope_cc_proto",
+    ],
+)
+
 py_library(
     name = "episode_event_policy_py",
     srcs = ["episode_event_policy.py"],
