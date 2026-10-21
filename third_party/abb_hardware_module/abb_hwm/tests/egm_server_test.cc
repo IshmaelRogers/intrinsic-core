@@ -2,10 +2,14 @@
 
 #include <gtest/gtest.h>
 
+#include <atomic>
 #include <chrono>
+#include <condition_variable>
 #include <cstddef>
+#include <cstdint>
 #include <iostream>
 #include <memory>
+#include <mutex>
 #include <string>
 #include <thread>
 #include <utility>
@@ -224,11 +228,16 @@ egm_data::EgmSensor CreateEgmSensor(size_t seqno) {
 }
 
 constexpr size_t kCommunicationPeriodMs = 100;
+// Generous bound so a missed wakeup or a real stall fails the test instead of
+// hanging. The fake still paces itself at kCommunicationPeriodMs; this is only
+// the deadline for the condition-variable waits below.
+constexpr std::chrono::milliseconds kResponseDeadline{5000};
 
+// Test double for UDPServerInterface. The production EgmServer calls run() on
+// its own thread and SetDataToRobot() from the test thread, so every field
+// those threads share is synchronized.
 class FakeUdpServer : public UDPServerInterface {
  public:
-  std::string last_response;
-
   absl::Status Init(MessageHandler handler) override {
     handler_ = handler;
     return absl::OkStatus();
@@ -236,19 +245,75 @@ class FakeUdpServer : public UDPServerInterface {
 
   void run() override {
     int i = 0;
-    while (!bShouldDie) {
-      last_response = handler_(CreateSerializedEgmRobot(i++));
-      // // sleep 0.1 seconds
+    while (!should_die_.load(std::memory_order_acquire)) {
+      // Sample the epoch before handler_() so a cycle already in flight when
+      // the test calls ArmCycleEpoch() publishes the previous epoch and cannot
+      // satisfy that wait. The acquire pairs with ArmCycleEpoch()'s release,
+      // which the test issues only after SetDataToRobot() returns, so a cycle
+      // that observes the new epoch reads the sensor that was just committed.
+      const uint64_t epoch = cycle_epoch_.load(std::memory_order_acquire);
+      std::string response = handler_(CreateSerializedEgmRobot(i++));
+      {
+        std::lock_guard<std::mutex> lock(mu_);
+        last_response_ = std::move(response);
+        ++response_count_;
+        published_epoch_ = epoch;
+      }
+      cv_.notify_one();
       std::this_thread::sleep_for(
           std::chrono::milliseconds(kCommunicationPeriodMs));
     }
   }
 
-  void Stop() override { bShouldDie = true; }
+  void Stop() override { should_die_.store(true, std::memory_order_release); }
+
+  // Blocks until at least min_count handler cycles have published a response.
+  bool WaitForResponseCount(uint64_t min_count,
+                            std::chrono::milliseconds deadline) {
+    std::unique_lock<std::mutex> lock(mu_);
+    return cv_.wait_for(lock, deadline, [this, min_count] {
+      return response_count_ >= min_count;
+    });
+  }
+
+  // Call after SetDataToRobot(). Returns the epoch a later handler cycle must
+  // publish to prove it started after that commit.
+  uint64_t ArmCycleEpoch() {
+    return cycle_epoch_.fetch_add(1, std::memory_order_acq_rel) + 1;
+  }
+
+  // Blocks until a handler cycle that sampled `epoch` (or a newer one)
+  // publishes. Returns false when `deadline` expires.
+  bool WaitForCycleEpoch(uint64_t epoch, std::chrono::milliseconds deadline) {
+    std::unique_lock<std::mutex> lock(mu_);
+    return cv_.wait_for(lock, deadline,
+                        [this, epoch] { return published_epoch_ >= epoch; });
+  }
+
+  std::string LastResponse() const {
+    std::lock_guard<std::mutex> lock(mu_);
+    return last_response_;
+  }
+
+  uint64_t response_count() const {
+    std::lock_guard<std::mutex> lock(mu_);
+    return response_count_;
+  }
+
+  uint64_t published_epoch() const {
+    std::lock_guard<std::mutex> lock(mu_);
+    return published_epoch_;
+  }
 
  private:
   MessageHandler handler_;
-  bool bShouldDie = false;
+  mutable std::mutex mu_;
+  std::condition_variable cv_;
+  std::string last_response_;
+  uint64_t response_count_ = 0;
+  uint64_t published_epoch_ = 0;
+  std::atomic<uint64_t> cycle_epoch_{0};
+  std::atomic<bool> should_die_{false};
 };
 
 TEST(EgmServerTest, Init) {
@@ -270,24 +335,35 @@ TEST(EgmServerTest, BasicUsage) {
   intrinsic::ThreadOptions test_thread_options;
   EgmServer egm_server(std::move(udp_server), test_thread_options);
   ASSERT_TRUE(egm_server.Init().ok());
-  // Wait for a period corresponding to 10 cycles of the UDP communication loop
-  // to make sure that data is available.
-  std::this_thread::sleep_for(
-      std::chrono::milliseconds(10 * kCommunicationPeriodMs));
+  // The first handler cycle commits an EgmRobot before it publishes, so
+  // GetDataFromRobot() is safe once a response has been counted.
+  ASSERT_TRUE(
+      udp_server_ptr->WaitForResponseCount(/*min_count=*/1, kResponseDeadline))
+      << "Timed out after " << kResponseDeadline.count()
+      << "ms waiting for the fake UDP server to publish the first "
+         "EgmRobot message";
 
   for (int i = 0; i < 5; i++) {
     auto egm_robot_or_status = egm_server.GetDataFromRobot();
     ASSERT_TRUE(egm_robot_or_status.ok());
     egm_data::EgmSensor egm_sensor = CreateEgmSensor(i);
     egm_server.SetDataToRobot(egm_sensor);
-    std::this_thread::sleep_for(
-        std::chrono::milliseconds(kCommunicationPeriodMs));
-    // make sure that the data received on the UDP interface was updated
-    // correctly
+    // Arm after the commit. An in-flight handler cycle still holds the
+    // previous epoch, so this wait cannot observe a stale EgmSensor.
+    const uint64_t epoch = udp_server_ptr->ArmCycleEpoch();
+    ASSERT_TRUE(udp_server_ptr->WaitForCycleEpoch(epoch, kResponseDeadline))
+        << "Timed out after " << kResponseDeadline.count()
+        << "ms waiting for a fake UDP handler cycle that started after "
+           "SetDataToRobot (iteration "
+        << i << ", epoch " << epoch << "). Last published epoch was "
+        << udp_server_ptr->published_epoch() << " after "
+        << udp_server_ptr->response_count() << " cycles.";
+    // Exact byte comparison of the serialized EgmSensor the handler returned.
     abb::egm::EgmSensor egm_sensor_proto;
     ToProto(egm_sensor, &egm_sensor_proto);
-    ASSERT_EQ(egm_sensor_proto.SerializeAsString(),
-              udp_server_ptr->last_response);
+    const std::string expected = egm_sensor_proto.SerializeAsString();
+    const std::string actual = udp_server_ptr->LastResponse();
+    ASSERT_EQ(expected, actual);
   }
 }
 
