@@ -832,6 +832,25 @@ TEST(EpisodeReaderTest, RT9UnknownPayload) {
   EXPECT_EQ(Read(next).defect, Defect::kNone);
 }
 
+// #240: a record whose payload-less event carries only an unknown envelope
+// field (U1, tag 6 varint) is an invalid event, not an unknown payload.
+TEST(EpisodeReaderTest, U1UnknownEnvelopeFieldIsAMissingPayloadRecord) {
+  EpisodeEvent base = MakeEvent("a", 1);
+  base.clear_payload();
+  const std::string u1 = base.SerializeAsString() + std::string("\x30\x01", 2);
+  ASSERT_TRUE(Parse(u1).payload_case() == EpisodeEvent::PAYLOAD_NOT_SET);
+  const std::string data = Header() + Record(0, u1);
+  const EpisodeReadResult result = Read(data);
+  EXPECT_EQ(result.status, EpisodeReaderStatus::kOk);
+  EXPECT_EQ(result.defect, Defect::kInvalidEvent);
+  EXPECT_EQ(result.event_error, EpisodeEventError::kMissingPayload);
+  EXPECT_EQ(result.defect_offset, kFileHeader);
+  EXPECT_EQ(result.good_records, 0u);
+  EXPECT_EQ(result.good_end_offset, kFileHeader);
+  EXPECT_TRUE(result.records.empty());
+  EXPECT_EQ(result.stats.unknown_skipped, 0u);
+}
+
 // RT10: filters.
 TEST(EpisodeReaderTest, RT10Filters) {
   // Indices: 0 a/safety, 1 b/trajectory, 2 a/trajectory, 5 loss (3 and 4

@@ -141,6 +141,22 @@ void AppendVarint(uint64_t value, std::string* out) {
   out->push_back(static_cast<char>(value));
 }
 
+int UnknownWireType(const google::protobuf::UnknownField& field) {
+  switch (field.type()) {
+    case google::protobuf::UnknownField::TYPE_VARINT:
+      return 0;
+    case google::protobuf::UnknownField::TYPE_FIXED64:
+      return 1;
+    case google::protobuf::UnknownField::TYPE_LENGTH_DELIMITED:
+      return 2;
+    case google::protobuf::UnknownField::TYPE_GROUP:
+      return 3;
+    case google::protobuf::UnknownField::TYPE_FIXED32:
+      return 5;
+  }
+  return -1;
+}
+
 EpisodeEventView ViewOf(const EpisodeEvent& message) {
   const auto& header = message.header();
   EpisodeEventView view;
@@ -158,8 +174,15 @@ EpisodeEventView ViewOf(const EpisodeEvent& message) {
   view.config_digest = message.config_digest();
   view.provenance_present = message.has_provenance();
   view.payload_case = static_cast<int>(message.payload_case());
-  view.has_unknown_fields =
-      !message.GetReflection()->GetUnknownFields(message).empty();
+  const google::protobuf::UnknownFieldSet& unknown =
+      message.GetReflection()->GetUnknownFields(message);
+  view.has_unknown_fields = !unknown.empty();
+  for (int i = 0; i < unknown.field_count(); ++i) {
+    if (IsUnknownPayloadCandidate(unknown.field(i).number(),
+                                  UnknownWireType(unknown.field(i)))) {
+      view.unknown_payload_candidate = true;
+    }
+  }
   if (message.has_episode_metadata()) {
     view.marine_randomization_metadata =
         message.episode_metadata().marine_randomization_metadata();
@@ -674,6 +697,7 @@ TEST(EpisodeEventSerializationTest, S3PreSchemaViewClassifiesAsUnknownSkip) {
     EpisodeEventView view = ViewOf(message);
     view.payload_case = kPayloadCaseNotSet;
     view.has_unknown_fields = true;
+    view.unknown_payload_candidate = true;
     const EpisodeEventAssessment assessment = AssessEpisodeEvent(view);
     EXPECT_EQ(assessment.error, Error::kNone) << payload.name;
     EXPECT_EQ(assessment.payload_kind, PayloadKind::kUnknown) << payload.name;
@@ -701,6 +725,213 @@ TEST(EpisodeEventSerializationTest, S3SnapshotFieldIsNotNamedDescriptor) {
   EXPECT_EQ(intrinsic_proto::episode::WorldSnapshotRecord::descriptor()
                 ->FindFieldByName("descriptor"),
             nullptr);
+}
+
+// #240: unknown payload candidates are told apart from unknown envelope fields
+// by tag and wire type. Keep in sync with the Python tests.
+
+std::string HexBytes(std::string_view hex) {
+  std::string out;
+  int high = -1;
+  for (const char c : hex) {
+    if (c == ' ') {
+      continue;
+    }
+    const int digit =
+        std::isdigit(static_cast<unsigned char>(c))
+            ? c - '0'
+            : std::tolower(static_cast<unsigned char>(c)) - 'a' + 10;
+    if (high < 0) {
+      high = digit;
+    } else {
+      out.push_back(static_cast<char>((high << 4) | digit));
+      high = -1;
+    }
+  }
+  EXPECT_EQ(high, -1) << hex;
+  return out;
+}
+
+// The payload-less valid envelope: the safety_decision golden with the payload
+// cleared, serialized deterministically.
+std::string PayloadlessEnvelope() {
+  EpisodeEvent message = Golden("safety_decision");
+  message.clear_payload();
+  return Serialize(message);
+}
+
+struct UnknownPayloadCase {
+  const char* id;
+  const char* suffix_hex;
+  bool candidate;
+};
+
+// Suffixes are the locked wire bytes (lock episode-unknown-payload-
+// classification-v1). U15 is U1 followed by U7.
+constexpr UnknownPayloadCase kUnknownPayloadCases[] = {
+    {"U1", "30 01", false},          {"U2", "32 01 00", false},
+    {"U3", "4a 01 00", false},       {"U4", "50 01", false},
+    {"U5", "90 01 01", false},       {"U6", "98 01 01", false},
+    {"U7", "9a 01 00", true},        {"U8", "9a 06 00", true},
+    {"U9", "a2 06 00", true},        {"U10", "ba a3 09 00", true},
+    {"U11", "c2 a3 09 00", false},   {"U12", "fa e1 09 00", false},
+    {"U13", "82 e2 09 00", true},    {"U14", "fa ff ff ff 0f 00", true},
+    {"U15", "30 01 9a 01 00", true},
+};
+
+TEST(EpisodeEventSerializationTest, U1ToU15ClassifyUnknownPayloadCandidates) {
+  const std::string base = PayloadlessEnvelope();
+  for (const UnknownPayloadCase& c : kUnknownPayloadCases) {
+    SCOPED_TRACE(c.id);
+    const std::string bytes = base + HexBytes(c.suffix_hex);
+    EpisodeEvent message;
+    if (!message.ParseFromString(bytes)) {
+      // Lock risk 2: tags 19000-19999 may be rejected by a parser. That is
+      // acceptable for U11 and U12 as long as it is never a skip.
+      EXPECT_TRUE(std::string_view(c.id) == "U11" ||
+                  std::string_view(c.id) == "U12")
+          << "parse failed";
+      continue;
+    }
+    const EpisodeEventView view = ViewOf(message);
+    EXPECT_EQ(view.payload_case, kPayloadCaseNotSet);
+    EXPECT_TRUE(view.has_unknown_fields);
+    EXPECT_EQ(view.unknown_payload_candidate, c.candidate);
+    const EpisodeEventAssessment assessment = AssessEpisodeEvent(view);
+    EXPECT_TRUE(assessment.engaged);
+    if (c.candidate) {
+      EXPECT_EQ(assessment.error, Error::kNone);
+      EXPECT_EQ(assessment.payload_kind, PayloadKind::kUnknown);
+      EXPECT_TRUE(assessment.skip);
+    } else {
+      EXPECT_EQ(assessment.error, Error::kMissingPayload);
+      EXPECT_EQ(assessment.payload_kind, PayloadKind::kNone);
+      EXPECT_FALSE(assessment.skip);
+    }
+  }
+}
+
+TEST(EpisodeEventSerializationTest, U15IsU1PlusU7) {
+  EXPECT_EQ(HexBytes(kUnknownPayloadCases[14].suffix_hex),
+            HexBytes(kUnknownPayloadCases[0].suffix_hex) +
+                HexBytes(kUnknownPayloadCases[6].suffix_hex));
+}
+
+TEST(EpisodeEventSerializationTest, UnknownPayloadCaseKeysAreTagAndWireType) {
+  // The keys are (number << 3) | wire_type, as listed in the lock table.
+  const struct {
+    const char* id;
+    uint32_t number;
+    uint32_t wire_type;
+  } expected[] = {
+      {"U1", 6, 0},      {"U2", 6, 2},          {"U3", 9, 2},
+      {"U4", 10, 0},     {"U5", 18, 0},         {"U6", 19, 0},
+      {"U7", 19, 2},     {"U8", 99, 2},         {"U9", 100, 2},
+      {"U10", 18999, 2}, {"U11", 19000, 2},     {"U12", 19999, 2},
+      {"U13", 20000, 2}, {"U14", 536870911, 2},
+  };
+  for (const auto& e : expected) {
+    for (const UnknownPayloadCase& c : kUnknownPayloadCases) {
+      if (std::string_view(c.id) != e.id) {
+        continue;
+      }
+      const std::vector<WireField> fields =
+          TopLevelFields(HexBytes(c.suffix_hex));
+      ASSERT_EQ(fields.size(), 1u) << e.id;
+      EXPECT_EQ(fields[0].number, e.number) << e.id;
+      EXPECT_EQ(fields[0].wire_type, e.wire_type) << e.id;
+    }
+  }
+}
+
+TEST(EpisodeEventSerializationTest, K1KnownPayloadPlusWrongWireTagStaysKnown) {
+  const std::string bytes = GoldenBytes("safety_decision") + HexBytes("50 01");
+  const EpisodeEvent message = Parse(bytes);
+  const EpisodeEventView view = ViewOf(message);
+  EXPECT_TRUE(view.has_unknown_fields);
+  EXPECT_FALSE(view.unknown_payload_candidate);
+  const EpisodeEventAssessment assessment = AssessEpisodeEvent(view);
+  EXPECT_EQ(assessment.error, Error::kNone);
+  EXPECT_EQ(assessment.payload_kind, PayloadKind::kSafetyDecision);
+  EXPECT_FALSE(assessment.skip);
+  std::string reserialized;
+  ASSERT_TRUE(message.SerializeToString(&reserialized));
+  EXPECT_EQ(reserialized, bytes);
+  EXPECT_EQ(Serialize(message), bytes);
+}
+
+TEST(EpisodeEventSerializationTest, K2KnownPayloadPlusACandidateStaysKnown) {
+  const std::string bytes =
+      GoldenBytes("safety_decision") + HexBytes("9a 01 00");
+  const EpisodeEvent message = Parse(bytes);
+  const EpisodeEventView view = ViewOf(message);
+  EXPECT_TRUE(view.has_unknown_fields);
+  EXPECT_TRUE(view.unknown_payload_candidate);
+  const EpisodeEventAssessment assessment = AssessEpisodeEvent(view);
+  EXPECT_EQ(assessment.error, Error::kNone);
+  EXPECT_EQ(assessment.payload_kind, PayloadKind::kSafetyDecision);
+  EXPECT_FALSE(assessment.skip);
+  std::string reserialized;
+  ASSERT_TRUE(message.SerializeToString(&reserialized));
+  EXPECT_EQ(reserialized, bytes);
+  EXPECT_EQ(Serialize(message), bytes);
+}
+
+TEST(EpisodeEventSerializationTest, L15EpisodeLossStaysKnownAndIsNeverSkipped) {
+  EpisodeEvent loss = Golden("safety_decision");
+  loss.clear_payload();
+  loss.mutable_episode_loss()->set_dropped_count(1);
+  const std::string base = Serialize(loss);
+  for (const char* suffix : {"", "30 01", "9a 01 00"}) {
+    SCOPED_TRACE(suffix);
+    const EpisodeEvent message = Parse(base + HexBytes(suffix));
+    EXPECT_EQ(message.payload_case(), EpisodeEvent::kEpisodeLoss);
+    const EpisodeEventAssessment assessment = Assess(message);
+    EXPECT_EQ(assessment.error, Error::kNone);
+    EXPECT_EQ(assessment.payload_kind, PayloadKind::kEpisodeLoss);
+    EXPECT_EQ(static_cast<int>(assessment.payload_kind), 7);
+    EXPECT_FALSE(assessment.skip);
+    EXPECT_TRUE(assessment.engaged);
+  }
+}
+
+TEST(EpisodeEventSerializationTest, E6GoldenIsAnUnknownPayloadCandidate) {
+  const std::string bytes = TestdataBytes(std::string(kV2Name));
+  const EpisodeEvent message = Parse(bytes);
+  const EpisodeEventView view = ViewOf(message);
+  EXPECT_TRUE(view.unknown_payload_candidate);
+  const EpisodeEventAssessment assessment = AssessEpisodeEvent(view);
+  EXPECT_EQ(assessment.error, Error::kNone);
+  EXPECT_EQ(assessment.payload_kind, PayloadKind::kUnknown);
+  EXPECT_TRUE(assessment.skip);
+  EXPECT_EQ(Serialize(message), bytes);
+}
+
+TEST(EpisodeEventSerializationTest,
+     E6xUnknownEnvelopeFieldOnlyIsMissingPayload) {
+  EpisodeEvent expected = Golden("metadata");
+  expected.clear_episode_metadata();
+  std::string bytes = Serialize(expected);
+  AppendVarint((kUnknownEnvelopeTag << 3) | 0, &bytes);
+  AppendVarint(7, &bytes);
+  const EpisodeEvent message = Parse(bytes);
+  const EpisodeEventView view = ViewOf(message);
+  EXPECT_TRUE(view.has_unknown_fields);
+  EXPECT_FALSE(view.unknown_payload_candidate);
+  const EpisodeEventAssessment assessment = AssessEpisodeEvent(view);
+  EXPECT_EQ(assessment.error, Error::kMissingPayload);
+  EXPECT_EQ(assessment.payload_kind, PayloadKind::kNone);
+  EXPECT_FALSE(assessment.skip);
+}
+
+TEST(EpisodeEventSerializationTest, BoundaryCasesMatchTheLockTable) {
+  EXPECT_FALSE(IsUnknownPayloadCandidate(15, 2));
+  EXPECT_FALSE(IsUnknownPayloadCandidate(18, 2));
+  EXPECT_TRUE(IsUnknownPayloadCandidate(19, 2));
+  EXPECT_FALSE(IsUnknownPayloadCandidate(19, 0));
+  EXPECT_FALSE(IsUnknownPayloadCandidate(19000, 2));
+  EXPECT_TRUE(IsUnknownPayloadCandidate(536870911, 2));
+  EXPECT_FALSE(IsUnknownPayloadCandidate(6, 2));
 }
 
 }  // namespace

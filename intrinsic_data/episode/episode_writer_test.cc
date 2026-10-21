@@ -978,6 +978,38 @@ TEST(EpisodeWriterTest, W8RejectionsWriteNothingAndConsumeNoIndex) {
   EXPECT_EQ(sink.calls(), 0);
 }
 
+// #240: a payload-less event whose only extra fields are unknown envelope
+// fields (U1 tag 6 varint, U2 tag 6 length-delimited, U4 wrong-wire tag 10) is
+// not an unknown payload. It is rejected and consumes no writer index.
+TEST(EpisodeWriterTest, U1U2U4UnknownEnvelopeFieldsAreMissingPayload) {
+  EpisodeEvent base = MakeEvent("a", 1);
+  base.clear_payload();
+  const std::string prefix = base.SerializeAsString();
+  const std::string suffixes[] = {
+      std::string("\x30\x01", 2),
+      std::string("\x32\x01\x00", 3),
+      std::string("\x50\x01", 2),
+  };
+  FakeEpisodeSink sink;
+  auto writer = MakeWriter(&sink, 16, kSmallMaxEventBytes);
+  uint64_t rejected = 0;
+  for (const std::string& suffix : suffixes) {
+    const EpisodeEvent event = Parse(prefix + suffix);
+    EXPECT_EQ(event.payload_case(), EpisodeEvent::PAYLOAD_NOT_SET);
+    const EpisodeAppendResult result = writer->Append(event);
+    EXPECT_EQ(result.status, Status::kInvalidEvent);
+    EXPECT_EQ(result.event_error, EpisodeEventError::kMissingPayload);
+    EXPECT_EQ(writer->Stats().rejected_invalid, ++rejected);
+    EXPECT_EQ(writer->Stats().next_writer_index, 0u);
+    EXPECT_EQ(writer->Stats().accepted, 0u);
+  }
+  EXPECT_EQ(sink.calls(), 0);
+  const EpisodeAppendResult accepted = writer->Append(MakeEvent("a", 1));
+  EXPECT_EQ(accepted.status, Status::kOk);
+  EXPECT_EQ(accepted.writer_index, 0u);
+  EXPECT_EQ(writer->Stats().next_writer_index, 1u);
+}
+
 TEST(EpisodeWriterTest, W9UnknownPayloadIsAcceptedAndItsBytesAreKept) {
   const std::string golden = TestdataBytes(std::string(kV2Name));
   FakeEpisodeSink sink;

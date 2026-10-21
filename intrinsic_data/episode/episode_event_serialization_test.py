@@ -67,9 +67,32 @@ _V2_NAME = "episode_event_v2_additive_unknown_payload.binpb"
 _UNKNOWN_PAYLOAD_TAG = 536870000
 _UNKNOWN_ENVELOPE_TAG = 536870001
 
+# (id, suffix hex, is an unknown payload candidate). The suffixes are the
+# locked wire bytes (lock episode-unknown-payload-classification-v1). U15 is U1
+# followed by U7.
+_UNKNOWN_PAYLOAD_CASES = (
+    ("U1", "3001", False),
+    ("U2", "320100", False),
+    ("U3", "4a0100", False),
+    ("U4", "5001", False),
+    ("U5", "900101", False),
+    ("U6", "980101", False),
+    ("U7", "9a0100", True),
+    ("U8", "9a0600", True),
+    ("U9", "a20600", True),
+    ("U10", "baa30900", True),
+    ("U11", "c2a30900", False),
+    ("U12", "fae10900", False),
+    ("U13", "82e20900", True),
+    ("U14", "faffffff0f00", True),
+    ("U15", "30019a0100", True),
+)
+
 _WIRE_TYPE_VARINT = 0
 _WIRE_TYPE_FIXED64 = 1
 _WIRE_TYPE_LENGTH_DELIMITED = 2
+_WIRE_TYPE_START_GROUP = 3
+_WIRE_TYPE_END_GROUP = 4
 _WIRE_TYPE_FIXED32 = 5
 _EXPECTED_WIRE_TYPES = {
     "uint32": _WIRE_TYPE_VARINT,
@@ -161,40 +184,66 @@ def _read_varint(data, offset):
     shift += 7
 
 
-def _has_unknown_top_level_fields(message):
+def _skip_value(data, offset, wire_type):
+  """Returns the offset past one field value of the given wire type."""
+  if wire_type == _WIRE_TYPE_VARINT:
+    _, offset = _read_varint(data, offset)
+  elif wire_type == _WIRE_TYPE_FIXED64:
+    offset += 8
+  elif wire_type == _WIRE_TYPE_LENGTH_DELIMITED:
+    length, offset = _read_varint(data, offset)
+    offset += length
+  elif wire_type == _WIRE_TYPE_START_GROUP:
+    while True:
+      key, offset = _read_varint(data, offset)
+      if key & 7 == _WIRE_TYPE_END_GROUP:
+        return offset
+      offset = _skip_value(data, offset, key & 7)
+  elif wire_type == _WIRE_TYPE_FIXED32:
+    offset += 4
+  else:
+    raise AssertionError("unexpected wire type %d" % wire_type)
+  return offset
+
+
+def _unknown_top_level_fields(message):
   """Python upb does not implement UnknownFields(), so scan the wire.
 
-  Only top-level fields count, like the C++ UnknownFieldSet of the message
-  itself. A known number with the wrong wire type is unknown to the parser.
+  Returns the (number, wire_type) of every top-level field the parser does not
+  know, in wire order, like the C++ UnknownFieldSet of the message itself. A
+  known number with the wrong wire type is unknown to the parser.
   """
   data = message.SerializeToString()
   fields = message.DESCRIPTOR.fields_by_number
+  unknown = []
   offset = 0
   while offset < len(data):
     key, offset = _read_varint(data, offset)
     number, wire_type = key >> 3, key & 7
     field = fields.get(number)
     if field is None:
-      return True
-    type_name = {
-        field.TYPE_UINT32: "uint32",
-        field.TYPE_STRING: "string",
-        field.TYPE_MESSAGE: "message",
-    }[field.type]
-    if _EXPECTED_WIRE_TYPES[type_name] != wire_type:
-      return True
-    if wire_type == _WIRE_TYPE_VARINT:
-      _, offset = _read_varint(data, offset)
-    elif wire_type == _WIRE_TYPE_LENGTH_DELIMITED:
-      length, offset = _read_varint(data, offset)
-      offset += length
-    elif wire_type == _WIRE_TYPE_FIXED64:
-      offset += 8
-    elif wire_type == _WIRE_TYPE_FIXED32:
-      offset += 4
+      unknown.append((number, wire_type))
     else:
-      return True
-  return False
+      type_name = {
+          field.TYPE_UINT32: "uint32",
+          field.TYPE_STRING: "string",
+          field.TYPE_MESSAGE: "message",
+      }[field.type]
+      if _EXPECTED_WIRE_TYPES[type_name] != wire_type:
+        unknown.append((number, wire_type))
+    offset = _skip_value(data, offset, wire_type)
+  return unknown
+
+
+def _has_unknown_top_level_fields(message):
+  return bool(_unknown_top_level_fields(message))
+
+
+def _has_unknown_payload_candidate(message):
+  return any(
+      policy.is_unknown_payload_candidate(number, wire_type)
+      for number, wire_type in _unknown_top_level_fields(message)
+  )
 
 
 def _payload_case(message):
@@ -220,6 +269,7 @@ def _view(message):
       provenance_present=message.HasField("provenance"),
       payload_case=_payload_case(message),
       has_unknown_fields=_has_unknown_top_level_fields(message),
+      unknown_payload_candidate=_has_unknown_payload_candidate(message),
       marine_randomization_metadata=(
           message.episode_metadata.marine_randomization_metadata
           if message.HasField("episode_metadata")
@@ -603,6 +653,7 @@ class EpisodeEventSerializationTest(unittest.TestCase):
             _view(_golden(payload)),
             payload_case=policy.PAYLOAD_CASE_NOT_SET,
             has_unknown_fields=True,
+            unknown_payload_candidate=True,
         )
         assessment = policy.assess_episode_event(view)
         self.assertIs(assessment.error, _Error.NONE)
@@ -619,6 +670,150 @@ class EpisodeEventSerializationTest(unittest.TestCase):
     fields = episode_event_pb2.WorldSnapshotRecord.DESCRIPTOR.fields_by_name
     self.assertIn("snapshot", fields)
     self.assertNotIn("descriptor", fields)
+
+  # #240: unknown payload candidates are told apart from unknown envelope
+  # fields by tag and wire type. Keep in sync with the C++ tests.
+
+  def _payloadless_envelope(self):
+    message = _golden("safety_decision")
+    message.ClearField("payload")
+    return _serialize(message)
+
+  def test_u1_to_u15_classify_unknown_payload_candidates(self):
+    base = self._payloadless_envelope()
+    for case_id, suffix_hex, candidate in _UNKNOWN_PAYLOAD_CASES:
+      with self.subTest(case=case_id):
+        message = _Event()
+        try:
+          message.ParseFromString(base + bytes.fromhex(suffix_hex))
+        except message_lib.DecodeError:
+          # Lock risk 2: tags 19000-19999 may be rejected by a parser. That is
+          # acceptable for U11 and U12 as long as it is never a skip.
+          self.assertIn(case_id, ("U11", "U12"))
+          continue
+        view = _view(message)
+        self.assertEqual(view.payload_case, policy.PAYLOAD_CASE_NOT_SET)
+        self.assertTrue(view.has_unknown_fields)
+        self.assertEqual(view.unknown_payload_candidate, candidate)
+        assessment = policy.assess_episode_event(view)
+        self.assertTrue(assessment.engaged)
+        if candidate:
+          self.assertIs(assessment.error, _Error.NONE)
+          self.assertIs(assessment.payload_kind, _Kind.UNKNOWN)
+          self.assertTrue(assessment.skip)
+        else:
+          self.assertIs(assessment.error, _Error.MISSING_PAYLOAD)
+          self.assertIs(assessment.payload_kind, _Kind.NONE)
+          self.assertFalse(assessment.skip)
+
+  def test_u15_is_u1_plus_u7(self):
+    suffixes = {case_id: hex_ for case_id, hex_, _ in _UNKNOWN_PAYLOAD_CASES}
+    self.assertEqual(
+        bytes.fromhex(suffixes["U15"]),
+        bytes.fromhex(suffixes["U1"]) + bytes.fromhex(suffixes["U7"]),
+    )
+
+  def test_unknown_payload_case_keys_are_tag_and_wire_type(self):
+    expected = {
+        "U1": (6, 0),
+        "U2": (6, 2),
+        "U3": (9, 2),
+        "U4": (10, 0),
+        "U5": (18, 0),
+        "U6": (19, 0),
+        "U7": (19, 2),
+        "U8": (99, 2),
+        "U9": (100, 2),
+        "U10": (18999, 2),
+        "U11": (19000, 2),
+        "U12": (19999, 2),
+        "U13": (20000, 2),
+        "U14": (536870911, 2),
+    }
+    for case_id, suffix_hex, _ in _UNKNOWN_PAYLOAD_CASES:
+      if case_id not in expected:
+        continue
+      with self.subTest(case=case_id):
+        data = bytes.fromhex(suffix_hex)
+        key, offset = _read_varint(data, 0)
+        self.assertEqual((key >> 3, key & 7), expected[case_id])
+        self.assertEqual(_skip_value(data, offset, key & 7), len(data))
+
+  def test_k1_known_payload_plus_wrong_wire_tag_stays_known(self):
+    data = _golden_bytes("safety_decision") + bytes.fromhex("5001")
+    message = _parse(data)
+    view = _view(message)
+    self.assertTrue(view.has_unknown_fields)
+    self.assertFalse(view.unknown_payload_candidate)
+    assessment = policy.assess_episode_event(view)
+    self.assertIs(assessment.error, _Error.NONE)
+    self.assertIs(assessment.payload_kind, _Kind.SAFETY_DECISION)
+    self.assertFalse(assessment.skip)
+    self.assertEqual(message.SerializeToString(), data)
+    self.assertEqual(_serialize(message), data)
+
+  def test_k2_known_payload_plus_a_candidate_stays_known(self):
+    data = _golden_bytes("safety_decision") + bytes.fromhex("9a0100")
+    message = _parse(data)
+    view = _view(message)
+    self.assertTrue(view.has_unknown_fields)
+    self.assertTrue(view.unknown_payload_candidate)
+    assessment = policy.assess_episode_event(view)
+    self.assertIs(assessment.error, _Error.NONE)
+    self.assertIs(assessment.payload_kind, _Kind.SAFETY_DECISION)
+    self.assertFalse(assessment.skip)
+    self.assertEqual(message.SerializeToString(), data)
+    self.assertEqual(_serialize(message), data)
+
+  def test_l15_episode_loss_stays_known_and_is_never_skipped(self):
+    loss = _golden("safety_decision")
+    loss.ClearField("payload")
+    loss.episode_loss.dropped_count = 1
+    base = _serialize(loss)
+    for suffix_hex in ("", "3001", "9a0100"):
+      with self.subTest(suffix=suffix_hex):
+        message = _parse(base + bytes.fromhex(suffix_hex))
+        self.assertEqual(message.WhichOneof("payload"), "episode_loss")
+        assessment = _assess(message)
+        self.assertIs(assessment.error, _Error.NONE)
+        self.assertIs(assessment.payload_kind, _Kind.EPISODE_LOSS)
+        self.assertEqual(assessment.payload_kind.value, 7)
+        self.assertFalse(assessment.skip)
+        self.assertTrue(assessment.engaged)
+
+  def test_e6_golden_is_an_unknown_payload_candidate(self):
+    data = _read(_testdata_path(_V2_NAME), "rb")
+    message = _parse(data)
+    view = _view(message)
+    self.assertTrue(view.unknown_payload_candidate)
+    assessment = policy.assess_episode_event(view)
+    self.assertIs(assessment.error, _Error.NONE)
+    self.assertIs(assessment.payload_kind, _Kind.UNKNOWN)
+    self.assertTrue(assessment.skip)
+    self.assertEqual(_serialize(message), data)
+
+  def test_e6x_unknown_envelope_field_only_is_missing_payload(self):
+    expected = _golden("metadata")
+    expected.ClearField("episode_metadata")
+    data = _serialize(expected)
+    data += _varint((_UNKNOWN_ENVELOPE_TAG << 3) | 0) + _varint(7)
+    view = _view(_parse(data))
+    self.assertTrue(view.has_unknown_fields)
+    self.assertFalse(view.unknown_payload_candidate)
+    assessment = policy.assess_episode_event(view)
+    self.assertIs(assessment.error, _Error.MISSING_PAYLOAD)
+    self.assertIs(assessment.payload_kind, _Kind.NONE)
+    self.assertFalse(assessment.skip)
+
+  def test_boundary_cases_match_the_lock_table(self):
+    candidate = policy.is_unknown_payload_candidate
+    self.assertFalse(candidate(15, 2))
+    self.assertFalse(candidate(18, 2))
+    self.assertTrue(candidate(19, 2))
+    self.assertFalse(candidate(19, 0))
+    self.assertFalse(candidate(19000, 2))
+    self.assertTrue(candidate(536870911, 2))
+    self.assertFalse(candidate(6, 2))
 
 
 if __name__ == "__main__":

@@ -117,6 +117,7 @@ TEST(EpisodeEventPolicyTest, AnySingleSignalEngages) {
   EXPECT_TRUE(engaged([] {
     EpisodeEventView v;
     v.has_unknown_fields = true;
+    v.unknown_payload_candidate = true;
     return v;
   }()));
 }
@@ -245,6 +246,7 @@ TEST(EpisodeEventPolicyTest, ReplayPayloadsClassifyToTheirKinds) {
       EpisodeEventView view = NominalView();
       view.payload_case = c.payload_case;
       view.has_unknown_fields = has_unknown;
+      view.unknown_payload_candidate = has_unknown;
       const EpisodeEventAssessment assessment = AssessEpisodeEvent(view);
       EXPECT_EQ(assessment.error, Error::kNone) << c.payload_case;
       EXPECT_EQ(assessment.payload_kind, c.kind) << c.payload_case;
@@ -348,6 +350,7 @@ TEST(EpisodeEventPolicyTest, UnknownPayloadIsSkippedNotRejected) {
   EpisodeEventView view = NominalView();
   view.payload_case = kPayloadCaseNotSet;
   view.has_unknown_fields = true;
+  view.unknown_payload_candidate = true;
   const EpisodeEventAssessment assessment = AssessEpisodeEvent(view);
   EXPECT_EQ(assessment.error, Error::kNone);
   EXPECT_EQ(assessment.payload_kind, PayloadKind::kUnknown);
@@ -357,6 +360,7 @@ TEST(EpisodeEventPolicyTest, UnknownPayloadIsSkippedNotRejected) {
 TEST(EpisodeEventPolicyTest, UnknownFieldsDoNotChangeAKnownPayload) {
   EpisodeEventView view = NominalView();
   view.has_unknown_fields = true;
+  view.unknown_payload_candidate = true;
   const EpisodeEventAssessment assessment = AssessEpisodeEvent(view);
   EXPECT_EQ(assessment.error, Error::kNone);
   EXPECT_EQ(assessment.payload_kind, PayloadKind::kSafetyDecision);
@@ -415,5 +419,90 @@ TEST(EpisodeEventPolicyTest, WellFormedButWrongDigestIsAMismatch) {
             Error::kConfigDigestMismatch);
 }
 
+TEST(EpisodeEventPolicyTest, TagNamespaceConstantsArePermanent) {
+  EXPECT_EQ(kFirstFuturePayloadTag, 19);
+  EXPECT_EQ(kFirstFuturePayloadTag, kPayloadCaseDesiredMotion + 1);
+  EXPECT_EQ(kMaxFieldNumber, 536870911);
+  EXPECT_EQ(kMaxFieldNumber, (1 << 29) - 1);
+  EXPECT_EQ(kExcludedFieldNumberFirst, 19000);
+  EXPECT_EQ(kExcludedFieldNumberLast, 19999);
+  EXPECT_EQ(kWireTypeLengthDelimited, 2);
+}
+
+TEST(EpisodeEventPolicyTest, B15B16B19UnknownPayloadCandidateBoundaries) {
+  // Known payload tags are never candidates.
+  for (int tag = kPayloadCaseSafetyDecision; tag <= kPayloadCaseDesiredMotion;
+       ++tag) {
+    EXPECT_FALSE(IsUnknownPayloadCandidate(tag, 2)) << tag;
+  }
+  EXPECT_FALSE(IsUnknownPayloadCandidate(15, 2));
+  EXPECT_FALSE(IsUnknownPayloadCandidate(18, 2));
+  // Envelope tags are never candidates.
+  for (int tag = 1; tag <= 9; ++tag) {
+    EXPECT_FALSE(IsUnknownPayloadCandidate(tag, 2)) << tag;
+  }
+  EXPECT_FALSE(IsUnknownPayloadCandidate(6, 2));
+  EXPECT_FALSE(IsUnknownPayloadCandidate(0, 2));
+  EXPECT_FALSE(IsUnknownPayloadCandidate(-1, 2));
+  // Lowest candidate.
+  EXPECT_TRUE(IsUnknownPayloadCandidate(19, 2));
+  EXPECT_TRUE(IsUnknownPayloadCandidate(20, 2));
+  EXPECT_TRUE(IsUnknownPayloadCandidate(99, 2));
+  EXPECT_TRUE(IsUnknownPayloadCandidate(100, 2));
+  EXPECT_TRUE(IsUnknownPayloadCandidate(536870000, 2));
+  // The excluded range.
+  EXPECT_TRUE(IsUnknownPayloadCandidate(18999, 2));
+  EXPECT_FALSE(IsUnknownPayloadCandidate(19000, 2));
+  EXPECT_FALSE(IsUnknownPayloadCandidate(19500, 2));
+  EXPECT_FALSE(IsUnknownPayloadCandidate(19999, 2));
+  EXPECT_TRUE(IsUnknownPayloadCandidate(20000, 2));
+  // The maximum field number.
+  EXPECT_TRUE(IsUnknownPayloadCandidate(536870911, 2));
+  EXPECT_FALSE(IsUnknownPayloadCandidate(536870912, 2));
+}
+
+TEST(EpisodeEventPolicyTest, OnlyLengthDelimitedWireTypeIsACandidate) {
+  for (const int number : {19, 99, 18999, 20000, 536870911}) {
+    for (const int wire_type : {0, 1, 3, 4, 5, 6, 7}) {
+      EXPECT_FALSE(IsUnknownPayloadCandidate(number, wire_type))
+          << number << " wire " << wire_type;
+    }
+    EXPECT_TRUE(IsUnknownPayloadCandidate(number, 2)) << number;
+  }
+}
+
+TEST(EpisodeEventPolicyTest, UnknownFieldsWithoutACandidateAreMissingPayload) {
+  EpisodeEventView view = NominalView();
+  view.payload_case = kPayloadCaseNotSet;
+  view.has_unknown_fields = true;
+  view.unknown_payload_candidate = false;
+  const EpisodeEventAssessment assessment = AssessEpisodeEvent(view);
+  EXPECT_EQ(assessment.error, Error::kMissingPayload);
+  EXPECT_EQ(assessment.payload_kind, PayloadKind::kNone);
+  EXPECT_FALSE(assessment.skip);
+  EXPECT_TRUE(assessment.engaged);
+  EXPECT_EQ(ClassifyPayload(kPayloadCaseNotSet, false), PayloadKind::kNone);
+  EXPECT_EQ(ClassifyPayload(kPayloadCaseNotSet, true), PayloadKind::kUnknown);
+}
+
+TEST(EpisodeEventPolicyTest, EpisodeLossCase15IsKnownAndNeverSkipped) {
+  EXPECT_EQ(kPayloadCaseEpisodeLoss, 15);
+  EXPECT_EQ(static_cast<int>(PayloadKind::kEpisodeLoss), 7);
+  for (const bool has_unknown : {false, true}) {
+    for (const bool candidate : {false, true}) {
+      EXPECT_EQ(ClassifyPayload(kPayloadCaseEpisodeLoss, candidate),
+                PayloadKind::kEpisodeLoss);
+      EpisodeEventView view = NominalView();
+      view.payload_case = kPayloadCaseEpisodeLoss;
+      view.has_unknown_fields = has_unknown;
+      view.unknown_payload_candidate = candidate;
+      const EpisodeEventAssessment assessment = AssessEpisodeEvent(view);
+      EXPECT_EQ(assessment.error, Error::kNone);
+      EXPECT_EQ(assessment.payload_kind, PayloadKind::kEpisodeLoss);
+      EXPECT_FALSE(assessment.skip);
+      EXPECT_TRUE(assessment.engaged);
+    }
+  }
+}
 }  // namespace
 }  // namespace intrinsic::episode

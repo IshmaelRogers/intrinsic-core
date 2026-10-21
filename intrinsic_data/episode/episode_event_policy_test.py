@@ -95,7 +95,7 @@ class EpisodeEventPolicyTest(unittest.TestCase):
         dict(config_digest=_SNAPSHOT),
         dict(provenance_present=True),
         dict(payload_case=policy.PAYLOAD_CASE_INFERENCE_RESULT),
-        dict(has_unknown_fields=True),
+        dict(has_unknown_fields=True, unknown_payload_candidate=True),
     )
     for signal in signals:
       with self.subTest(signal=signal):
@@ -209,14 +209,20 @@ class EpisodeEventPolicyTest(unittest.TestCase):
 
   def test_unknown_payload_is_skipped_not_rejected(self):
     assessment = policy.assess_episode_event(
-        _view(payload_case=policy.PAYLOAD_CASE_NOT_SET, has_unknown_fields=True)
+        _view(
+            payload_case=policy.PAYLOAD_CASE_NOT_SET,
+            has_unknown_fields=True,
+            unknown_payload_candidate=True,
+        )
     )
     self.assertIs(assessment.error, _Error.NONE)
     self.assertIs(assessment.payload_kind, _Kind.UNKNOWN)
     self.assertTrue(assessment.skip)
 
   def test_unknown_fields_do_not_change_a_known_payload(self):
-    assessment = policy.assess_episode_event(_view(has_unknown_fields=True))
+    assessment = policy.assess_episode_event(
+        _view(has_unknown_fields=True, unknown_payload_candidate=True)
+    )
     self.assertIs(assessment.error, _Error.NONE)
     self.assertIs(assessment.payload_kind, _Kind.SAFETY_DECISION)
     self.assertFalse(assessment.skip)
@@ -302,7 +308,11 @@ class EpisodeEventPolicyTest(unittest.TestCase):
           self.assertIs(policy.classify_payload(case, has_unknown), kind)
           self.assertEqual(kind.value, number)
           assessment = policy.assess_episode_event(
-              _view(payload_case=case, has_unknown_fields=has_unknown)
+              _view(
+                  payload_case=case,
+                  has_unknown_fields=has_unknown,
+                  unknown_payload_candidate=has_unknown,
+              )
           )
           self.assertIs(assessment.error, _Error.NONE)
           self.assertIs(assessment.payload_kind, kind)
@@ -314,6 +324,93 @@ class EpisodeEventPolicyTest(unittest.TestCase):
       with self.subTest(case=case):
         self.assertIs(policy.classify_payload(case, True), _Kind.UNKNOWN)
         self.assertIs(policy.classify_payload(case, False), _Kind.NONE)
+
+  def test_tag_namespace_constants_are_permanent(self):
+    self.assertEqual(policy.FIRST_FUTURE_PAYLOAD_TAG, 19)
+    self.assertEqual(
+        policy.FIRST_FUTURE_PAYLOAD_TAG, policy.PAYLOAD_CASE_DESIRED_MOTION + 1
+    )
+    self.assertEqual(policy.MAX_FIELD_NUMBER, 536870911)
+    self.assertEqual(policy.MAX_FIELD_NUMBER, (1 << 29) - 1)
+    self.assertEqual(policy.EXCLUDED_FIELD_NUMBER_FIRST, 19000)
+    self.assertEqual(policy.EXCLUDED_FIELD_NUMBER_LAST, 19999)
+    self.assertEqual(policy.WIRE_TYPE_LENGTH_DELIMITED, 2)
+
+  def test_b15_b16_b19_unknown_payload_candidate_boundaries(self):
+    candidate = policy.is_unknown_payload_candidate
+    for tag in range(
+        policy.PAYLOAD_CASE_SAFETY_DECISION,
+        policy.PAYLOAD_CASE_DESIRED_MOTION + 1,
+    ):
+      with self.subTest(known_tag=tag):
+        self.assertFalse(candidate(tag, 2))
+    self.assertFalse(candidate(15, 2))
+    self.assertFalse(candidate(18, 2))
+    for tag in range(1, 10):
+      with self.subTest(envelope_tag=tag):
+        self.assertFalse(candidate(tag, 2))
+    self.assertFalse(candidate(6, 2))
+    self.assertFalse(candidate(0, 2))
+    self.assertFalse(candidate(-1, 2))
+    for tag in (19, 20, 99, 100, 536870000, 18999, 20000, 536870911):
+      with self.subTest(candidate_tag=tag):
+        self.assertTrue(candidate(tag, 2))
+    for tag in (19000, 19500, 19999, 536870912):
+      with self.subTest(excluded_tag=tag):
+        self.assertFalse(candidate(tag, 2))
+
+  def test_only_length_delimited_wire_type_is_a_candidate(self):
+    for number in (19, 99, 18999, 20000, 536870911):
+      for wire_type in (0, 1, 3, 4, 5, 6, 7):
+        with self.subTest(number=number, wire_type=wire_type):
+          self.assertFalse(
+              policy.is_unknown_payload_candidate(number, wire_type)
+          )
+      self.assertTrue(policy.is_unknown_payload_candidate(number, 2))
+
+  def test_unknown_fields_without_a_candidate_are_missing_payload(self):
+    assessment = policy.assess_episode_event(
+        _view(
+            payload_case=policy.PAYLOAD_CASE_NOT_SET,
+            has_unknown_fields=True,
+            unknown_payload_candidate=False,
+        )
+    )
+    self.assertIs(assessment.error, _Error.MISSING_PAYLOAD)
+    self.assertIs(assessment.payload_kind, _Kind.NONE)
+    self.assertFalse(assessment.skip)
+    self.assertTrue(assessment.engaged)
+    self.assertIs(
+        policy.classify_payload(policy.PAYLOAD_CASE_NOT_SET, False), _Kind.NONE
+    )
+    self.assertIs(
+        policy.classify_payload(policy.PAYLOAD_CASE_NOT_SET, True),
+        _Kind.UNKNOWN,
+    )
+
+  def test_episode_loss_case_15_is_known_and_never_skipped(self):
+    self.assertEqual(policy.PAYLOAD_CASE_EPISODE_LOSS, 15)
+    self.assertEqual(_Kind.EPISODE_LOSS.value, 7)
+    for has_unknown in (False, True):
+      for candidate in (False, True):
+        with self.subTest(has_unknown=has_unknown, candidate=candidate):
+          self.assertIs(
+              policy.classify_payload(
+                  policy.PAYLOAD_CASE_EPISODE_LOSS, candidate
+              ),
+              _Kind.EPISODE_LOSS,
+          )
+          assessment = policy.assess_episode_event(
+              _view(
+                  payload_case=policy.PAYLOAD_CASE_EPISODE_LOSS,
+                  has_unknown_fields=has_unknown,
+                  unknown_payload_candidate=candidate,
+              )
+          )
+          self.assertIs(assessment.error, _Error.NONE)
+          self.assertIs(assessment.payload_kind, _Kind.EPISODE_LOSS)
+          self.assertFalse(assessment.skip)
+          self.assertTrue(assessment.engaged)
 
   def test_views_are_frozen(self):
     with self.assertRaises(dataclasses.FrozenInstanceError):
