@@ -38,6 +38,7 @@ cc_library(
     name = "altimeter_plugin",
     srcs = ["altimeter_plugin.cc"],
     hdrs = ["altimeter_plugin.h"],
+    visibility = ["//intrinsic/simulation/gazebo/scenarios/dive_resurface:__pkg__"],
     deps = [
         ":altimeter_adapter",
         "@abseil-cpp//absl/log",

@@ -42,6 +42,7 @@ cc_library(
     name = "dvl_plugin",
     srcs = ["dvl_plugin.cc"],
     hdrs = ["dvl_plugin.h"],
+    visibility = ["//intrinsic/simulation/gazebo/scenarios/dive_resurface:__pkg__"],
     deps = [
         ":dvl_adapter",
         "@abseil-cpp//absl/log",

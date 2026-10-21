@@ -1,0 +1,18 @@
+<?xml version="1.0"?>
+<sdf version="1.11">
+  <world name="dive_resurface">
+    <physics name="fixed_step" type="ignored">
+      <max_step_size>0.125</max_step_size>
+      <real_time_update_rate>0</real_time_update_rate>
+    </physics>
+    <model name="uuv">
+      <pose>0 0 -0.25 0 0 0</pose>
+      <link name="hull">
+        <inertial>
+          <mass>32</mass>
+          <inertia><ixx>0.5</ixx><ixy>0</ixy><ixz>0</ixz><iyy>2.4</iyy><iyz>0</iyz><izz>2.7</izz></inertia>
+        </inertial>
+      </link>
+    </model>
+  </world>
+</sdf>

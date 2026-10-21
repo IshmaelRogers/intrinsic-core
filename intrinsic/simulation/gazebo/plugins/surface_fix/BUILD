@@ -40,6 +40,7 @@ cc_library(
     name = "surface_fix_plugin",
     srcs = ["surface_fix_plugin.cc"],
     hdrs = ["surface_fix_plugin.h"],
+    visibility = ["//intrinsic/simulation/gazebo/scenarios/dive_resurface:__pkg__"],
     deps = [
         ":surface_fix_adapter",
         "@abseil-cpp//absl/log",

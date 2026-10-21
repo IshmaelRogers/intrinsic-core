@@ -1,0 +1,9 @@
+# dive_resurface_profile v1 (#134, uuv-dive-resurface-scenario-v1). Labels only; not a mode enum.
+# CONFIG dt_s surface_z_m seabed_z_m steps
+CONFIG 0.125 0 -30 400
+# SEGMENT label start_step end_step(exclusive) depth_start_m depth_rate_m_per_step
+SEGMENT SURFACE_HOLD 0   80  0.25   0
+SEGMENT DIVE         80  160 0.3125 0.0625
+SEGMENT HOLD         160 240 5.25   0
+SEGMENT ASCEND       240 320 5.1875 -0.0625
+SEGMENT SURFACED     320 400 0.25   0

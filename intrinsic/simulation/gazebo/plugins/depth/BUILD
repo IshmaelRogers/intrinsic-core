@@ -40,6 +40,7 @@ cc_library(
     name = "depth_plugin",
     srcs = ["depth_plugin.cc"],
     hdrs = ["depth_plugin.h"],
+    visibility = ["//intrinsic/simulation/gazebo/scenarios/dive_resurface:__pkg__"],
     deps = [
         ":depth_adapter",
         "@abseil-cpp//absl/log",
