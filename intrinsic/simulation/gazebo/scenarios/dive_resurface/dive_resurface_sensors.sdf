@@ -1,0 +1,51 @@
+<sdf version="1.11">
+  <world name="dive_resurface_sensors">
+    <plugin filename="static://intrinsic::simulation::Depth"
+            name="intrinsic::simulation::Depth">
+      <link_name>hull</link_name>
+      <seed>42</seed>
+      <latency_steps>0</latency_steps>
+      <surface_z_m>0</surface_z_m>
+      <noise_amplitude_m>0.01</noise_amplitude_m>
+      <dropout_window>
+        <start_step>180</start_step>
+        <end_step>200</end_step>
+      </dropout_window>
+    </plugin>
+    <plugin filename="static://intrinsic::simulation::SurfaceFix"
+            name="intrinsic::simulation::SurfaceFix">
+      <link_name>hull</link_name>
+      <seed>42</seed>
+      <latency_steps>0</latency_steps>
+      <surface_z_m>0</surface_z_m>
+      <max_fix_depth_m>0.5</max_fix_depth_m>
+      <noise_amplitude_m>0.1</noise_amplitude_m>
+    </plugin>
+    <plugin filename="static://intrinsic::simulation::Dvl"
+            name="intrinsic::simulation::Dvl">
+      <link_name>hull</link_name>
+      <seed>42</seed>
+      <latency_steps>0</latency_steps>
+      <mode>bottom_track</mode>
+      <seabed_z_m>-30</seabed_z_m>
+      <max_altitude_m>50</max_altitude_m>
+      <noise_amplitude_m_s>0.005</noise_amplitude_m_s>
+      <dropout_window>
+        <start_step>180</start_step>
+        <end_step>200</end_step>
+      </dropout_window>
+    </plugin>
+    <plugin filename="static://intrinsic::simulation::Altimeter"
+            name="intrinsic::simulation::Altimeter">
+      <link_name>hull</link_name>
+      <seed>42</seed>
+      <latency_steps>0</latency_steps>
+      <seabed_z_m>-30</seabed_z_m>
+      <noise_amplitude_m>0.01</noise_amplitude_m>
+      <dropout_window>
+        <start_step>180</start_step>
+        <end_step>200</end_step>
+      </dropout_window>
+    </plugin>
+  </world>
+</sdf>
