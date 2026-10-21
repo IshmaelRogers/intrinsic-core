@@ -40,34 +40,56 @@ void EnableImuChecks(gz::sim::Entity link_entity,
   link.EnableAccelerationChecks(ecm);
 }
 
-void FillKinematics(gz::sim::Entity link_entity,
-                    const gz::sim::EntityComponentManager& ecm,
-                    ImuSimulatorState* state) {
+}  // namespace
+
+void Imu::FillKinematics(const gz::sim::UpdateInfo& info,
+                         const gz::sim::EntityComponentManager& ecm,
+                         ImuSimulatorState* state) {
+  const gz::sim::Entity link_entity = link_entity_;
   const gz::math::Pose3d pose = gz::sim::worldPose(link_entity, ecm);
   state->orientation_xyzw = {pose.Rot().X(), pose.Rot().Y(), pose.Rot().Z(),
                              pose.Rot().W()};
   const gz::sim::Link link(link_entity);
   const std::optional<gz::math::Vector3d> angular =
       link.WorldAngularVelocity(ecm);
-  const std::optional<gz::math::Vector3d> acceleration =
-      link.WorldLinearAcceleration(ecm);
-  if (!angular.has_value() || !acceleration.has_value()) {
+  const std::optional<gz::math::Vector3d> velocity =
+      link.WorldLinearVelocity(ecm);
+  if (!angular.has_value() || !velocity.has_value()) {
     return;
   }
+
+  // Engines do not all fill the link world linear acceleration (for example
+  // bullet-featherstone leaves it 0), so it is the backward difference of the
+  // world linear velocity: a_k = (v_k - v_{k-1}) / (t_k - t_{k-1}).
+  const std::optional<gz::math::Vector3d> previous_velocity =
+      previous_velocity_;
+  const std::chrono::steady_clock::duration previous_time = previous_time_;
+  previous_velocity_ = velocity;
+  previous_time_ = info.simTime;
+  if (!previous_velocity.has_value()) {
+    return;
+  }
+  const double dt_s =
+      std::chrono::duration<double>(info.simTime - previous_time).count();
+  if (!(dt_s > 0.0)) {
+    return;
+  }
+  const gz::math::Vector3d acceleration =
+      (*velocity - *previous_velocity) / dt_s;
   state->kinematics_ready = true;
   state->world_angular_velocity_rad_s = {angular->X(), angular->Y(),
                                          angular->Z()};
-  state->world_linear_acceleration_m_s2 = {acceleration->X(), acceleration->Y(),
-                                           acceleration->Z()};
+  state->world_linear_acceleration_m_s2 = {acceleration.X(), acceleration.Y(),
+                                           acceleration.Z()};
 }
-
-}  // namespace
 
 void Imu::Configure(const gz::sim::Entity& entity,
                     const std::shared_ptr<const sdf::Element>& sdf,
                     gz::sim::EntityComponentManager& ecm,
                     gz::sim::EventManager& /*event_mgr*/) {
   link_entity_ = gz::sim::kNullEntity;
+  previous_velocity_.reset();
+  previous_time_ = std::chrono::steady_clock::duration::zero();
   last_result_ = ImuStepResult();
   last_reported_.reset();
   last_reported_message_.clear();
@@ -129,7 +151,7 @@ void Imu::PostUpdate(const gz::sim::UpdateInfo& info,
       &state.time_seconds, &state.time_nanos);
   state.link_resolved = link_entity_ != gz::sim::kNullEntity;
   if (state.link_resolved) {
-    FillKinematics(link_entity_, ecm, &state);
+    FillKinematics(info, ecm, &state);
   }
   last_result_ = adapter_.Step(state);
   Report(last_result_.status);
@@ -140,6 +162,8 @@ void Imu::Reset(const gz::sim::UpdateInfo& /*info*/,
   last_reported_.reset();
   last_reported_message_.clear();
   adapter_.Reset();
+  previous_velocity_.reset();
+  previous_time_ = std::chrono::steady_clock::duration::zero();
   last_result_ = ImuStepResult();
   if (link_entity_ != gz::sim::kNullEntity) {
     EnableImuChecks(link_entity_, ecm);
