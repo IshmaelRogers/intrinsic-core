@@ -45,6 +45,15 @@ inline constexpr int kPayloadCaseRecordedMessage = 16;
 inline constexpr int kPayloadCaseWorldSnapshotRecord = 17;
 inline constexpr int kPayloadCaseDesiredMotion = 18;
 
+// Tag allocation (append-only): envelope fields 1-9, known payloads 10-18,
+// future payload candidates 19 to kMaxFieldNumber except the protobuf-reserved
+// range 19000-19999.
+inline constexpr int kFirstFuturePayloadTag = 19;
+inline constexpr int kMaxFieldNumber = 536870911;
+inline constexpr int kExcludedFieldNumberFirst = 19000;
+inline constexpr int kExcludedFieldNumberLast = 19999;
+inline constexpr int kWireTypeLengthDelimited = 2;
+
 inline constexpr size_t kSha256HexLength = 64;
 
 // Append-only. Numbers are permanent.
@@ -63,15 +72,15 @@ enum class EpisodeEventError {
 };
 
 enum class PayloadKind {
-  // The payload oneof is not set and there are no unknown fields.
+  // The payload oneof is not set and there is no unknown payload candidate.
   kNone = 0,
   kSafetyDecision,
   kVehicleTrajectory,
   kInferenceEnvelope,
   kInferenceResult,
   kEpisodeMetadata,
-  // The oneof is not set but the message carries unknown fields: a payload
-  // case this reader does not know.
+  // The oneof is not set but the message carries an unknown payload candidate:
+  // a length-delimited field in the future-payload tag namespace.
   kUnknown,
   // Writer-emitted loss record (case 15). Appended after kUnknown so no
   // existing number changes.
@@ -107,8 +116,11 @@ struct EpisodeEventView {
   bool provenance_present = false;
   // The oneof case number, 0 when not set.
   int payload_case = kPayloadCaseNotSet;
-  // True when the message carries any unknown field (UnknownFieldSet).
+  // True when the message carries any unknown field (UnknownFieldSet). Used
+  // for engagement and preservation only, never to classify a payload.
   bool has_unknown_fields = false;
+  // True when any top-level unknown field passes IsUnknownPayloadCandidate.
+  bool unknown_payload_candidate = false;
   // EpisodeMetadata.marine_randomization_metadata. Read only for case 14.
   std::string_view marine_randomization_metadata;
 };
@@ -152,7 +164,19 @@ inline std::string ComputeConfigDigest(std::string_view marine_metadata_text) {
   return internal::EpisodeSha256Hex(marine_metadata_text);
 }
 
-inline PayloadKind ClassifyPayload(int payload_case, bool has_unknown_fields) {
+// True only for a length-delimited (wire type 2) field whose number is in the
+// future-payload namespace. Groups (3 and 4) and every other wire type are
+// false, as are envelope fields, known payload tags, and 19000-19999.
+inline bool IsUnknownPayloadCandidate(int field_number, int wire_type) {
+  return wire_type == kWireTypeLengthDelimited &&
+         field_number >= kFirstFuturePayloadTag &&
+         field_number <= kMaxFieldNumber &&
+         !(field_number >= kExcludedFieldNumberFirst &&
+           field_number <= kExcludedFieldNumberLast);
+}
+
+inline PayloadKind ClassifyPayload(int payload_case,
+                                   bool unknown_payload_candidate) {
   switch (payload_case) {
     case kPayloadCaseSafetyDecision:
       return PayloadKind::kSafetyDecision;
@@ -173,7 +197,8 @@ inline PayloadKind ClassifyPayload(int payload_case, bool has_unknown_fields) {
     case kPayloadCaseDesiredMotion:
       return PayloadKind::kDesiredMotion;
     default:
-      return has_unknown_fields ? PayloadKind::kUnknown : PayloadKind::kNone;
+      return unknown_payload_candidate ? PayloadKind::kUnknown
+                                       : PayloadKind::kNone;
   }
 }
 
@@ -196,7 +221,7 @@ inline EpisodeEventAssessment AssessEpisodeEvent(const EpisodeEventView& view) {
   }
   assessment.engaged = true;
   assessment.payload_kind =
-      ClassifyPayload(view.payload_case, view.has_unknown_fields);
+      ClassifyPayload(view.payload_case, view.unknown_payload_candidate);
 
   if (!view.header_present) {
     assessment.error = EpisodeEventError::kMissingHeader;

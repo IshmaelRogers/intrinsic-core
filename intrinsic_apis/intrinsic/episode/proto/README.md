@@ -58,6 +58,26 @@ removed fields.
 | Payload tags 16 to 18 | **Allocated** to #244 (`episode-replay-payloads-v1`, approved 2026-10-18): `recorded_message` 16, `world_snapshot_record` 17, `desired_motion` 18. |
 | Payload tags 19 to 99 | Future payload categories. Candidates, not commitments: marine HAL measurements (#73 to #80), thruster commands, episode start and end lifecycle markers. |
 
+### Tag allocation and unknown payload classification (#240)
+
+Lock id `episode-unknown-payload-classification-v1`. A reader tells an unknown
+payload from an unknown envelope field by tag number and wire type. The
+allocation is append-only and documentation only: nothing here is declared in
+the `.proto`.
+
+| Tag numbers | Use | Classified as |
+| --- | --- | --- |
+| 1 to 9 | Envelope (1 to 5 allocated, 6 to 9 unallocated). | Never a payload candidate. |
+| 10 to 18 | Known payloads. | Known. A wrong-wire occurrence of a known tag is an unknown field, not a candidate. |
+| 19 to 536870911, except 19000 to 19999 | Future-payload candidates. | An unknown payload only with wire type 2 (length-delimited). |
+| 19000 to 19999 | Excluded (reserved by the protobuf implementation). | Never a payload candidate. |
+
+An event with no payload set and an unknown candidate is a valid unknown
+payload: readers skip it and keep its bytes. An event with no payload set whose
+only unknown fields are not candidates is invalid with `kMissingPayload`. The
+policy is in
+[`intrinsic_data/episode`](../../../../intrinsic_data/episode/README.md).
+
 ### EpisodeLoss
 
 `EpisodeLoss` is written only by the episode writer

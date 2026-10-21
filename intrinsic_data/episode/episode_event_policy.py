@@ -44,6 +44,15 @@ PAYLOAD_CASE_RECORDED_MESSAGE = 16
 PAYLOAD_CASE_WORLD_SNAPSHOT_RECORD = 17
 PAYLOAD_CASE_DESIRED_MOTION = 18
 
+# Tag allocation (append-only): envelope fields 1-9, known payloads 10-18,
+# future payload candidates 19 to MAX_FIELD_NUMBER except the protobuf-reserved
+# range 19000-19999.
+FIRST_FUTURE_PAYLOAD_TAG = 19
+MAX_FIELD_NUMBER = 536870911
+EXCLUDED_FIELD_NUMBER_FIRST = 19000
+EXCLUDED_FIELD_NUMBER_LAST = 19999
+WIRE_TYPE_LENGTH_DELIMITED = 2
+
 SHA256_HEX_LENGTH = 64
 
 
@@ -64,15 +73,15 @@ class EpisodeEventError(enum.Enum):
 
 
 class PayloadKind(enum.Enum):
-  # The payload oneof is not set and there are no unknown fields.
+  # The payload oneof is not set and there is no unknown payload candidate.
   NONE = 0
   SAFETY_DECISION = 1
   VEHICLE_TRAJECTORY = 2
   INFERENCE_ENVELOPE = 3
   INFERENCE_RESULT = 4
   EPISODE_METADATA = 5
-  # The oneof is not set but the message carries unknown fields: a payload
-  # case this reader does not know.
+  # The oneof is not set but the message carries an unknown payload candidate:
+  # a length-delimited field in the future-payload tag namespace.
   UNKNOWN = 6
   # Writer-emitted loss record (case 15). Appended after UNKNOWN so no
   # existing number changes.
@@ -113,8 +122,11 @@ class EpisodeEventView:
   provenance_present: bool = False
   # The oneof case number, 0 when not set.
   payload_case: int = PAYLOAD_CASE_NOT_SET
-  # True when the message carries any unknown field (UnknownFieldSet).
+  # True when the message carries any unknown field (UnknownFieldSet). Used
+  # for engagement and preservation only, never to classify a payload.
   has_unknown_fields: bool = False
+  # True when any top-level unknown field passes is_unknown_payload_candidate.
+  unknown_payload_candidate: bool = False
   # EpisodeMetadata.marine_randomization_metadata. Read only for case 14.
   marine_randomization_metadata: str = ""
 
@@ -151,13 +163,30 @@ def compute_config_digest(marine_metadata_text: str) -> str:
   return hashlib.sha256(marine_metadata_text.encode("utf-8")).hexdigest()
 
 
+def is_unknown_payload_candidate(field_number: int, wire_type: int) -> bool:
+  """True only for a length-delimited field in the future-payload namespace.
+
+  Groups (3 and 4) and every other wire type are false, as are envelope fields,
+  known payload tags, and 19000-19999.
+  """
+  return (
+      wire_type == WIRE_TYPE_LENGTH_DELIMITED
+      and FIRST_FUTURE_PAYLOAD_TAG <= field_number <= MAX_FIELD_NUMBER
+      and not (
+          EXCLUDED_FIELD_NUMBER_FIRST
+          <= field_number
+          <= EXCLUDED_FIELD_NUMBER_LAST
+      )
+  )
+
+
 def classify_payload(
-    payload_case: int, has_unknown_fields: bool
+    payload_case: int, unknown_payload_candidate: bool
 ) -> PayloadKind:
   kind = _PAYLOAD_KINDS.get(payload_case)
   if kind is not None:
     return kind
-  return PayloadKind.UNKNOWN if has_unknown_fields else PayloadKind.NONE
+  return PayloadKind.UNKNOWN if unknown_payload_candidate else PayloadKind.NONE
 
 
 def episode_event_engaged(view: EpisodeEventView) -> bool:
@@ -186,7 +215,7 @@ def assess_episode_event(view: EpisodeEventView) -> EpisodeEventAssessment:
     return EpisodeEventAssessment()
   error = EpisodeEventError
   nanos_in_range = stamped_header_policy.nanos_in_range
-  kind = classify_payload(view.payload_case, view.has_unknown_fields)
+  kind = classify_payload(view.payload_case, view.unknown_payload_candidate)
 
   def result(
       failure: EpisodeEventError, skip: bool = False

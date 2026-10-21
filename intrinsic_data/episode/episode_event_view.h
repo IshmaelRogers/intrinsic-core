@@ -22,6 +22,26 @@
 
 namespace intrinsic::episode {
 
+namespace internal {
+
+inline int UnknownFieldWireType(const google::protobuf::UnknownField& field) {
+  switch (field.type()) {
+    case google::protobuf::UnknownField::TYPE_VARINT:
+      return 0;
+    case google::protobuf::UnknownField::TYPE_FIXED32:
+      return 5;
+    case google::protobuf::UnknownField::TYPE_FIXED64:
+      return 1;
+    case google::protobuf::UnknownField::TYPE_LENGTH_DELIMITED:
+      return kWireTypeLengthDelimited;
+    case google::protobuf::UnknownField::TYPE_GROUP:
+      return 3;
+  }
+  return -1;
+}
+
+}  // namespace internal
+
 // Fills the plain-value view that AssessEpisodeEvent reads. The episode writer
 // and the episode reader share this one helper so both judge an event the same
 // way. The returned view points into `message`.
@@ -45,8 +65,17 @@ inline EpisodeEventView EpisodeEventViewOf(
   view.config_digest = message.config_digest();
   view.provenance_present = message.has_provenance();
   view.payload_case = static_cast<int>(message.payload_case());
-  view.has_unknown_fields =
-      !message.GetReflection()->GetUnknownFields(message).empty();
+  const google::protobuf::UnknownFieldSet& unknown =
+      message.GetReflection()->GetUnknownFields(message);
+  view.has_unknown_fields = !unknown.empty();
+  for (int i = 0; i < unknown.field_count(); ++i) {
+    const google::protobuf::UnknownField& field = unknown.field(i);
+    if (IsUnknownPayloadCandidate(field.number(),
+                                  internal::UnknownFieldWireType(field))) {
+      view.unknown_payload_candidate = true;
+      break;
+    }
+  }
   if (message.has_episode_metadata()) {
     view.marine_randomization_metadata =
         message.episode_metadata().marine_randomization_metadata();

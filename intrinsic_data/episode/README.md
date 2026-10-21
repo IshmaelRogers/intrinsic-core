@@ -50,9 +50,30 @@ The first defect wins. The error numbers are append-only.
 | 7 | `snapshot_id` empty or 64 lowercase hex | `kSnapshotId` (7) |
 | 8 | `config_digest` empty or 64 lowercase hex | `kConfigDigest` (8) |
 | 9 | case 14: `config_digest == SHA256Hex(text)`, both empty allowed | `kConfigDigestMismatch` (9) |
-| 10 | case 10 to 18 known. Case not set with unknown fields is skippable (`kNone`, `payload_kind = kUnknown`, `skip = true`). Otherwise not set. | `kMissingPayload` (10) |
+| 10 | case 10 to 18 known. Case not set with an unknown payload candidate is skippable (`kNone`, `payload_kind = kUnknown`, `skip = true`). A candidate is a top-level unknown length-delimited field (wire type 2) in the future-payload tag range below. Otherwise not set, including an event whose only unknown fields are envelope fields or wrong-wire occurrences. | `kMissingPayload` (10) |
 
 A defective event is never skipped, even when its payload is unknown.
+
+## Tag allocation (#240)
+
+Lock id `episode-unknown-payload-classification-v1`. The allocation is
+append-only. The policy helper `IsUnknownPayloadCandidate(field_number,
+wire_type)` (C++) and `is_unknown_payload_candidate(field_number, wire_type)`
+(Python) is true only for `wire_type == 2` with a number in the future-payload
+range. Groups (wire types 3 and 4) and every other wire type are false. The
+view builders set `unknown_payload_candidate` when any top-level unknown field
+passes it. `has_unknown_fields` is kept for engagement and preservation only.
+
+| Tag numbers | Use | Constant |
+| --- | --- | --- |
+| 1 to 9 | Envelope. 1 to 5 are allocated, 6 to 9 are unallocated. | |
+| 10 to 18 | Known payloads. | `kPayloadCaseSafetyDecision` to `kPayloadCaseDesiredMotion` |
+| 19 to 536870911, except 19000 to 19999 | Future-payload candidates (length-delimited only). | `kFirstFuturePayloadTag` = 19, `kMaxFieldNumber` = 536870911 |
+| 19000 to 19999 | Excluded. The protobuf implementation reserves these numbers. | `kExcludedFieldNumberFirst`, `kExcludedFieldNumberLast` |
+
+A correctly parsed known payload stays known, even next to wrong-wire
+occurrences of a known tag or unknown candidates. No malformed-wire rejection
+was added.
 
 ## Known limitations
 
