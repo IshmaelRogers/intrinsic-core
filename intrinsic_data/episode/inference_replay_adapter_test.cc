@@ -13,7 +13,9 @@
 // limitations under the License.
 
 // RB3, RB4 to RB6 and RB8 to RB14 of lock id
-// episode-replay-adapters-planning-safety-inference-v1 (#132), inference side.
+// episode-replay-adapters-planning-safety-inference-v1 (#132), inference side,
+// and RB15a to RB15f of lock id episode-replay-inference-receive-time-v1
+// (#248).
 // Episodes are built in memory with EpisodeWriter, read with EpisodeReader and
 // replayed with EpisodeReplayer in kStep. No fixture file is added. The
 // #127/#244 goldens episode_event_v1_{inference_envelope,inference_result} are
@@ -549,6 +551,7 @@ TEST(InferenceReplayAdapterTest, RB3NominalGoldenPairIsComplete) {
   EXPECT_EQ(summary.stats.complete, 1u);
   EXPECT_EQ(summary.stats.expired, 0u);
   EXPECT_EQ(summary.stats.orphans, 0u);
+  EXPECT_EQ(summary.stats.unusable_receive_time, 0u);
   EXPECT_EQ(summary.stats.missing_expired, 0u);
   EXPECT_EQ(summary.stats.missing_unresolved, 0u);
 }
@@ -704,6 +707,7 @@ TEST(InferenceReplayAdapterTest, RB8LateResultIsExpiredAndEqualIsComplete) {
     EXPECT_FALSE(summary.degraded);
     EXPECT_EQ(summary.stats.expired, 1u);
     EXPECT_EQ(summary.stats.complete, 0u);
+    EXPECT_EQ(summary.stats.unusable_receive_time, 0u);
     EXPECT_EQ(summary.stats.missing_expired, 0u);
     // The result is chained exactly as recorded.
     EXPECT_EQ(summary.inference_chain, Chain({ResultSha(late)}));
@@ -728,6 +732,7 @@ TEST(InferenceReplayAdapterTest, RB8LateResultIsExpiredAndEqualIsComplete) {
     const InferenceReplaySummary summary = adapter->Finish();
     EXPECT_EQ(summary.stats.complete, 1u);
     EXPECT_EQ(summary.stats.expired, 0u);
+    EXPECT_EQ(summary.stats.unusable_receive_time, 0u);
   }
 }
 
@@ -959,6 +964,169 @@ TEST(InferenceReplayAdapterTest, RB13Boundaries) {
     EXPECT_TRUE(second.degraded);
     EXPECT_EQ(second.inference_chain, kEmptyChain);
   }
+}
+
+void ClearResultReceiveTime(EpisodeEvent* event) {
+  event->mutable_inference_result()->mutable_header()->clear_receive_time();
+}
+
+void SetResultReceiveTime(EpisodeEvent* event, int64_t seconds, int32_t nanos) {
+  auto* time = event->mutable_inference_result()
+                   ->mutable_header()
+                   ->mutable_receive_time();
+  time->set_seconds(seconds);
+  time->set_nanos(nanos);
+}
+
+// paired = complete + expired + (unusable_receive_time - orphans that had an
+// unusable time).
+void ExpectUnjudgedPairAccounting(const InferenceReplayStats& stats,
+                                  uint64_t orphans_with_unusable_time,
+                                  uint64_t paired) {
+  EXPECT_EQ(stats.complete + stats.expired +
+                (stats.unusable_receive_time - orphans_with_unusable_time),
+            paired);
+}
+
+void ExpectUnjudgedPair(const EpisodeEvent& unusable_result) {
+  Opt envelope;
+  envelope.receive_ms = 1;
+  envelope.deadline_ms = 500;
+  const std::vector<uint8_t> bytes =
+      WriteEpisode({EnvelopeAt(1, envelope), unusable_result});
+  std::unique_ptr<InferenceReplayAdapter> adapter = MakeAdapter();
+  ASSERT_NE(adapter, nullptr);
+  const std::vector<InferenceReplayStep> steps = FeedAll(adapter.get(), bytes);
+  ASSERT_EQ(steps.size(), 2u);
+  EXPECT_FALSE(steps[0].receive_time_unusable);
+  EXPECT_EQ(steps[1].status, ReplayAdapterStatus::kOk);
+  EXPECT_TRUE(steps[1].accepted);
+  EXPECT_TRUE(steps[1].receive_time_unusable);
+  ExpectOutcomes(steps[1].outcomes, {{1, InferenceOutcome::kComplete, false,
+                                      false, 0, kGoldenSnapshot}});
+
+  const InferenceReplaySummary summary = adapter->Finish();
+  EXPECT_TRUE(summary.degraded);
+  ExpectOutcomes(summary.outcomes, {{1, InferenceOutcome::kComplete, false,
+                                     false, 0, kGoldenSnapshot}});
+  EXPECT_EQ(summary.stats.complete, 0u);
+  EXPECT_EQ(summary.stats.expired, 0u);
+  EXPECT_EQ(summary.stats.orphans, 0u);
+  EXPECT_EQ(summary.stats.unusable_receive_time, 1u);
+  EXPECT_EQ(summary.stats.results_accepted, 1u);
+  EXPECT_EQ(summary.stats.missing_expired, 0u);
+  EXPECT_EQ(summary.stats.missing_unresolved, 0u);
+  ExpectUnjudgedPairAccounting(summary.stats, 0, 1);
+  EXPECT_EQ(summary.inference_chain, kEmptyChain);
+}
+
+TEST(InferenceReplayAdapterTest, RB15aClearedReceiveTimeIsPairedUnjudged) {
+  EpisodeEvent result = ResultAt(2, Opt{});
+  ClearResultReceiveTime(&result);
+  ExpectUnjudgedPair(result);
+}
+
+TEST(InferenceReplayAdapterTest, RB15bNanosOutOfRangeHighIsPairedUnjudged) {
+  EpisodeEvent result = ResultAt(2, Opt{});
+  SetResultReceiveTime(&result, 1700000000, 1000000000);
+  ExpectUnjudgedPair(result);
+}
+
+TEST(InferenceReplayAdapterTest, RB15cNanosOutOfRangeLowIsPairedUnjudged) {
+  EpisodeEvent result = ResultAt(2, Opt{});
+  SetResultReceiveTime(&result, 1700000000, -1);
+  ExpectUnjudgedPair(result);
+}
+
+TEST(InferenceReplayAdapterTest, RB15dUnusableOrphanIsReplayMissAndDegraded) {
+  EpisodeEvent result = ResultAt(1, Opt{});
+  ClearResultReceiveTime(&result);
+  const std::vector<uint8_t> bytes = WriteEpisode({result});
+  std::unique_ptr<InferenceReplayAdapter> adapter = MakeAdapter();
+  ASSERT_NE(adapter, nullptr);
+  const std::vector<InferenceReplayStep> steps = FeedAll(adapter.get(), bytes);
+  ASSERT_EQ(steps.size(), 1u);
+  EXPECT_TRUE(steps[0].accepted);
+  EXPECT_TRUE(steps[0].receive_time_unusable);
+  ExpectOutcomes(steps[0].outcomes, {{0, InferenceOutcome::kReplayMiss, false,
+                                      false, 0, kGoldenSnapshot}});
+
+  const InferenceReplaySummary summary = adapter->Finish();
+  EXPECT_TRUE(summary.degraded);
+  ExpectOutcomes(summary.outcomes, {{0, InferenceOutcome::kReplayMiss, false,
+                                     false, 0, kGoldenSnapshot}});
+  EXPECT_EQ(summary.stats.orphans, 1u);
+  EXPECT_EQ(summary.stats.unusable_receive_time, 1u);
+  EXPECT_EQ(summary.stats.complete, 0u);
+  EXPECT_EQ(summary.stats.expired, 0u);
+  ExpectUnjudgedPairAccounting(summary.stats, 1, 0);
+  EXPECT_EQ(summary.inference_chain, kEmptyChain);
+}
+
+TEST(InferenceReplayAdapterTest, RB15eUnjudgedPairDoesNotLeaveEnvelopeMissing) {
+  Opt e0;
+  e0.receive_ms = 1;
+  e0.deadline_ms = 500;
+  Opt e2;
+  e2.receive_ms = 600;
+  e2.deadline_ms = 200;
+  e2.epoch = 43;
+  EpisodeEvent r1 = ResultAt(2, Opt{});
+  ClearResultReceiveTime(&r1);
+  const std::vector<uint8_t> bytes =
+      WriteEpisode({EnvelopeAt(1, e0), r1, EnvelopeAt(3, e2)});
+  std::unique_ptr<InferenceReplayAdapter> adapter = MakeAdapter();
+  ASSERT_NE(adapter, nullptr);
+  const std::vector<InferenceReplayStep> steps = FeedAll(adapter.get(), bytes);
+  ASSERT_EQ(steps.size(), 3u);
+  EXPECT_TRUE(steps[1].receive_time_unusable);
+  ExpectOutcomes(steps[1].outcomes, {{1, InferenceOutcome::kComplete, false,
+                                      false, 0, kGoldenSnapshot}});
+  // e0 was already removed, so e2's sweep finds no expired entry.
+  EXPECT_TRUE(steps[2].outcomes.empty());
+  EXPECT_FALSE(steps[2].receive_time_unusable);
+
+  const InferenceReplaySummary summary = adapter->Finish();
+  EXPECT_TRUE(summary.degraded);
+  ExpectOutcomes(
+      summary.outcomes,
+      {{1, InferenceOutcome::kComplete, false, false, 0, kGoldenSnapshot},
+       {2, InferenceOutcome::kMissing, false, false, 2, kGoldenSnapshot}});
+  EXPECT_EQ(summary.stats.missing_unresolved, 1u);
+  EXPECT_EQ(summary.stats.missing_expired, 0u);
+  EXPECT_EQ(summary.stats.unusable_receive_time, 1u);
+  EXPECT_EQ(summary.stats.orphans, 0u);
+  EXPECT_EQ(summary.stats.complete, 0u);
+  EXPECT_EQ(summary.stats.expired, 0u);
+  ExpectUnjudgedPairAccounting(summary.stats, 0, 1);
+  EXPECT_EQ(summary.inference_chain, kEmptyChain);
+}
+
+TEST(InferenceReplayAdapterTest, RB15fUsableLateTimeIsExpiredAndChained) {
+  Opt envelope;
+  envelope.receive_ms = 1;
+  envelope.deadline_ms = 500;
+  Opt result;
+  result.receive_ms = 600;
+  result.deadline_ms = 500;
+  const EpisodeEvent r1 = ResultAt(2, result);
+  const std::vector<uint8_t> bytes =
+      WriteEpisode({EnvelopeAt(1, envelope), r1});
+  std::unique_ptr<InferenceReplayAdapter> adapter = MakeAdapter();
+  ASSERT_NE(adapter, nullptr);
+  const std::vector<InferenceReplayStep> steps = FeedAll(adapter.get(), bytes);
+  ASSERT_EQ(steps.size(), 2u);
+  EXPECT_FALSE(steps[1].receive_time_unusable);
+  ExpectOutcomes(steps[1].outcomes, {{1, InferenceOutcome::kReplayExpired,
+                                      false, false, 0, kGoldenSnapshot}});
+
+  const InferenceReplaySummary summary = adapter->Finish();
+  EXPECT_FALSE(summary.degraded);
+  EXPECT_EQ(summary.stats.expired, 1u);
+  EXPECT_EQ(summary.stats.complete, 0u);
+  EXPECT_EQ(summary.stats.unusable_receive_time, 0u);
+  ExpectUnjudgedPairAccounting(summary.stats, 0, 1);
+  EXPECT_EQ(summary.inference_chain, Chain({ResultSha(r1)}));
 }
 
 TEST(InferenceReplayAdapterTest, RB14ConfigAndIsolation) {
