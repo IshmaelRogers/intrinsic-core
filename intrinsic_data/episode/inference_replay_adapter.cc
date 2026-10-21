@@ -269,12 +269,17 @@ InferenceReplayStep InferenceReplayAdapter::Feed(
     if (step.accepted) {
       ++stats_.results_accepted;
       const embodiment::ClockReading now = ReceiveTimeOf(result.header());
+      const bool time_usable = ReceiveTimeUsable(result.header());
       Pending key;
       key.model_id = result.provenance().model_id();
       key.input_digest = result.input_digest();
       key.state_epoch = result.state_epoch();
-      if (ReceiveTimeUsable(result.header())) {
+      if (time_usable) {
         SweepMissing(now, &key, &step);
+      } else {
+        ++stats_.unusable_receive_time;
+        step.receive_time_unusable = true;
+        degraded_ = true;
       }
       InferenceOutcomeEntry entry;
       entry.writer_index = event.writer_index;
@@ -296,9 +301,13 @@ InferenceReplayStep InferenceReplayAdapter::Feed(
         pending_.erase(pending_.begin() + static_cast<std::ptrdiff_t>(match));
         const embodiment::ClockReading deadline = {result.deadline().seconds(),
                                                    result.deadline().nanos()};
-        entry.outcome = inference::TimeBefore(deadline, now)
-                            ? InferenceOutcome::kReplayExpired
-                            : InferenceOutcome::kComplete;
+        if (!time_usable) {
+          entry.outcome = InferenceOutcome::kComplete;
+        } else {
+          entry.outcome = inference::TimeBefore(deadline, now)
+                              ? InferenceOutcome::kReplayExpired
+                              : InferenceOutcome::kComplete;
+        }
         entry.envelope_writer_index = paired.writer_index;
         entry.model_digest_mismatch =
             !paired.provenance_digest.empty() &&
@@ -307,13 +316,15 @@ InferenceReplayStep InferenceReplayAdapter::Feed(
           ++stats_.model_digest_mismatches;
           degraded_ = true;
         }
-        if (entry.outcome == InferenceOutcome::kComplete) {
-          ++stats_.complete;
-        } else {
-          ++stats_.expired;
+        if (time_usable) {
+          if (entry.outcome == InferenceOutcome::kComplete) {
+            ++stats_.complete;
+          } else {
+            ++stats_.expired;
+          }
+          chain_input_ += DeterministicSha256Hex(result);
+          chain_input_ += '\n';
         }
-        chain_input_ += DeterministicSha256Hex(result);
-        chain_input_ += '\n';
       }
       outcomes_.push_back(entry);
       step.outcomes.push_back(std::move(entry));

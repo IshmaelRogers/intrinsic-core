@@ -1044,6 +1044,26 @@ The golden pair is `kComplete` under P4-A. The inner `world_snapshot_id`
 (`0123...cdef`) also differs from the envelope `snapshot_id` (`6ceb...33de`),
 which is why snapshot ids are trace only.
 
+### R5 erratum: an accepted result with an unusable `receive_time` (#248)
+
+Lock id `episode-replay-inference-receive-time-v1` (amends R1 and R5 of the #132
+lock). `AssessInferenceResult` does not look at the inner `receive_time`, so an
+accepted result can carry one that is absent or has nanos out of range. Such a
+result still pairs with the oldest equal-key pending envelope and removes it, but
+its deadline is not judged and `TimeBefore` is not called. The outcome is
+`kComplete` with `InferenceReplayStep::receive_time_unusable` set, which means
+"paired; deadline not judged". The sweep is still skipped for it. With no
+matching envelope the outcome is `kReplayMiss` (an orphan), also with the flag
+set. Every such result, paired or orphaned, increments
+`stats.unusable_receive_time` and sets `degraded`. `stats.complete` counts
+judged completions only, so an unjudged pair is not in it, and
+`complete + expired + (unusable_receive_time - orphans with an unusable time)`
+equals the number of paired results. D2 chain rule: `inference_chain` holds only
+the `kComplete` and `kReplayExpired` results whose deadline was judged, so an
+unjudged pair never enters it. `InferenceOutcomeEntry` and `InferenceTraceEntry`
+are unchanged. The tests are RB15a to RB15f. Envelopes with an unusable
+`receive_time` are unchanged.
+
 ### Fixtures and tests
 
 No file is added under `testdata/`. The tests build every episode in memory with

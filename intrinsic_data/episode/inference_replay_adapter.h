@@ -81,6 +81,10 @@ struct InferenceReplayStep {
   // inference::InferenceEnvelopeContractError as an int.
   int error = 0;
   bool accepted = false;
+  // True only for an accepted result whose inner receive_time is absent or has
+  // nanos out of range. Such a result still pairs with the oldest equal-key
+  // pending envelope as kComplete, but its deadline is not judged.
+  bool receive_time_unusable = false;
   // In order: the kMissing entries swept by this record, then, for an accepted
   // result, its pairing entry.
   std::vector<InferenceOutcomeEntry> outcomes;
@@ -100,9 +104,14 @@ struct InferenceReplayStats {
   uint64_t envelopes_accepted = 0;
   uint64_t results = 0;
   uint64_t results_accepted = 0;
+  // Judged completions only. A pair with an unusable receive_time is counted in
+  // unusable_receive_time, not here.
   uint64_t complete = 0;
   uint64_t expired = 0;
   uint64_t orphans = 0;
+  // Every accepted result with an unusable inner receive_time, paired or
+  // orphaned.
+  uint64_t unusable_receive_time = 0;
   uint64_t missing_expired = 0;
   uint64_t missing_unresolved = 0;
   uint64_t model_digest_mismatches = 0;
@@ -116,11 +125,12 @@ struct InferenceReplayStats {
 struct InferenceReplaySummary {
   // kOk or the latched status.
   ReplayAdapterStatus status = ReplayAdapterStatus::kOk;
-  // Set by a loss record, an unparsable record, a missing envelope or a model
-  // digest mismatch.
+  // Set by a loss record, an unparsable record, a missing envelope, a model
+  // digest mismatch or an accepted result with an unusable inner receive_time.
   bool degraded = false;
   // Lowercase hex SHA-256 over "v1\n" and "<payload_sha256>\n" for each
-  // kComplete and kReplayExpired result, in feed order.
+  // kComplete and kReplayExpired result whose deadline was judged, in feed
+  // order.
   std::string inference_chain;
   std::vector<InferenceTraceEntry> trace;
   // Every pairing and missing entry in order of occurrence, including the

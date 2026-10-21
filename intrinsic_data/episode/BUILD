@@ -361,6 +361,7 @@ cc_library(
         ":episode_replay_adapter_common",
         "//intrinsic/safety:safety_decision_assessor",
         "//intrinsic/safety:safety_decision_policy",
+        "//intrinsic/vehicle:vehicle_contract_policy",
         "@com_google_protobuf//:protobuf",
         "@intrinsic_apis//intrinsic/safety/proto:safety_decision_cc_proto",
         "@intrinsic_apis//intrinsic/vehicle/proto:vehicle_command_cc_proto",
