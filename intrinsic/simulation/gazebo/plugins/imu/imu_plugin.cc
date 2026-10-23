@@ -14,6 +14,8 @@
 
 #include "intrinsic/simulation/gazebo/plugins/imu/imu_plugin.h"
 
+#include <algorithm>
+#include <array>
 #include <chrono>
 #include <cstdint>
 #include <memory>
@@ -59,28 +61,57 @@ void Imu::FillKinematics(const gz::sim::UpdateInfo& info,
   }
 
   // Engines do not all fill the link world linear acceleration (for example
-  // bullet-featherstone leaves it 0), so it is the backward difference of the
-  // world linear velocity: a_k = (v_k - v_{k-1}) / (t_k - t_{k-1}).
-  const std::optional<gz::math::Vector3d> previous_velocity =
-      previous_velocity_;
-  const std::chrono::steady_clock::duration previous_time = previous_time_;
-  previous_velocity_ = velocity;
-  previous_time_ = info.simTime;
-  if (!previous_velocity.has_value()) {
-    return;
+  // bullet-featherstone leaves it 0), so it is differenced from the world
+  // linear velocity. bullet-featherstone only republishes a link when its
+  // world pose changes by more than 1e-6, so a bit-identical pose means the
+  // link was not republished on this step (gated). The compare is exact on
+  // every component. gz::math::Pose3d::operator== has a tolerance, and the
+  // ECM change flags depend on system ordering, so neither is used.
+  const std::array<double, 7> pose_values = {
+      pose.Pos().X(), pose.Pos().Y(), pose.Pos().Z(), pose.Rot().X(),
+      pose.Rot().Y(), pose.Rot().Z(), pose.Rot().W()};
+  const bool fresh = !previous_pose_.has_value() ||
+                     !std::equal(pose_values.begin(), pose_values.end(),
+                                 previous_pose_->begin());
+  previous_pose_ = pose_values;
+
+  std::array<double, 3> acceleration = {0.0, 0.0, 0.0};
+  if (fresh) {
+    const std::optional<gz::math::Vector3d> fresh_velocity = fresh_velocity_;
+    const std::chrono::steady_clock::duration fresh_time = fresh_time_;
+    fresh_velocity_ = velocity;
+    fresh_time_ = info.simTime;
+    if (!fresh_velocity.has_value()) {
+      // Warm-up: no previous fresh velocity, so no sample.
+      freshness_.fresh = true;
+      freshness_.steps_since_fresh = 0;
+      return;
+    }
+    const double dt_s =
+        std::chrono::duration<double>(info.simTime - fresh_time).count();
+    if (!(dt_s > 0.0)) {
+      return;
+    }
+    const gz::math::Vector3d difference = (*velocity - *fresh_velocity) / dt_s;
+    acceleration = {difference.X(), difference.Y(), difference.Z()};
+    freshness_.fresh = true;
+    freshness_.steps_since_fresh = 0;
+  } else {
+    freshness_.fresh = false;
+    ++freshness_.steps_since_fresh;
+    ++freshness_.gated_steps;
   }
-  const double dt_s =
-      std::chrono::duration<double>(info.simTime - previous_time).count();
-  if (!(dt_s > 0.0)) {
-    return;
-  }
-  const gz::math::Vector3d acceleration =
-      (*velocity - *previous_velocity) / dt_s;
   state->kinematics_ready = true;
   state->world_angular_velocity_rad_s = {angular->X(), angular->Y(),
                                          angular->Z()};
-  state->world_linear_acceleration_m_s2 = {acceleration.X(), acceleration.Y(),
-                                           acceleration.Z()};
+  state->world_linear_acceleration_m_s2 = acceleration;
+}
+
+void Imu::ClearKinematicsHistory() {
+  previous_pose_.reset();
+  fresh_velocity_.reset();
+  fresh_time_ = std::chrono::steady_clock::duration::zero();
+  freshness_ = ImuKinematicsFreshness();
 }
 
 void Imu::Configure(const gz::sim::Entity& entity,
@@ -88,8 +119,7 @@ void Imu::Configure(const gz::sim::Entity& entity,
                     gz::sim::EntityComponentManager& ecm,
                     gz::sim::EventManager& /*event_mgr*/) {
   link_entity_ = gz::sim::kNullEntity;
-  previous_velocity_.reset();
-  previous_time_ = std::chrono::steady_clock::duration::zero();
+  ClearKinematicsHistory();
   last_result_ = ImuStepResult();
   last_reported_.reset();
   last_reported_message_.clear();
@@ -162,8 +192,7 @@ void Imu::Reset(const gz::sim::UpdateInfo& /*info*/,
   last_reported_.reset();
   last_reported_message_.clear();
   adapter_.Reset();
-  previous_velocity_.reset();
-  previous_time_ = std::chrono::steady_clock::duration::zero();
+  ClearKinematicsHistory();
   last_result_ = ImuStepResult();
   if (link_entity_ != gz::sim::kNullEntity) {
     EnableImuChecks(link_entity_, ecm);

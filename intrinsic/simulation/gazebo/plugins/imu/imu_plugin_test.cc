@@ -185,10 +185,15 @@ std::string PhysicsWorld(bool with_ground, std::string_view model_plugin_xml,
 )";
 }
 
-// The default MakeSixThrusterUuvExample model, with no <current_field>.
+// The default MakeSixThrusterUuvExample model in a zero current. Without a
+// <current_field> the plugin is inactive and applies no wrench.
 constexpr std::string_view kHydrodynamicsPlugin = R"(
       <plugin filename="static://intrinsic::simulation::Hydrodynamics"
               name="intrinsic::simulation::Hydrodynamics">
+        <current_field>
+          <frame_id>world_enu</frame_id>
+          <velocity_m_s>0 0 0</velocity_m_s>
+        </current_field>
       </plugin>)";
 
 struct PoseSample {
@@ -416,11 +421,13 @@ ImuAssessment Assess(const ImuMeasurement& sample) {
 struct TraceEntry {
   ImuStepResult result;
   std::optional<std::string> bytes;
+  ImuKinematicsFreshness freshness;
 };
 
 TraceEntry EntryOf(const Imu& imu) {
   TraceEntry entry;
   entry.result = imu.LastResultForTesting();
+  entry.freshness = imu.KinematicsFreshness();
   if (entry.result.measurement.has_value()) {
     entry.bytes = entry.result.measurement->SerializeAsString();
   }
@@ -545,9 +552,13 @@ TEST(ImuPluginTest, ConfigureStepResetUnloadRunCleanly) {
   ASSERT_EQ(first_run.size(), 12u);
   for (int k = 0; k < 12; ++k) {
     EXPECT_EQ(first_run[k].result.step, k);
-    EXPECT_TRUE(first_run[k].result.status.ok()) << k;
-    // Latency 2: startup absent. Dropout [4, 6) shifted by the latency.
-    const bool absent = k < 2 || k == 6 || k == 7;
+    // Step 0 is the warm-up: no previous velocity, so kInvalidState.
+    EXPECT_EQ(first_run[k].result.status.code,
+              k == 0 ? ImuSimErrorCode::kInvalidState : ImuSimErrorCode::kOk)
+        << k;
+    // Latency 2: startup absent, and the warm-up slot (step 0) arrives empty at
+    // step 2. Dropout [4, 6) shifted by the latency.
+    const bool absent = k < 3 || k == 6 || k == 7;
     EXPECT_EQ(first_run[k].bytes.has_value(), !absent) << k;
     if (!absent) {
       const ImuAssessment assessment = Assess(*first_run[k].result.measurement);
@@ -561,6 +572,7 @@ TEST(ImuPluginTest, ConfigureStepResetUnloadRunCleanly) {
   ExpectTracesEqual(first_run, after_reset);
   EXPECT_FALSE(after_reset[0].bytes.has_value());
   EXPECT_FALSE(after_reset[1].bytes.has_value());
+  EXPECT_FALSE(after_reset[2].bytes.has_value());
 
   std::vector<TraceEntry> fresh_run;
   {
@@ -601,10 +613,14 @@ TEST(ImuPluginTest, PausedStepsDoNotAdvanceTheStepIndex) {
   EXPECT_FALSE(imu->LastResultForTesting().measurement.has_value());
 
   ASSERT_TRUE(server->Run(/*_blocking=*/true, 1, /*_paused=*/false));
+  // The first running step is the warm-up and has no sample. The measurement
+  // comes on the next running step.
+  EXPECT_FALSE(imu->LastResultForTesting().measurement.has_value());
+  ASSERT_TRUE(server->Run(/*_blocking=*/true, 1, /*_paused=*/false));
   // The plugin's step index equals the number of non-paused updates the
   // server made, however many iterations gz-sim ran for the request.
   const int running = running_updates.load();
-  ASSERT_GE(running, 1);
+  ASSERT_GE(running, 2);
   EXPECT_EQ(imu->AdapterForTesting().StepIndexForTesting(), running);
   ASSERT_TRUE(imu->LastResultForTesting().measurement.has_value());
   EXPECT_EQ(imu->LastResultForTesting().step, running - 1);
@@ -776,11 +792,10 @@ TEST(ImuPluginTest, NamedLinkIsResolved) {
   EXPECT_TRUE(Assess(*imu->LastResultForTesting().measurement).accepted);
 }
 
-// ---- I10: true acceleration, gravity counted once --------------------------
+// ---- I10, H1, H2: true acceleration, gravity counted once ------------------
 
 namespace {
 
-constexpr int kPhysicsMeanWindow = 100;
 constexpr int kWarmUpSteps = 1;
 
 // Everything the I10 and H tests need about one plugin step.
@@ -788,6 +803,7 @@ struct PhysicsStep {
   int step = 0;
   ImuSimErrorCode code = ImuSimErrorCode::kOk;
   bool has_sample = false;
+  ImuKinematicsFreshness freshness;
   // Specific force and angular rate in the body frame, from the sample.
   std::array<double, 3> specific_force_m_s2 = {};
   std::array<double, 3> body_rate_rad_s = {};
@@ -865,6 +881,7 @@ PhysicsTrace RunPhysicsTrace(bool with_ground,
       step.step = static_cast<int>(entry.result.step);
       step.code = entry.result.status.code;
       step.has_sample = entry.result.measurement.has_value();
+      step.freshness = entry.freshness;
       if (step.step < 0 || static_cast<size_t>(step.step) >= poses.size() ||
           static_cast<size_t>(step.step) >= velocities.size()) {
         ADD_FAILURE() << "no pose or velocity for step " << step.step;
@@ -929,22 +946,108 @@ double Norm(const std::array<double, 3>& value) {
                    value[2] * value[2]);
 }
 
-// Provisional Physics tolerances from the lock imu-true-acceleration-hydro-
-// gravity-v1. The observed values are in README.md.
+// ---- Constants of lock imu-true-acceleration-hydro-gravity-v3 ---------------
+
+constexpr double kStepS = 0.001;
+
+// E4 (resting cases I10a and I10b).
+constexpr int kRestingSettleSteps = 20;
+constexpr int kPhysicsMeanWindow = 100;
 constexpr double kMeanTolerance = 1e-3;
 constexpr double kRestingSampleBound = 0.1;
+// I10c.
 constexpr double kFreeFallBound = 1e-6;
-constexpr int kHydroCheckedSteps = 50;
-constexpr double kH1AccelMin = 0.0485;
-constexpr double kH1AccelMax = 0.0491;
-constexpr double kH1ForceMin = 9.8550;
-constexpr double kH1ForceMax = 9.8560;
-constexpr double kH1VelocityMin = 0.045;
-constexpr double kH1VelocityMax = 0.0491;
+
+// E2: vertical drag model m dv/dt = F - c_l v - c_q v |v|.
+// Source: intrinsic_vehicle/intrinsic/vehicle/parameters/
+// six_thruster_uuv_example.cc (mass 32 kg, linear 35 N s/m, quadratic
+// 90 N s^2/m^2 heave damping, buoyancy 1.005 W).
+constexpr double kMassKg = 32.0;
+constexpr double kLinearHeaveDragNsPerM = 35.0;
+constexpr double kQuadraticHeaveDragNs2PerM2 = 90.0;
+constexpr double kBuoyancyMinusWeightN = 0.005 * kMassKg * kGravity;
+constexpr double kDoubleCountForceN =
+    kBuoyancyMinusWeightN - kMassKg * kGravity;
+constexpr int kH2CheckedSteps = 50;
+constexpr double kH2AccelTolerance = 5e-3;
+constexpr int kH1FirstBandStep = 20;
+constexpr int kH1Steps = 1000;
+constexpr double kH1AccelTolerance = 5e-4;
+constexpr double kH1VelocityMin = 0.02894;
+constexpr double kH1VelocityMax = 0.02914;
 constexpr double kH1LateralAccelBound = 1e-4;
-constexpr double kH1BodyRateBound = 1e-6;
-constexpr double kH2AccelMin = -9.7626;
-constexpr double kH2AccelMax = -9.7526;
+// H1 steps 1-19 are only checked to be finite and in [0, 0.06].
+constexpr double kH1SettleAccelMin = 0.0;
+constexpr double kH1SettleAccelMax = 0.06;
+
+// F3: pitch rate of the H1 hull, I theta'' + d_l theta' + K theta = tau0.
+// Sources, all in intrinsic_vehicle/intrinsic/vehicle/parameters/
+// six_thruster_uuv_example.cc unless noted: mass (kMassKg line 23), gravity
+// (kGravityMPerS2 line 24), fluid density (line 25), displaced volume
+// 1.005 m / rho (lines 27-28), center_of_gravity_m (line 74),
+// center_of_buoyancy _m (line 75), pitch linear damping (line 82,
+// DiagonalSpatial 5th entry), and the hull's <iyy> in PhysicsWorld() in this
+// file. The quadratic pitch damping (line 86, 4.0) is omitted: it is below 1%
+// of the linear term for the rates reached here.
+constexpr double kFluidDensityKgPerM3 = 1025.0;
+constexpr double kDisplacedVolumeM3 = 1.005 * kMassKg / kFluidDensityKgPerM3;
+constexpr double kCenterOfGravityXM = 0.02;
+constexpr double kCenterOfGravityZM = -0.01;
+constexpr double kCenterOfBuoyancyZM = 0.03;
+constexpr double kLinearPitchDragNmsPerRad = 1.5;
+constexpr double kPitchInertiaKgM2 = 5.4;
+constexpr double kPitchRateTolerance = 2e-5;
+constexpr double kOffAxisRateBound = 1e-6;
+
+double HeaveVelocityM_s(double force_n, double t_s) {
+  // m v' = -c_q (u - r1)(u - r2) for u = |v| with the sign of force_n, where
+  // r1 > 0 > r2 are the roots of c_q u^2 + c_l u - |F| = 0.
+  const double sign = force_n >= 0 ? 1.0 : -1.0;
+  const double f = std::fabs(force_n);
+  const double disc =
+      std::sqrt(kLinearHeaveDragNsPerM * kLinearHeaveDragNsPerM +
+                4.0 * kQuadraticHeaveDragNs2PerM2 * f);
+  const double r1 =
+      (-kLinearHeaveDragNsPerM + disc) / (2.0 * kQuadraticHeaveDragNs2PerM2);
+  const double r2 =
+      (-kLinearHeaveDragNsPerM - disc) / (2.0 * kQuadraticHeaveDragNs2PerM2);
+  const double e = (r1 / r2) * std::exp(-kQuadraticHeaveDragNs2PerM2 *
+                                        (r1 - r2) * t_s / kMassKg);
+  return sign * (r1 - r2 * e) / (1.0 - e);
+}
+
+// Expected world vertical acceleration of step k: the force at the velocity at
+// the start of the step (sim time k ms), over the mass.
+double ExpectedHeaveAccelM_s2(double force_n, int step) {
+  const double v = HeaveVelocityM_s(force_n, step * kStepS);
+  return (force_n - kLinearHeaveDragNsPerM * v -
+          kQuadraticHeaveDragNs2PerM2 * v * std::fabs(v)) /
+         kMassKg;
+}
+
+// Body pitch rate at the end of step k, t = (k + 1) ms.
+double ExpectedPitchRateRadS(int step) {
+  const double weight_n = kMassKg * kGravity;
+  const double buoyancy_n =
+      kFluidDensityKgPerM3 * kDisplacedVolumeM3 * kGravity;
+  const double tau0 = -kCenterOfGravityXM * (buoyancy_n - weight_n);
+  const double stiffness =
+      buoyancy_n * kCenterOfBuoyancyZM - weight_n * kCenterOfGravityZM;
+  const double wn = std::sqrt(stiffness / kPitchInertiaKgM2);
+  const double sigma = kLinearPitchDragNmsPerRad / (2.0 * kPitchInertiaKgM2);
+  const double wd = std::sqrt(wn * wn - sigma * sigma);
+  const double t = (step + 1) * kStepS;
+  return tau0 / (kPitchInertiaKgM2 * wd) * std::exp(-sigma * t) *
+         std::sin(wd * t);
+}
+
+std::string FreshnessPattern(const PhysicsTrace& trace, int first, int last) {
+  std::string pattern;
+  for (int k = first; k <= last; ++k) {
+    pattern += trace.steps[k].freshness.fresh ? 'F' : 'g';
+  }
+  return pattern;
+}
 
 }  // namespace
 
@@ -963,9 +1066,9 @@ TEST(ImuPluginTest, RestingLinkWithGravityMeasuresOneGNotZeroNotTwoG) {
   EXPECT_NEAR(mean[2], kGravity, kMeanTolerance);
   EXPECT_GT(std::fabs(mean[2]), 1.0);
   EXPECT_GT(std::fabs(std::fabs(mean[2]) - 2 * kGravity), 1.0);
-  // Differencing a 1 ms contact step amplifies solver jitter, which this
-  // bounds per sample.
-  for (size_t k = kWarmUpSteps; k < trace.steps.size(); ++k) {
+  // Steps 1-19 are a settle window (the box lands). Differencing a 1 ms
+  // contact step amplifies solver jitter, which is bounded per sample after it.
+  for (size_t k = kRestingSettleSteps; k < trace.steps.size(); ++k) {
     EXPECT_LE(std::fabs(trace.steps[k].specific_force_m_s2[2] - kGravity),
               kRestingSampleBound)
         << k;
@@ -988,6 +1091,11 @@ TEST(ImuPluginTest, RestingLinkWithHydrodynamicsDoesNotLoseOrDoubleGravity) {
   EXPECT_NEAR(mean[0], 0.0, kMeanTolerance);
   EXPECT_NEAR(mean[1], 0.0, kMeanTolerance);
   EXPECT_NEAR(mean[2], kGravity, kMeanTolerance);
+  for (size_t k = kRestingSettleSteps; k < trace.steps.size(); ++k) {
+    EXPECT_LE(std::fabs(trace.steps[k].specific_force_m_s2[2] - kGravity),
+              kRestingSampleBound)
+        << k;
+  }
 }
 
 TEST(ImuPluginTest, FreeFallCharacterizesTheEnginesAccelerationOutput) {
@@ -1007,27 +1115,44 @@ TEST(ImuPluginTest, FreeFallCharacterizesTheEnginesAccelerationOutput) {
 
 TEST(ImuPluginTest, HydrodynamicsForceReachesTheEngineInAZeroGravityWorld) {
   // H1. A free hull with Hydrodynamics in a world with <gravity>0 0 0</gravity>
-  // is pushed only by the plugin's restoring wrench, B - W = 0.005 m g, so
-  // a = 0.04903325 m/s^2 up and f_z = a + g = 1.005 g.
+  // is pushed only by the plugin's restoring wrench, B - W = 0.005 m g. Its
+  // vertical acceleration follows the drag closed form, f_z = a + g, and it
+  // pitches as a damped hydrostatic oscillator.
   const PhysicsTrace trace =
-      RunPhysicsTrace(/*with_ground=*/false, kHydrodynamicsPlugin,
-                      /*steps=*/1000, /*gravity_z_m_s2=*/0.0);
+      RunPhysicsTrace(/*with_ground=*/false, kHydrodynamicsPlugin, kH1Steps,
+                      /*gravity_z_m_s2=*/0.0);
   ExpectWarmUpThenSamples(trace);
-  ASSERT_EQ(trace.steps.size(), 1000u);
-  for (int k = 1; k <= kHydroCheckedSteps; ++k) {
+  ASSERT_EQ(trace.steps.size(), static_cast<size_t>(kH1Steps));
+  RecordProperty("h1_freshness_steps_1_to_19",
+                 FreshnessPattern(trace, 1, kH1FirstBandStep - 1));
+  RecordProperty("h1_gated_steps",
+                 std::to_string(trace.steps.back().freshness.gated_steps));
+
+  // Steps 1-19: the pose gate leaves the velocity stale, so only sanity.
+  for (int k = 1; k < kH1FirstBandStep; ++k) {
+    const double a = trace.steps[k].world_acceleration_m_s2[2];
+    EXPECT_TRUE(std::isfinite(a)) << k;
+    EXPECT_GE(a, kH1SettleAccelMin) << k;
+    EXPECT_LE(a, kH1SettleAccelMax) << k;
+  }
+  for (int k = kH1FirstBandStep; k < kH1Steps; ++k) {
     const PhysicsStep& step = trace.steps[k];
-    EXPECT_GE(step.world_acceleration_m_s2[2], kH1AccelMin) << k;
-    EXPECT_LE(step.world_acceleration_m_s2[2], kH1AccelMax) << k;
-    EXPECT_GE(step.specific_force_m_s2[2], kH1ForceMin) << k;
-    EXPECT_LE(step.specific_force_m_s2[2], kH1ForceMax) << k;
+    EXPECT_TRUE(step.freshness.fresh) << k;
+    const double expected = ExpectedHeaveAccelM_s2(kBuoyancyMinusWeightN, k);
+    EXPECT_NEAR(step.world_acceleration_m_s2[2], expected, kH1AccelTolerance)
+        << k;
+    EXPECT_NEAR(step.specific_force_m_s2[2], expected + kGravity,
+                kH1AccelTolerance)
+        << k;
     EXPECT_LE(std::fabs(step.world_acceleration_m_s2[0]), kH1LateralAccelBound)
         << k;
     EXPECT_LE(std::fabs(step.world_acceleration_m_s2[1]), kH1LateralAccelBound)
         << k;
-    for (int axis = 0; axis < 3; ++axis) {
-      EXPECT_LE(std::fabs(step.body_rate_rad_s[axis]), kH1BodyRateBound)
-          << k << " " << axis;
-    }
+    EXPECT_NEAR(step.body_rate_rad_s[1], ExpectedPitchRateRadS(k),
+                kPitchRateTolerance)
+        << k;
+    EXPECT_LE(std::fabs(step.body_rate_rad_s[0]), kOffAxisRateBound) << k;
+    EXPECT_LE(std::fabs(step.body_rate_rad_s[2]), kOffAxisRateBound) << k;
   }
   const PhysicsStep& last = trace.steps.back();
   EXPECT_EQ(trace.sim_time_ns, 1000000000);
@@ -1039,19 +1164,19 @@ TEST(ImuPluginTest, HydrodynamicsForceReachesTheEngineInAZeroGravityWorld) {
 TEST(ImuPluginTest, HydrodynamicsInAGravityWorldCountsGravityTwice) {
   // H2, characterization. The same hull in a world with gravity. The engine
   // ignores GravityEnabledCmd, so engine gravity and the plugin's weight both
-  // act: a = (B - W)/m - g = 0.04903325 - 9.80665 m/s^2, about -0.995 g. If
-  // the engine starts honoring GravityEnabledCmd, a becomes +0.049 and this
-  // fails, so the expectations get reviewed.
+  // act: m a = (B - W) - m g - drag, about -0.995 g at first. If the engine
+  // starts honoring GravityEnabledCmd, a becomes about +0.049 and this fails,
+  // so the expectations get reviewed.
   const PhysicsTrace trace = RunPhysicsTrace(
       /*with_ground=*/false, kHydrodynamicsPlugin, /*steps=*/200);
   ExpectWarmUpThenSamples(trace);
   ASSERT_EQ(trace.steps.size(), 200u);
-  for (int k = 1; k <= kHydroCheckedSteps; ++k) {
-    const double a = trace.steps[k].world_acceleration_m_s2[2];
-    EXPECT_GE(a, kH2AccelMin) << k;
-    EXPECT_LE(a, kH2AccelMax) << k;
-    EXPECT_LT(a, -9.0) << k;
-    EXPECT_GT(a, -10.0) << k;
+  for (int k = 1; k <= kH2CheckedSteps; ++k) {
+    EXPECT_TRUE(trace.steps[k].freshness.fresh) << k;
+    EXPECT_NEAR(trace.steps[k].world_acceleration_m_s2[2],
+                ExpectedHeaveAccelM_s2(kDoubleCountForceN, k),
+                kH2AccelTolerance)
+        << k;
   }
 }
 
