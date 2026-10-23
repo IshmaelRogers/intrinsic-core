@@ -15,11 +15,14 @@
 #ifndef INTRINSIC_SIMULATION_GAZEBO_PLUGINS_IMU_IMU_PLUGIN_H_
 #define INTRINSIC_SIMULATION_GAZEBO_PLUGINS_IMU_IMU_PLUGIN_H_
 
+#include <array>
+#include <chrono>
 #include <cstdint>
 #include <memory>
 #include <optional>
 #include <string>
 
+#include "gz/math/Vector3.hh"
 #include "gz/sim/Entity.hh"
 #include "gz/sim/EntityComponentManager.hh"
 #include "gz/sim/EventManager.hh"
@@ -30,14 +33,30 @@
 
 namespace intrinsic::simulation {
 
+// Link kinematics freshness of the latest step. Cleared by Configure and Reset.
+struct ImuKinematicsFreshness {
+  // True if the link's world pose differed from the previous step's, which
+  // means physics republished its velocity.
+  bool fresh = false;
+  // Steps since the last fresh step. 0 on a fresh step.
+  int64_t steps_since_fresh = 0;
+  // Gated steps since Configure or Reset.
+  int64_t gated_steps = 0;
+};
+
 // Opt-in IMU sensor system plugin for UUV simulation. Sim and test only.
 //
 // Attach to a model. Each non-paused PostUpdate copies the target link's
-// world pose, world angular velocity, and world linear acceleration and calls
-// ImuAdapter::Step. Configure and Reset enable the link's velocity and
-// acceleration checks, which create components in the ECM. PostUpdate
-// receives a const ECM, so afterwards the plugin never mutates world state.
-// Link poses are the same with and without this plugin.
+// world pose and world angular velocity, and the world linear acceleration
+// that it differences from the link world linear velocity, and calls
+// ImuAdapter::Step. The velocity is only republished by physics when the link
+// pose changes, so the difference is taken between fresh steps and a gated
+// step reads zero acceleration. The first step after Configure or Reset has no
+// previous velocity, so it reports kinematics as not ready (no sample).
+// Configure and Reset enable the link's velocity and acceleration checks, which
+// create components in the ECM. PostUpdate receives a const ECM, so afterwards
+// the plugin never mutates world state. Link poses are the same with and
+// without this plugin.
 //
 // There is no gz-transport topic. The latest adapter result is available
 // through LastResultForTesting() for tests. See imu_adapter.h for the SDF
@@ -70,13 +89,31 @@ class Imu final : public gz::sim::System,
   }
   [[nodiscard]] const ImuAdapter& AdapterForTesting() const { return adapter_; }
 
+  // Whether the most recent non-paused step saw a link that physics had
+  // republished. See README.md, "Known limitation: the 1e-6 pose gate".
+  [[nodiscard]] const ImuKinematicsFreshness& KinematicsFreshness() const {
+    return freshness_;
+  }
+
  private:
   void Report(const ImuSimStatus& status);
+  void ClearKinematicsHistory();
+  void FillKinematics(const gz::sim::UpdateInfo& info,
+                      const gz::sim::EntityComponentManager& ecm,
+                      ImuSimulatorState* state);
 
   ImuAdapter adapter_;
   gz::sim::Model model_{gz::sim::kNullEntity};
   gz::sim::Entity link_entity_ = gz::sim::kNullEntity;
   ImuStepResult last_result_;
+  // Link world pose of the previous non-paused step, and the link world linear
+  // velocity and simulation time of the last fresh step, for the difference.
+  // All cleared on Configure and Reset.
+  std::optional<std::array<double, 7>> previous_pose_;
+  std::optional<gz::math::Vector3d> fresh_velocity_;
+  std::chrono::steady_clock::duration fresh_time_ =
+      std::chrono::steady_clock::duration::zero();
+  ImuKinematicsFreshness freshness_;
   std::optional<ImuSimErrorCode> last_reported_;
   std::string last_reported_message_;
 };
