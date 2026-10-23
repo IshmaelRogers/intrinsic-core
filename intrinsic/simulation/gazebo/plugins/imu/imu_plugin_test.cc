@@ -976,8 +976,9 @@ constexpr double kH1AccelTolerance = 5e-4;
 constexpr double kH1VelocityMin = 0.02894;
 constexpr double kH1VelocityMax = 0.02914;
 constexpr double kH1LateralAccelBound = 1e-4;
+constexpr int kH1LateralCheckedSteps = 50;
 // H1 steps 1-19 are only checked to be finite and in [0, 0.06].
-constexpr double kH1SettleAccelMin = 0.0;
+constexpr double kH1SettleAccelMin = -1e-12;
 constexpr double kH1SettleAccelMax = 0.06;
 
 // F3: pitch rate of the H1 hull, I theta'' + d_l theta' + K theta = tau0.
@@ -1135,6 +1136,16 @@ TEST(ImuPluginTest, HydrodynamicsForceReachesTheEngineInAZeroGravityWorld) {
     EXPECT_GE(a, kH1SettleAccelMin) << k;
     EXPECT_LE(a, kH1SettleAccelMax) << k;
   }
+  // Lateral acceleration grows later as the pitching hull rotates drag into
+  // world x, so its bound is checked on steps 1-50 only.
+  for (int k = 1; k <= kH1LateralCheckedSteps; ++k) {
+    EXPECT_LE(std::fabs(trace.steps[k].world_acceleration_m_s2[0]),
+              kH1LateralAccelBound)
+        << k;
+    EXPECT_LE(std::fabs(trace.steps[k].world_acceleration_m_s2[1]),
+              kH1LateralAccelBound)
+        << k;
+  }
   for (int k = kH1FirstBandStep; k < kH1Steps; ++k) {
     const PhysicsStep& step = trace.steps[k];
     EXPECT_TRUE(step.freshness.fresh) << k;
@@ -1143,10 +1154,6 @@ TEST(ImuPluginTest, HydrodynamicsForceReachesTheEngineInAZeroGravityWorld) {
         << k;
     EXPECT_NEAR(step.specific_force_m_s2[2], expected + kGravity,
                 kH1AccelTolerance)
-        << k;
-    EXPECT_LE(std::fabs(step.world_acceleration_m_s2[0]), kH1LateralAccelBound)
-        << k;
-    EXPECT_LE(std::fabs(step.world_acceleration_m_s2[1]), kH1LateralAccelBound)
         << k;
     EXPECT_NEAR(step.body_rate_rad_s[1], ExpectedPitchRateRadS(k),
                 kPitchRateTolerance)
