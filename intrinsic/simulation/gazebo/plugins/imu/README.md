@@ -3,7 +3,8 @@
 Opt-in Gazebo **sensor** system plugin (`intrinsic::simulation::Imu`) and a
 simulator-free adapter (`ImuAdapter`). Each simulation step the adapter reads
 the target link's world pose, world angular velocity, and world linear
-acceleration and returns
+acceleration (differenced from the link's world linear velocity, see
+[Where the acceleration comes from](#where-the-acceleration-comes-from)) and returns
 `std::optional<intrinsic_proto::hardware::marine::ImuMeasurement>`, the #79 HAL
 type, by calling the existing `FakeImu::Measure`.
 
@@ -19,7 +20,7 @@ manipulator code is unchanged.
 | File | Role |
 | --- | --- |
 | `imu_adapter.{h,cc}` | Pure adapter, no gz-sim include. SDF parsing, truth, noise, drift, dropout, latency. |
-| `imu_plugin.{h,cc}` | Gazebo system. Copies pose, angular velocity, and linear acceleration, calls `Step`. |
+| `imu_plugin.{h,cc}` | Gazebo system. Copies pose and angular velocity, differences linear velocity into acceleration, calls `Step`. |
 | `imu_plugin_register.cc` | `GZ_ADD_STATIC_PLUGIN_ALIAS(..., "intrinsic::simulation::Imu")`. |
 | `imu_adapter_test.cc` | Fixtures I1-I9 and the scope guard. |
 | `imu_plugin_test.cc` | Fixtures P1-P4 and I10, headless gz. |
@@ -85,17 +86,60 @@ ENU, so world z is up. Let `R` be the rotation of the link orientation `q`
 
 ### Where the acceleration comes from
 
-`a_w` is `Link::WorldLinearAcceleration`, which gz-sim fills from the physics
-engine. The plugin enables the link's velocity and acceleration checks in
-`Configure` and `Reset` (`Link::EnableVelocityChecks`,
-`Link::EnableAccelerationChecks`). Those calls create components in the ECM
-and are the only writes the plugin makes. Link poses are bit-identical with and
-without the plugin (fixture P3). The adapter does not differentiate velocity
-itself.
+`a_w` is differenced from `Link::WorldLinearVelocity` by the plugin. The
+engine's `Link::WorldLinearAcceleration` is not used, because
+bullet-featherstone never fills it (it stays 0, even in free fall). The
+adapter does not differentiate anything itself, and `ImuAdapter` and its API
+are unchanged.
+
+The plugin holds the last *fresh* velocity `v_f` and its time `t_f` (cleared
+on Configure and Reset). On each non-paused `PostUpdate`:
+
+* **Warm-up** (the first step after Configure or Reset): records `v_f, t_f`
+  and sets `kinematics_ready = false`. The adapter reports `kInvalidState`
+  with no sample, and `k` still advances. The plugin logs at most one ERROR
+  line for it, through the de-duplicated `Report`.
+* **Fresh step** (the link's world pose is not bit-identical to the previous
+  step's): `a_w = (v_k - v_f) / (t_k - t_f)`, the true average acceleration
+  since the last real sample, then `v_f, t_f <- v_k, t_k`. A semi-implicit
+  step makes this equal to the applied acceleration. Free fall reads
+  `f_b = 0`.
+* **Gated step** (pose bit-identical): `a_w = 0`. A body truly at rest reads
+  exactly `+g`. The angular velocity is the held engine value.
+
+The pose comparison is exact `==` on every position and quaternion component.
+`gz::math::Pose3d::operator==` has a tolerance, and the ECM `ComponentState`
+flags depend on system ordering, so neither is used. `Imu::KinematicsFreshness()`
+returns `{fresh, steps_since_fresh, gated_steps}` for the latest step. It is a
+diagnostic: gated steps log nothing.
+
+The plugin enables the link's velocity and acceleration checks in `Configure`
+and `Reset`. Those calls create components in the ECM and are the only writes
+the plugin makes. Link poses are bit-identical with and without the plugin
+(fixture P3).
+
+#### Known limitation: the 1e-6 pose gate
+
+* **Mechanism.** gz-physics `bullet-featherstone/src/SimulationFeatures.cc`
+  `Write(ChangedWorldPoses&)` reports a link only when its world position or
+  rotation differs from the last reported one by more than 1e-6. gz-sim
+  `Physics.cc` `ChangedLinks` and `UpdateSim` then publish `WorldPose`,
+  `WorldLinearVelocity`, `WorldAngularVelocity` and acceleration only for those
+  links. The published values are true, just infrequent. A fixed-joint child of
+  the link is gated identically, so there is no per-step probe.
+* **F1-B output.** On a gated step the plugin emits `a_w = 0`. Slow motion is
+  therefore under-read by the gated fraction of the steps, and the next fresh
+  step reports the average over the gap.
+* **H1 numbers.** A hull accelerating at 0.049 m/s^2 from rest moves 1e-6 m
+  per republish only near step 20 (`v dt` reaches about 1e-6 m there). In H1
+  steps 1-19 read `gggggFggFgFgFgFgFgF` (`F` fresh, `g` gated) and every step
+  from 19 on is fresh. Free fall is fresh every step. A body at rest is gated on almost every step (I10a: 294 of 299), which is exact because its acceleration is 0.
+* **Follow-up.** The pose gate also makes the #122 Hydrodynamics plugin
+  compute drag from stale velocity. A per-step engine read is a separate
+  follow-up. It is not part of this change, and the issue is not filed.
 
 There is no gravity reconstruction beyond the one subtraction above. The
-adapter is not told whether the simulated body is subject to gravity. See
-[Open numerics question](#open-numerics-question-122-gravity).
+adapter is not told whether the simulated body is subject to gravity.
 
 ## Per-step pipeline
 
@@ -178,51 +222,45 @@ The golden trace scenario: 20 steps, `latency_steps = 2`,
 representable, so no libm is involved), `omega_w = (0.01 k, -0.005 k, 0.1)`,
 `a_w = (0.02 k, 0, -0.01 k)`. A change to the golden needs senior review.
 
-## I10: gravity double-count guard
+## I10, H1, H2: true acceleration, gravity counted once
 
-`imu_plugin_test.cc` drops a box on a ground plane in a real physics world and
-checks that a resting link measures `+1 g` on the body z axis: not `0`
-(gravity lost) and not `2 g` (gravity counted twice). It repeats the check
-with the #122 hydrodynamics plugin attached, and characterises the engine's
-acceleration output in free fall.
+`imu_plugin_test.cc` runs real bullet-featherstone physics worlds (1 ms step,
+hull mass 32, IMU seed 42, zero noise). The world rule for worlds that run
+Physics and load `intrinsic::simulation::Hydrodynamics` (D2-A) is
+`<gravity>0 0 0</gravity>`; see `../hydrodynamics/README.md`. Only H1 follows
+it. I10b and H2 break it on purpose, as characterizations.
 
-Observed with `-c opt` and the `bullet-featherstone` physics plugin that this
-repository links (`@gz-physics//bullet-featherstone`):
+Warm-up (all runs): step 0 gives `kInvalidState`, no sample, at most one ERROR
+line.
 
-| Scenario | `f_b` observed | Reading |
+| Id | World | Measured |
 | --- | --- | --- |
-| Box resting on a ground plane | norm `9.80665` (z within `1e-4`, lateral within `1e-4`) | `+1 g`: not `0`, not `2 g`. |
-| Same box with `intrinsic::simulation::Hydrodynamics` attached | norm `9.80665` | `+1 g`: neither lost nor doubled. |
-| Box in free fall (no ground), z falling | norm `9.80665` | **Wrong for a physical accelerometer, which reads `0`.** |
+| I10a, box resting on ground, 300 steps | gravity, ground | Step 11 (landing) `f_z` = 10.2998, back to 9.80665 by step 12. Steps 20-299: max `\|f_z - g\|` = 1.5e-3. Last-100 mean `f_b` = (1.688e-6, 1.688e-6, 9.80665). 294 gated steps. |
+| I10b, same with Hydrodynamics (zero current), 300 steps | gravity, ground | Step 11 `f_z` = 10.2973. Steps 20-299: max `\|f_z - g\|` = 1.5e-3. Last-100 mean `f_b` = (3.464e-6, -3.7e-8, 9.80665). Engine gravity and the plugin's weight both act, the contact carries the excess, so the true acceleration is about 0 and `f_b = (0, 0, g)`. |
+| I10c, free fall, 200 steps | gravity, no ground | `\|f\|` = 0.0 on every step after warm-up, z falls 0.5 to 0.3029. No gated step. |
+| H1, free hull + Hydrodynamics, 1000 steps | `0 0 0` | Steps 20-999: every step fresh. `a_w,z` within 1.2e-5 and `f_z` within 3.6e-5 of the drag closed form. `v_z(1 s)` = 0.029049 (closed form 0.029040), z 0.5 to 0.51735. Body pitch rate within 8.1e-6 of the restoring-torque model (step 999: -3.3127e-3 against -3.3208e-3). `\|omega_x\|`, `\|omega_z\|` <= 2.0e-8. |
+| H2, same hull | `0 0 -9.80665` | Steps 1-50: every step fresh, `a_w,z` from -9.7467 (step 1) to -8.6408 (step 50), within 1.94e-3 of the closed form. This is about -0.995 g: gravity is counted twice. |
 
-Because bullet-featherstone reports zero link acceleration, the I10
-hydrodynamics check cannot detect gravity double-counting or dropping, so the
-#122 gravity question remains open.
+The drag closed form is `m dv/dt = F - c_l v - c_q v |v|` with `m = 32`,
+`c_l = 35`, `c_q = 90` (heave), `F_H1 = B - W = +1.569064 N` and
+`F_H2 = F_H1 - m g = -312.243736 N`, evaluated at the velocity at the start of
+each step. The pitch model is `I theta'' + d_l theta' + K theta = tau0` with the
+`six_thruster_uuv_example.cc` constants (`d_l = 1.5`, `K = 12.599584`,
+`tau0 = -0.03138128`) and `I_yy = 5.4`; the constants and their sources are
+named in `imu_plugin_test.cc`.
 
-The first two rows pass for a reason that needs to be stated plainly: the
-engine reports `WorldLinearAcceleration = 0` for every link, so the adapter
-only ever sees `a_w = 0` and the result is `f_b = R^T (0 - kGravityEnu)`, which
-is `+1 g` whether the link rests or falls. The free-fall row records that
-limit as a test (`FreeFallCharacterizesTheEnginesAccelerationOutput`). It
-fails loudly if an engine starts filling the acceleration, so that the
-expectations here are reviewed instead of drifting.
+H1 steps 1-19 are not banded (the pose gate leaves them stale). In the test
+they are only checked to be finite.
 
-Consequences: the adapter is correct for any engine that reports true link
-acceleration (the unit fixture I1 pins the formula, including the free
-fall case `a_w = kGravityEnu -> 0`). With bullet-featherstone as shipped, a
-vehicle that accelerates or free-falls will not show that in the specific
-force. A dynamics-aware source is a decision for the question below.
+## Open numerics question (#122 gravity): closed
 
-## Open numerics question (#122 gravity)
-
-The #122 hydrodynamics plugin applies its own buoyancy and weight terms. This
-adapter assumes the engine's `WorldLinearAcceleration` is the true coordinate
-acceleration of the link, and subtracts `kGravityEnu` once. If an engine reports
-zero acceleration for a body (see I10 results) or if a hydrodynamics force
-model changes what "at rest" means for a neutrally buoyant vehicle, the
-specific force is wrong by up to `1 g`. The adapter cannot detect that from one
-sample. This needs a decision from senior numerics before any estimator
-consumes the output. It is intentionally not worked around here.
+The question was whether the adapter's single `kGravityEnu` subtraction holds
+when the #122 hydrodynamics plugin applies its own buoyancy and weight. It
+does, given the true link acceleration. Source of that acceleration: the
+differencing above. The remaining rule is the D2-A world rule. Under
+bullet-featherstone, which ignores `GravityEnabledCmd`, a world with gravity
+on and Hydrodynamics loaded counts gravity twice (H2), so such worlds must set
+`<gravity>0 0 0</gravity>`.
 
 ## Known limitations
 
