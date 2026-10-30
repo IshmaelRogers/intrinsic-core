@@ -7,6 +7,7 @@ is evidence, not an implementation.
 | ADR | Status | Title |
 | --- | --- | --- |
 | [0001](0001-multi-embodiment-capability-architecture.md) | Accepted | Additive multi-embodiment capability architecture |
+| [0002](0002-uuv-reference-solution-composition.md) | Accepted | UUV reference-solution composition and staged packaging |
 
 Source for ADR 0001:
 
