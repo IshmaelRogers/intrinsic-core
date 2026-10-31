@@ -38,7 +38,8 @@ namespace intrinsic::simulation::uuv_reference {
 // Once per sim step the runner builds an inference envelope, submits it to its
 // own InferenceClient, collects every request that reached a terminal class,
 // and classifies each one as absent, failed, late or active. A request is
-// late when its deadline, N = 2 steps after submission, has passed.
+// late when its deadline, N = 2 steps after submission, has passed. A late
+// request has no usable motion, even if the worker completed it (lock v1.1).
 //
 // The runner owns the sim clock. Its client reads a clock that Step sets from
 // sim_time_ns before any queue call, so the client never falls back to the
@@ -123,9 +124,10 @@ struct StepResult {
 ShadowPolicyOutcome ClassifySubmitStatus(
     inference::InferenceQueueStatus status);
 
-// Class of a terminal queue status. kComplete is kActive when the motion was
-// found in the store, else kFailed. kReplayExpired and kCancelled are kLate.
-// Everything else is kFailed.
+// Class of a terminal queue status, before the deadline rule. kComplete is
+// kActive when the motion was found in the store, else kFailed. kReplayExpired
+// and kCancelled are kLate. Everything else is kFailed. Step additionally
+// makes a kComplete reaped with sim_time_ns > deadline kLate (lock v1.1).
 ShadowPolicyOutcome ClassifyTerminal(inference::InferenceQueueStatus status,
                                      bool motion_found);
 
@@ -134,7 +136,9 @@ ShadowPolicyOutcome ClassifyTerminal(inference::InferenceQueueStatus status,
 //   2. No worker: one kAbsent resolution, return.
 //   3. Grant ticks_per_step completions when > 0.
 //   4. Oldest first, poll every pending request. A terminal one is reaped and
-//      classified. An in-progress one with sim_time_ns > its deadline is
+//      classified; a reaped kComplete with sim_time_ns > its deadline is kLate
+//      (result shell kept, no motion), and sim_time_ns == deadline stays
+//      kActive. An in-progress one with sim_time_ns > its deadline is
 //      cancelled and resolves kLate.
 //   5. Submit this step's envelope. A rejected submit is kFailed. An accepted
 //      one is polled and, if already terminal, reaped and classified.
@@ -148,7 +152,12 @@ class ShadowPolicyRunner {
   ShadowPolicyRunner& operator=(const ShadowPolicyRunner&) = delete;
 
   // k and sim_time_ns must both increase on every call. The envelope created
-  // at sim_time_ns has deadline sim_time_ns + 2 * dt_ns.
+  // at sim_time_ns has deadline sim_time_ns + 2 * dt_ns. A step that violates
+  // a bound below returns error = true, makes no queue call and leaves the
+  // state unchanged. Bounds that keep the int64 arithmetic from overflowing:
+  //   dt_ns                <= INT64_MAX / 4
+  //   sim_time_ns          <= INT64_MAX - 2 * dt_ns  (the deadline fits)
+  //   clock_origin.seconds <= INT64_MAX - 10'000'000'000
   StepResult Step(int64_t k, int64_t sim_time_ns,
                   const ShadowEnvelopeInputs& inputs);
 
@@ -167,6 +176,7 @@ class ShadowPolicyRunner {
   bool ValidStep(int64_t k, int64_t sim_time_ns) const;
   embodiment::ClockReading AtNs(int64_t ns) const;
   void Classify(const Pending& pending, const inference::PollOutcome& reaped,
+                int64_t sim_time_ns,
                 std::vector<ShadowPolicyResolution>& out) const;
 
   ShadowPolicyRunnerOptions options_;

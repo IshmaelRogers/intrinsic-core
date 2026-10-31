@@ -18,11 +18,13 @@
 #include <cstdint>
 #include <cstdlib>
 #include <fstream>
+#include <limits>
 #include <map>
 #include <memory>
 #include <sstream>
 #include <string>
 #include <string_view>
+#include <type_traits>
 #include <utility>
 #include <vector>
 
@@ -107,46 +109,6 @@ ShadowEnvelopeInputs Inputs(std::string digest, uint64_t epoch = 1,
 
 int64_t StepTime(int64_t k) { return (k + 1) * kDt; }
 
-struct Rig {
-  std::shared_ptr<DesiredMotionStore> store =
-      std::make_shared<DesiredMotionStore>();
-  DesiredMotion motion = PoseMotion(1, -2);
-  std::shared_ptr<InferenceWorker> worker;
-  std::unique_ptr<ShadowPolicyRunner> runner;
-};
-
-ShadowPolicyRunnerOptions BaseOptions(const Rig& rig) {
-  ShadowPolicyRunnerOptions options;
-  options.worker = rig.worker;
-  options.store = rig.store;
-  options.dt_ns = kDt;
-  return options;
-}
-
-// Mock worker scripted with {"sha256:step" -> PoseMotion(1, -2)}.
-Rig MockRig(bool complete_on_submit = true, size_t ticks_per_step = 0,
-            ClockReading origin = {}) {
-  Rig rig;
-  rig.worker = std::make_shared<MockPolicyWorker>(
-      rig.store, std::map<std::string, DesiredMotion, std::less<>>{
-                     {"sha256:step", rig.motion}});
-  ShadowPolicyRunnerOptions options = BaseOptions(rig);
-  options.complete_on_submit = complete_on_submit;
-  options.ticks_per_step = ticks_per_step;
-  options.clock_origin = origin;
-  rig.runner = std::make_unique<ShadowPolicyRunner>(std::move(options));
-  return rig;
-}
-
-Rig RecordedRig() {
-  Rig rig;
-  rig.worker = std::make_shared<RecordedPolicyWorker>(rig.store, FixtureDir());
-  ShadowPolicyRunnerOptions options = BaseOptions(rig);
-  options.clock_origin = kFixtureOrigin;
-  rig.runner = std::make_unique<ShadowPolicyRunner>(std::move(options));
-  return rig;
-}
-
 // Delegates to a worker and keeps a copy of every envelope it completes.
 class RecordingWorker final : public InferenceWorker {
  public:
@@ -167,48 +129,51 @@ class RecordingWorker final : public InferenceWorker {
   mutable std::vector<OwnedInferenceEnvelope> seen_;
 };
 
-std::string DumpTime(ClockReading time) {
-  return std::to_string(time.seconds) + "." + std::to_string(time.nanos);
+struct Rig {
+  std::shared_ptr<DesiredMotionStore> store =
+      std::make_shared<DesiredMotionStore>();
+  DesiredMotion motion = PoseMotion(1, -2);
+  std::shared_ptr<InferenceWorker> worker;
+  std::shared_ptr<RecordingWorker> recorder;
+  std::unique_ptr<ShadowPolicyRunner> runner;
+};
+
+ShadowPolicyRunnerOptions BaseOptions(const Rig& rig) {
+  ShadowPolicyRunnerOptions options;
+  options.worker = rig.worker;
+  options.store = rig.store;
+  options.dt_ns = kDt;
+  return options;
 }
 
-std::string DumpResolution(const ShadowPolicyResolution& r) {
-  std::ostringstream out;
-  out << "k=" << r.submit_k << " id=" << r.request_id
-      << " outcome=" << static_cast<int>(r.outcome)
-      << " status=" << static_cast<int>(r.status)
-      << " error=" << static_cast<int>(r.envelope_error)
-      << " mismatch=" << r.digest_mismatch;
-  if (r.result.has_value()) {
-    const inference::InferenceResultView v = r.result->View();
-    out << " result{" << v.common.frame_id << " " << v.common.validity_state
-        << " " << DumpTime(v.common.source_time) << " "
-        << DumpTime(v.common.deadline) << " "
-        << v.common.validity_horizon.seconds << "."
-        << v.common.validity_horizon.nanos << " " << v.common.state_epoch << " "
-        << v.common.world_snapshot_id << " " << v.common.input_digest << " "
-        << v.common.provenance_model_id << " " << v.common.confidence_present
-        << ":" << v.common.confidence << " " << v.common.uncertainty_present
-        << ":" << v.common.uncertainty << " " << v.oip_result.model_name << " "
-        << v.oip_result.model_version << " " << v.oip_result.request_id << " "
-        << v.output_digest << "}";
-  } else {
-    out << " result{}";
+// Mock worker scripted with {"sha256:step" -> PoseMotion(1, -2)}.
+// With record, the worker is wrapped in a RecordingWorker (rig.recorder) that
+// counts every completion the queue asks for.
+Rig MockRig(bool complete_on_submit = true, size_t ticks_per_step = 0,
+            ClockReading origin = {}, bool record = false) {
+  Rig rig;
+  rig.worker = std::make_shared<MockPolicyWorker>(
+      rig.store, std::map<std::string, DesiredMotion, std::less<>>{
+                     {"sha256:step", rig.motion}});
+  if (record) {
+    rig.recorder = std::make_shared<RecordingWorker>(rig.worker);
+    rig.worker = rig.recorder;
   }
-  if (r.motion.has_value()) {
-    out << " motion{" << r.motion->ShortDebugString() << "}";
-  } else {
-    out << " motion{}";
-  }
-  return out.str();
+  ShadowPolicyRunnerOptions options = BaseOptions(rig);
+  options.complete_on_submit = complete_on_submit;
+  options.ticks_per_step = ticks_per_step;
+  options.clock_origin = origin;
+  rig.runner = std::make_unique<ShadowPolicyRunner>(std::move(options));
+  return rig;
 }
 
-std::string DumpStep(const StepResult& step) {
-  std::ostringstream out;
-  out << "error=" << step.error << " submitted=" << step.submitted_request_id;
-  for (const ShadowPolicyResolution& r : step.resolutions) {
-    out << "\n  " << DumpResolution(r);
-  }
-  return out.str();
+Rig RecordedRig() {
+  Rig rig;
+  rig.worker = std::make_shared<RecordedPolicyWorker>(rig.store, FixtureDir());
+  ShadowPolicyRunnerOptions options = BaseOptions(rig);
+  options.clock_origin = kFixtureOrigin;
+  rig.runner = std::make_unique<ShadowPolicyRunner>(std::move(options));
+  return rig;
 }
 
 TEST(ShadowPolicyRunnerTest, S1AbsentWithoutWorker) {
@@ -502,9 +467,10 @@ TEST(ShadowPolicyRunnerTest, S8LateWhenNotTerminal) {
   EXPECT_TRUE(step.resolutions.empty());
   EXPECT_EQ(rig.runner->outstanding(), 3u);
 
-  // The first request is cancelled and its slot released. The runner owns
-  // its client, so the release is observed through outstanding(): the
-  // request resolved this step, the second one (deadline 500 ms) did not.
+  // The first request is cancelled. outstanding() is the runner's pending
+  // list: 3 requests left at k = 2, minus the cancelled one, plus this
+  // step's. That the client slot is released is proven by S6, where the next
+  // submit succeeds only after the cancels.
   step = rig.runner->Step(3, StepTime(3), Inputs("sha256:step"));
   ASSERT_EQ(step.resolutions.size(), 1u);
   EXPECT_EQ(step.resolutions[0].outcome, Outcome::kLate);
@@ -519,6 +485,104 @@ TEST(ShadowPolicyRunnerTest, S8LateWhenNotTerminal) {
   EXPECT_EQ(step.resolutions[0].submit_k, 1);
   EXPECT_EQ(step.resolutions[0].status, Status::kCancelled);
   EXPECT_NE(step.resolutions[0].request_id, first_id);
+}
+
+TEST(ShadowPolicyRunnerTest, S8bLateCompletionReapedAfterDeadline) {
+  // Lock v1.1 (F1): complete_on_submit = false, ticks_per_step = 1.
+  Rig rig = MockRig(/*complete_on_submit=*/false, /*ticks_per_step=*/1);
+  StepResult step = rig.runner->Step(0, StepTime(0), Inputs("sha256:step"));
+  ASSERT_FALSE(step.submitted_request_id.empty());
+  EXPECT_TRUE(step.resolutions.empty());
+  const std::string first_id = step.submitted_request_id;
+
+  // t = 500 ms is past the deadline of 375 ms. The tick completes the
+  // request, and it is reaped as kComplete after its deadline.
+  step = rig.runner->Step(1, 500'000'000, Inputs("sha256:step"));
+  ASSERT_EQ(step.resolutions.size(), 1u);
+  const ShadowPolicyResolution& r = step.resolutions[0];
+  EXPECT_EQ(r.outcome, Outcome::kLate);
+  EXPECT_EQ(r.status, Status::kComplete);
+  EXPECT_EQ(r.submit_k, 0);
+  EXPECT_EQ(r.request_id, first_id);
+  EXPECT_FALSE(r.digest_mismatch);
+  EXPECT_FALSE(r.motion.has_value());
+  ASSERT_TRUE(r.result.has_value());
+  EXPECT_EQ(r.result->View().output_digest, rig.store->Put(rig.motion));
+  EXPECT_FALSE(step.submitted_request_id.empty());
+  EXPECT_EQ(rig.runner->outstanding(), 1u);
+}
+
+TEST(ShadowPolicyRunnerTest, S8cCompletionAtExactlyTheDeadlineStaysActive) {
+  Rig rig = MockRig(/*complete_on_submit=*/false, /*ticks_per_step=*/1);
+  ASSERT_FALSE(rig.runner->Step(0, StepTime(0), Inputs("sha256:step")).error);
+
+  // sim_time_ns == deadline_ns == 375 ms: not late.
+  StepResult step = rig.runner->Step(1, 375'000'000, Inputs("sha256:step"));
+  ASSERT_EQ(step.resolutions.size(), 1u);
+  EXPECT_EQ(step.resolutions[0].outcome, Outcome::kActive);
+  EXPECT_EQ(step.resolutions[0].status, Status::kComplete);
+  ASSERT_TRUE(step.resolutions[0].motion.has_value());
+  EXPECT_EQ(step.resolutions[0].motion->SerializeAsString(),
+            rig.motion.SerializeAsString());
+
+  // One nanosecond later is late.
+  Rig late = MockRig(/*complete_on_submit=*/false, /*ticks_per_step=*/1);
+  ASSERT_FALSE(late.runner->Step(0, StepTime(0), Inputs("sha256:step")).error);
+  step = late.runner->Step(1, 375'000'001, Inputs("sha256:step"));
+  ASSERT_EQ(step.resolutions.size(), 1u);
+  EXPECT_EQ(step.resolutions[0].outcome, Outcome::kLate);
+  EXPECT_EQ(step.resolutions[0].status, Status::kComplete);
+  EXPECT_FALSE(step.resolutions[0].motion.has_value());
+  EXPECT_TRUE(step.resolutions[0].result.has_value());
+}
+
+TEST(ShadowPolicyRunnerTest, S10OverflowGuards) {
+  constexpr int64_t kInt64Max = std::numeric_limits<int64_t>::max();
+  constexpr int64_t kMaxOriginSeconds = kInt64Max - 10'000'000'000;
+  const auto first_step = [](ShadowPolicyRunnerOptions options,
+                             int64_t sim_time_ns) {
+    ShadowPolicyRunner runner(std::move(options));
+    return runner.Step(0, sim_time_ns, Inputs("sha256:step"));
+  };
+
+  {
+    Rig rig = MockRig();
+    ShadowPolicyRunnerOptions options = BaseOptions(rig);
+    options.dt_ns = kInt64Max / 4 + 1;
+    const StepResult step = first_step(options, 0);
+    EXPECT_TRUE(step.error);
+    EXPECT_TRUE(step.resolutions.empty());
+    options.dt_ns = kInt64Max / 4;
+    EXPECT_FALSE(first_step(options, 0).error);
+  }
+  {
+    Rig rig = MockRig();
+    ShadowPolicyRunnerOptions options = BaseOptions(rig);
+    const int64_t max_time = kInt64Max - 2 * options.dt_ns;
+    const StepResult over = first_step(options, max_time + 1);
+    EXPECT_TRUE(over.error);
+    EXPECT_TRUE(over.resolutions.empty());
+    EXPECT_TRUE(over.submitted_request_id.empty());
+    const StepResult exact = first_step(options, max_time);
+    EXPECT_FALSE(exact.error);
+    ASSERT_EQ(exact.resolutions.size(), 1u);
+    EXPECT_FALSE(exact.submitted_request_id.empty());
+  }
+  {
+    Rig rig = MockRig();
+    ShadowPolicyRunnerOptions options = BaseOptions(rig);
+    options.clock_origin = {kMaxOriginSeconds + 1, 0};
+    EXPECT_TRUE(first_step(options, kDt).error);
+    options.clock_origin = {kMaxOriginSeconds, 0};
+    EXPECT_FALSE(first_step(options, kDt).error);
+  }
+}
+
+TEST(ShadowPolicyRunnerTest, S10bRunnerIsNotCopyableOrMovable) {
+  static_assert(!std::is_copy_constructible_v<ShadowPolicyRunner>);
+  static_assert(!std::is_copy_assignable_v<ShadowPolicyRunner>);
+  static_assert(!std::is_move_constructible_v<ShadowPolicyRunner>);
+  static_assert(!std::is_move_assignable_v<ShadowPolicyRunner>);
 }
 
 TEST(ShadowPolicyRunnerTest, S9ClassifierTable) {
@@ -558,31 +622,33 @@ TEST(ShadowPolicyRunnerTest, S9ClassifierTable) {
 }
 
 TEST(ShadowPolicyRunnerTest, S10OptionErrors) {
-  const auto expect_error = [](ShadowPolicyRunnerOptions options) {
+  // Every case uses a worker that records each completion the queue asks for.
+  // complete_on_submit is true, so a Submit would be recorded.
+  Rig base = MockRig(/*complete_on_submit=*/true, /*ticks_per_step=*/0,
+                     /*origin=*/{}, /*record=*/true);
+  const auto expect_error = [&base](ShadowPolicyRunnerOptions options) {
     ShadowPolicyRunner runner(std::move(options));
     const StepResult step = runner.Step(0, kDt, Inputs("sha256:step"));
+    EXPECT_TRUE(base.recorder->seen().empty());
     EXPECT_TRUE(step.error);
     EXPECT_TRUE(step.resolutions.empty());
     EXPECT_TRUE(step.submitted_request_id.empty());
     EXPECT_EQ(runner.outstanding(), 0u);
   };
   {
-    Rig rig = MockRig();
-    ShadowPolicyRunnerOptions options = BaseOptions(rig);
+    ShadowPolicyRunnerOptions options = BaseOptions(base);
     options.dt_ns = 0;
     expect_error(options);
     options.dt_ns = -1;
     expect_error(options);
   }
   {
-    Rig rig = MockRig();
-    ShadowPolicyRunnerOptions options = BaseOptions(rig);
+    ShadowPolicyRunnerOptions options = BaseOptions(base);
     options.store = nullptr;
     expect_error(options);
   }
   {
-    Rig rig = MockRig();
-    ShadowPolicyRunnerOptions options = BaseOptions(rig);
+    ShadowPolicyRunnerOptions options = BaseOptions(base);
     options.clock_origin = {-1, 0};
     expect_error(options);
     options.clock_origin = {0, -1};
@@ -597,18 +663,25 @@ TEST(ShadowPolicyRunnerTest, S10OptionErrors) {
 }
 
 TEST(ShadowPolicyRunnerTest, S10StepArgumentErrors) {
-  Rig rig = MockRig(/*complete_on_submit=*/false, /*ticks_per_step=*/0);
+  // Tick mode with one grant per step: a queue call by a rejected step would
+  // complete the pending request, and the recorder would see it.
+  Rig rig = MockRig(/*complete_on_submit=*/false, /*ticks_per_step=*/1,
+                    /*origin=*/{}, /*record=*/true);
   const auto expect_rejected = [&](int64_t k, int64_t t, size_t outstanding) {
     const StepResult step = rig.runner->Step(k, t, Inputs("sha256:step"));
     EXPECT_TRUE(step.error) << k << " " << t;
     EXPECT_TRUE(step.resolutions.empty());
     EXPECT_TRUE(step.submitted_request_id.empty());
     EXPECT_EQ(rig.runner->outstanding(), outstanding);
+    EXPECT_EQ(rig.recorder->seen().size(), 0u) << k << " " << t;
   };
 
   expect_rejected(0, -1, 0);
-  EXPECT_FALSE(rig.runner->Step(1, kDt, Inputs("sha256:step")).error);
+  const StepResult first = rig.runner->Step(1, kDt, Inputs("sha256:step"));
+  EXPECT_FALSE(first.error);
+  EXPECT_TRUE(first.resolutions.empty());
   EXPECT_EQ(rig.runner->outstanding(), 1u);
+  EXPECT_EQ(rig.recorder->seen().size(), 0u);
 
   expect_rejected(1, 2 * kDt, 1);
   expect_rejected(0, 2 * kDt, 1);
@@ -619,57 +692,140 @@ TEST(ShadowPolicyRunnerTest, S10StepArgumentErrors) {
   const StepResult next = rig.runner->Step(2, 2 * kDt, Inputs("sha256:step"));
   EXPECT_FALSE(next.error);
   EXPECT_FALSE(next.submitted_request_id.empty());
-  EXPECT_EQ(rig.runner->outstanding(), 2u);
+  ASSERT_EQ(next.resolutions.size(), 1u);
+  EXPECT_EQ(next.resolutions[0].submit_k, 1);
+  EXPECT_EQ(next.resolutions[0].outcome, Outcome::kActive);
+  EXPECT_EQ(rig.recorder->seen().size(), 1u);
+  EXPECT_EQ(rig.runner->outstanding(), 1u);
 }
 
-std::vector<std::string> RunMockSync() {
+void ExpectSameTime(ClockReading a, ClockReading b) {
+  EXPECT_EQ(a.seconds, b.seconds);
+  EXPECT_EQ(a.nanos, b.nanos);
+}
+
+void ExpectSameCommon(const inference::InferenceCommonView& a,
+                      const inference::InferenceCommonView& b) {
+  EXPECT_EQ(a.header_present, b.header_present);
+  EXPECT_EQ(a.validity_present, b.validity_present);
+  EXPECT_EQ(a.validity_state, b.validity_state);
+  EXPECT_EQ(a.frame_id, b.frame_id);
+  EXPECT_EQ(a.source_time_present, b.source_time_present);
+  ExpectSameTime(a.source_time, b.source_time);
+  EXPECT_EQ(a.state_epoch, b.state_epoch);
+  EXPECT_EQ(a.world_snapshot_id, b.world_snapshot_id);
+  EXPECT_EQ(a.deadline_present, b.deadline_present);
+  ExpectSameTime(a.deadline, b.deadline);
+  EXPECT_EQ(a.validity_horizon_present, b.validity_horizon_present);
+  EXPECT_EQ(a.validity_horizon.seconds, b.validity_horizon.seconds);
+  EXPECT_EQ(a.validity_horizon.nanos, b.validity_horizon.nanos);
+  EXPECT_EQ(a.confidence_present, b.confidence_present);
+  EXPECT_EQ(a.confidence, b.confidence);
+  EXPECT_EQ(a.uncertainty_present, b.uncertainty_present);
+  EXPECT_EQ(a.uncertainty, b.uncertainty);
+  EXPECT_EQ(a.input_digest, b.input_digest);
+  EXPECT_EQ(a.provenance_present, b.provenance_present);
+  EXPECT_EQ(a.provenance_model_id, b.provenance_model_id);
+  EXPECT_EQ(a.metadata_present, b.metadata_present);
+}
+
+// Compares every field of every resolution. Motions by SerializeAsString,
+// shells by every InferenceResultView field.
+void ExpectSameStep(const StepResult& a, const StepResult& b) {
+  EXPECT_EQ(a.error, b.error);
+  EXPECT_EQ(a.submitted_request_id, b.submitted_request_id);
+  ASSERT_EQ(a.resolutions.size(), b.resolutions.size());
+  for (size_t i = 0; i < a.resolutions.size(); ++i) {
+    const ShadowPolicyResolution& x = a.resolutions[i];
+    const ShadowPolicyResolution& y = b.resolutions[i];
+    EXPECT_EQ(x.submit_k, y.submit_k);
+    EXPECT_EQ(x.request_id, y.request_id);
+    EXPECT_EQ(x.outcome, y.outcome);
+    EXPECT_EQ(x.status, y.status);
+    EXPECT_EQ(x.envelope_error, y.envelope_error);
+    EXPECT_EQ(x.digest_mismatch, y.digest_mismatch);
+    ASSERT_EQ(x.result.has_value(), y.result.has_value());
+    if (x.result.has_value()) {
+      const inference::InferenceResultView xv = x.result->View();
+      const inference::InferenceResultView yv = y.result->View();
+      ExpectSameCommon(xv.common, yv.common);
+      EXPECT_EQ(xv.oip_result.message_set, yv.oip_result.message_set);
+      EXPECT_EQ(xv.oip_result.model_name, yv.oip_result.model_name);
+      EXPECT_EQ(xv.oip_result.model_version, yv.oip_result.model_version);
+      EXPECT_EQ(xv.oip_result.request_id, yv.oip_result.request_id);
+      EXPECT_EQ(xv.output_digest, yv.output_digest);
+    }
+    ASSERT_EQ(x.motion.has_value(), y.motion.has_value());
+    if (x.motion.has_value()) {
+      EXPECT_EQ(x.motion->SerializeAsString(), y.motion->SerializeAsString());
+    }
+  }
+}
+
+void ExpectSameRuns(const std::vector<StepResult>& a,
+                    const std::vector<StepResult>& b) {
+  ASSERT_FALSE(a.empty());
+  ASSERT_EQ(a.size(), b.size());
+  for (size_t i = 0; i < a.size(); ++i) {
+    ExpectSameStep(a[i], b[i]);
+  }
+}
+
+std::vector<StepResult> RunMockSync() {
   Rig rig = MockRig();
-  std::vector<std::string> dump;
+  std::vector<StepResult> run;
   for (int64_t k = 0; k < 4; ++k) {
-    dump.push_back(DumpStep(rig.runner->Step(
-        k, StepTime(k), Inputs(k == 2 ? "sha256:x" : "sha256:step"))));
+    run.push_back(rig.runner->Step(
+        k, StepTime(k), Inputs(k == 2 ? "sha256:x" : "sha256:step")));
   }
-  return dump;
+  return run;
 }
 
-std::vector<std::string> RunQueueFull() {
+std::vector<StepResult> RunQueueFull() {
   Rig rig = MockRig(/*complete_on_submit=*/false, /*ticks_per_step=*/0);
-  std::vector<std::string> dump;
+  std::vector<StepResult> run;
   for (int64_t k = 0; k <= 8; ++k) {
-    dump.push_back(DumpStep(rig.runner->Step(k, k, Inputs("sha256:step"))));
+    run.push_back(rig.runner->Step(k, k, Inputs("sha256:step")));
   }
-  dump.push_back(
-      DumpStep(rig.runner->Step(9, 2 * kDt + 8, Inputs("sha256:step"))));
-  return dump;
+  run.push_back(rig.runner->Step(9, 2 * kDt + 8, Inputs("sha256:step")));
+  return run;
 }
 
-std::vector<std::string> RunRecorded() {
-  std::vector<std::string> dump;
+std::vector<StepResult> RunRecorded() {
+  std::vector<StepResult> run;
   for (const char* digest :
        {"sha256:policy-late", "sha256:policy-active", "sha256:policy-mismatch",
         "sha256:policy-corrupt"}) {
     Rig rig = RecordedRig();
-    dump.push_back(DumpStep(rig.runner->Step(0, StepTime(0), Inputs(digest))));
+    run.push_back(rig.runner->Step(0, StepTime(0), Inputs(digest)));
   }
-  return dump;
+  return run;
 }
 
-std::vector<std::string> RunNotTerminal() {
+std::vector<StepResult> RunNotTerminal() {
   Rig rig = MockRig(/*complete_on_submit=*/false, /*ticks_per_step=*/0);
-  std::vector<std::string> dump;
+  std::vector<StepResult> run;
   for (int64_t k = 0; k < 6; ++k) {
-    dump.push_back(
-        DumpStep(rig.runner->Step(k, StepTime(k), Inputs("sha256:step"))));
+    run.push_back(rig.runner->Step(k, StepTime(k), Inputs("sha256:step")));
   }
-  return dump;
+  return run;
+}
+
+std::vector<StepResult> RunLateCompletion() {
+  Rig rig = MockRig(/*complete_on_submit=*/false, /*ticks_per_step=*/1);
+  std::vector<StepResult> run;
+  run.push_back(rig.runner->Step(0, StepTime(0), Inputs("sha256:step")));
+  run.push_back(rig.runner->Step(1, 500'000'000, Inputs("sha256:step")));
+  run.push_back(rig.runner->Step(2, 625'000'000, Inputs("sha256:step")));
+  return run;
 }
 
 TEST(ShadowPolicyRunnerTest, S11RepeatIsBitIdentical) {
-  EXPECT_EQ(RunMockSync(), RunMockSync());
-  EXPECT_EQ(RunQueueFull(), RunQueueFull());
-  EXPECT_EQ(RunRecorded(), RunRecorded());
-  EXPECT_EQ(RunNotTerminal(), RunNotTerminal());
-  EXPECT_FALSE(RunQueueFull().empty());
+  ExpectSameRuns(RunMockSync(), RunMockSync());
+  ExpectSameRuns(RunQueueFull(), RunQueueFull());
+  ExpectSameRuns(RunRecorded(), RunRecorded());
+  ExpectSameRuns(RunNotTerminal(), RunNotTerminal());
+  ExpectSameRuns(RunLateCompletion(), RunLateCompletion());
 }
 
 TEST(ShadowPolicyRunnerTest, S12SourceScan) {

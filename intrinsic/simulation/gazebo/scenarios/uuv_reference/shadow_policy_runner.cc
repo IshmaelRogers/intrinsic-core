@@ -121,13 +121,20 @@ embodiment::ClockReading ShadowPolicyRunner::AtNs(int64_t ns) const {
 }
 
 void ShadowPolicyRunner::Classify(
-    const Pending& pending, const PollOutcome& reaped,
+    const Pending& pending, const PollOutcome& reaped, int64_t sim_time_ns,
     std::vector<ShadowPolicyResolution>& out) const {
   ShadowPolicyResolution resolution;
   resolution.submit_k = pending.submit_k;
   resolution.request_id = pending.request_id;
   resolution.status = reaped.status;
   resolution.result = reaped.result;
+  if (reaped.status == Status::kComplete && sim_time_ns > pending.deadline_ns) {
+    // Lock v1.1 (F1): a completion reaped after its deadline has no usable
+    // motion. The shell stays attached, the motion does not.
+    resolution.outcome = ShadowPolicyOutcome::kLate;
+    out.push_back(std::move(resolution));
+    return;
+  }
   const intrinsic_proto::vehicle::DesiredMotion* motion = nullptr;
   if (reaped.status == Status::kComplete && reaped.result.has_value()) {
     motion = options_.store->Find(reaped.result->View().output_digest);
@@ -170,7 +177,8 @@ StepResult ShadowPolicyRunner::Step(int64_t k, int64_t sim_time_ns,
   for (Pending& pending : pending_) {
     PollOutcome polled = client_->Poll(pending.request_id);
     if (polled.status != Status::kOk) {
-      Classify(pending, client_->Reap(pending.request_id), step.resolutions);
+      Classify(pending, client_->Reap(pending.request_id), sim_time_ns,
+               step.resolutions);
       continue;
     }
     if (sim_time_ns <= pending.deadline_ns) {
@@ -180,12 +188,13 @@ StepResult ShadowPolicyRunner::Step(int64_t k, int64_t sim_time_ns,
     const inference::CancelOutcome cancelled =
         client_->Cancel(pending.request_id);
     if (cancelled.status == Status::kAlreadyComplete) {
-      Classify(pending, client_->Reap(pending.request_id), step.resolutions);
+      Classify(pending, client_->Reap(pending.request_id), sim_time_ns,
+               step.resolutions);
       continue;
     }
     PollOutcome terminal;
     terminal.status = cancelled.status;
-    Classify(pending, terminal, step.resolutions);
+    Classify(pending, terminal, sim_time_ns, step.resolutions);
   }
   pending_ = std::move(still_pending);
 
@@ -231,7 +240,8 @@ StepResult ShadowPolicyRunner::Step(int64_t k, int64_t sim_time_ns,
   Pending pending{submitted.request_id, k, deadline_ns};
   const PollOutcome polled = client_->Poll(pending.request_id);
   if (polled.status != Status::kOk) {
-    Classify(pending, client_->Reap(pending.request_id), step.resolutions);
+    Classify(pending, client_->Reap(pending.request_id), sim_time_ns,
+             step.resolutions);
   } else {
     pending_.push_back(std::move(pending));
   }
