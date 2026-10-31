@@ -440,3 +440,33 @@ py_test(
         "//intrinsic/world/world_snapshot:world_snapshot_policy_py",
     ],
 )
+
+cc_library(
+    name = "desired_motion_plan_adapter",
+    srcs = ["desired_motion_plan_adapter.cc"],
+    hdrs = ["desired_motion_plan_adapter.h"],
+    deps = [
+        ":vehicle_planner_registry",
+        ":vehicle_state_space",
+        "//intrinsic/embodiment:frame_policy",
+        "//intrinsic/vehicle:vehicle_contract_policy",
+    ],
+)
+
+cc_test(
+    name = "desired_motion_plan_adapter_test",
+    size = "small",
+    srcs = ["desired_motion_plan_adapter_test.cc"],
+    deps = [
+        ":desired_motion_plan_adapter",
+        ":vehicle_kinodynamic_baseline",
+        ":vehicle_motion_primitives",
+        ":vehicle_planner_registry",
+        ":vehicle_primitive_propagation",
+        ":vehicle_state_space",
+        "//intrinsic/vehicle:trajectory_contract_policy",
+        "//intrinsic/world/world_snapshot:world_snapshot_policy",
+        "//intrinsic_vehicle/intrinsic/vehicle/dynamics",
+        "@com_google_googletest//:gtest_main",
+    ],
+)
