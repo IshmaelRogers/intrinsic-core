@@ -748,3 +748,51 @@ py_test(
         ":safety_rule_result_py",
     ],
 )
+
+cc_library(
+    name = "reference_safety_filter",
+    srcs = ["reference_safety_filter.cc"],
+    hdrs = ["reference_safety_filter.h"],
+    deps = [
+        ":angular_rate_max_rule",
+        ":attitude_bound_rule",
+        ":authority_transition_assessor",
+        ":authority_transition_policy",
+        ":depth_max_rule",
+        ":geofence_rule",
+        ":heave_rate_bound_rule",
+        ":non_finite_rule",
+        ":rule_aggregation",
+        ":safety_decision_assessor",
+        ":safety_decision_policy",
+        ":safety_rule_result",
+        ":speed_max_rule",
+        ":state_age_rule",
+        "//intrinsic/vehicle:vehicle_contract_policy",
+        "@intrinsic_apis//intrinsic/embodiment/proto:stamped_header_cc_proto",
+        "@intrinsic_apis//intrinsic/safety/proto:authority_mode_cc_proto",
+        "@intrinsic_apis//intrinsic/safety/proto:safety_decision_cc_proto",
+        "@intrinsic_apis//intrinsic/vehicle/proto:vehicle_command_cc_proto",
+        "@intrinsic_apis//intrinsic/vehicle/proto:vehicle_state_cc_proto",
+        "@intrinsic_apis//intrinsic/world/proto:world_snapshot_descriptor_cc_proto",
+    ],
+)
+
+cc_test(
+    name = "reference_safety_filter_test",
+    size = "small",
+    srcs = ["reference_safety_filter_test.cc"],
+    deps = [
+        ":reference_safety_filter",
+        ":safety_decision_assessor",
+        ":safety_decision_policy",
+        ":state_age_rule",
+        "@com_google_googletest//:gtest_main",
+        "@intrinsic_apis//intrinsic/embodiment/proto:stamped_header_cc_proto",
+        "@intrinsic_apis//intrinsic/safety/proto:authority_mode_cc_proto",
+        "@intrinsic_apis//intrinsic/safety/proto:safety_decision_cc_proto",
+        "@intrinsic_apis//intrinsic/vehicle/proto:vehicle_command_cc_proto",
+        "@intrinsic_apis//intrinsic/vehicle/proto:vehicle_state_cc_proto",
+        "@intrinsic_apis//intrinsic/world/proto:world_snapshot_descriptor_cc_proto",
+    ],
+)
