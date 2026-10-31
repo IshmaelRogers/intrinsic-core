@@ -60,3 +60,44 @@ cc_test(
 )
 
 # Later leaves append below.
+
+cc_library(
+    name = "replan_trigger",
+    srcs = ["replan_trigger.cc"],
+    hdrs = ["replan_trigger.h"],
+    deps = [
+        "//intrinsic/safety:clearance_rule",
+        "//intrinsic/vehicle:trajectory_contract_policy",
+        "//intrinsic_motion_planning/intrinsic/motion_planning/vehicle:vehicle_kinodynamic_baseline",
+        "//intrinsic_motion_planning/intrinsic/motion_planning/vehicle:vehicle_planner_deadline",
+        "//intrinsic_motion_planning/intrinsic/motion_planning/vehicle:vehicle_planner_registry",
+        "//intrinsic_motion_planning/intrinsic/motion_planning/vehicle:vehicle_primitive_propagation",
+        "//intrinsic_motion_planning/intrinsic/motion_planning/vehicle:vehicle_state_space",
+        "//intrinsic_motion_planning/intrinsic/motion_planning/vehicle:vehicle_trajectory_validity",
+        "//intrinsic_vehicle/intrinsic/vehicle/dynamics",
+    ],
+)
+
+cc_test(
+    name = "replan_trigger_test",
+    size = "small",
+    srcs = ["replan_trigger_test.cc"],
+    data = [
+        "replan_trigger.cc",
+        "replan_trigger.h",
+    ],
+    deps = [
+        ":replan_trigger",
+        "//intrinsic/vehicle:trajectory_contract_policy",
+        "//intrinsic/world/world_snapshot:world_snapshot_policy",
+        "//intrinsic_motion_planning/intrinsic/motion_planning/vehicle:vehicle_kinodynamic_baseline",
+        "//intrinsic_motion_planning/intrinsic/motion_planning/vehicle:vehicle_motion_primitives",
+        "//intrinsic_motion_planning/intrinsic/motion_planning/vehicle:vehicle_planner_deadline",
+        "//intrinsic_motion_planning/intrinsic/motion_planning/vehicle:vehicle_planner_registry",
+        "//intrinsic_motion_planning/intrinsic/motion_planning/vehicle:vehicle_primitive_propagation",
+        "//intrinsic_motion_planning/intrinsic/motion_planning/vehicle:vehicle_state_space",
+        "//intrinsic_motion_planning/intrinsic/motion_planning/vehicle:vehicle_trajectory_validity",
+        "//intrinsic_vehicle/intrinsic/vehicle/dynamics",
+        "@com_google_googletest//:gtest_main",
+    ],
+)

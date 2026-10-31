@@ -98,3 +98,78 @@ bazel test //intrinsic/simulation/gazebo/scenarios/uuv_reference:all
 L43-5, L43-6, L44-2, L44-4 and L44-9 append their targets and sections below
 the existing ones in `BUILD` and in this file. They do not reorder or edit the
 playback entries.
+
+## Replan trigger (L43-5, #265)
+
+Lock id `l43-5-replan-trigger-v1`. `EvaluateReplan` decides what to do when the
+validity binding changes. It is a plain C++ function with no Gazebo, HAL,
+driver, socket or `intrinsic_control` dependency, and it reads no clock, starts
+no thread and does no I/O. It never sets `deadline_present` and never registers
+a planner in a registry. Only a `cancel` flag can stop a replan.
+
+### Rule
+
+First match wins.
+
+1. `new_binding.snapshot_id == current_binding.snapshot_id` (byte equality):
+   `kUnchanged`. No check runs and no precondition is read.
+2. Preconditions: `kError` with a typed `input_error` and nothing run:
+   `active.status != kOk`, empty `active`, a sample without time or twist (or
+   with nanos out of range), a first sample time that is not 0 or times that are
+   not strictly increasing, `t_now_ns < 0`, a non-finite or non-unit
+   `truth_now`, or `goal_request.states_present == false`.
+3. `BuildRemainingTrajectory(active, truth_now, t_now_ns)`. `t_now_ns` is
+   playback time on `active` in integer nanoseconds. The result is `truth_now`
+   at time 0 followed by every sample with `sample_ns > t_now_ns`, rebased to
+   `double(sample_ns - t_now_ns) / 1e9`. At or past the last sample only
+   `truth_now` remains.
+4. Recheck with `CheckTrajectoryValidity` against the whole new binding
+   (`snapshot_id`, `descriptor`, `assess_skew`, `timings`, `query_time`,
+   `skew_policy`, `bounds`, `fence`, `pose_frame`, `min_clearance_m`) and one
+   template clearance sample per sample (replicated privately from the
+   baseline planner).
+   - `kOk`: `kKept`.
+   - `kBounds`, `kGeofence`, `kClearance`: replan.
+   - `kBadRequest`, `kStaleSnapshot`, `kFrameError`: `kError`, no replan. The
+     binding itself is malformed or stale, and the planner's start probe
+     ignores `kFrameError`, so a replan could report a false no-solution.
+5. Replan with a fresh `MakeKinodynamicBaselinePlanner` built from a copy of
+   `new_binding` whose `run_options` carry only `cancel` (`deadline_present`
+   stays false; any `run_options` left in `new_binding` is overwritten). The
+   request is `goal_request` unchanged except `start_state = truth_now`.
+   `kOk`: `kReplanned` with the trajectory. `kNoSolution`: `kNoSolution`.
+   Anything else (`kInvalidRequest`, `kCancelled`, `kDeadlineExceeded`):
+   `kError`. A null `dynamics` is `kInvalidRequest`.
+
+`ReplanStepResult` carries `input_error`, `recheck_ran`, `recheck`,
+`replan_ran` and `plan_status`, so a real `kInvalidRequest` replan can be told
+apart from the default value.
+
+### Binding ownership
+
+This leaf never mutates or stores a binding. After `kKept` or `kReplanned` the
+caller (L43-7) adopts `new_binding` as current. After `kNoSolution` or `kError`
+the L43-6 and L43-7 locks decide. Views borrowed from `new_binding`
+(`pose_frame`, `descriptor`) must outlive the call.
+
+### Mid-trajectory replans (for L43-6, L43-7, L43-8)
+
+With the replan fixture and `max_linear_speed = 0.6`, a replan at 0.5 s is
+`kNoSolution`. Once the vehicle is faster than 0.6 m/s (from 0.75 s on) the
+replan starts outside the new bounds, so the planner returns `kInvalidRequest`
+and the outcome is `kError`, not `kNoSolution`. A perception event at or after
+0.75 s therefore does not produce a no-solution outcome. The L43-4 `k_c` choice
+and the L43-6 and L43-7 locks must account for this.
+
+### Files
+
+| File | Content |
+| --- | --- |
+| `replan_trigger.{h,cc}` | `EvaluateReplan`, `BuildRemainingTrajectory` and the result types. |
+| `replan_trigger_test.cc` | Tests P1-P12 with a private copy of the replan-fixture binding. |
+
+### Build and test
+
+```
+bazel test //intrinsic/simulation/gazebo/scenarios/uuv_reference:replan_trigger_test
+```
