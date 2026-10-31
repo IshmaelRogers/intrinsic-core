@@ -268,3 +268,40 @@ access.
   cannot cause or contribute to a projection conflict.
 - In C++, `primary_rule_id` and `summary` are views of the inputs' views (or of
   a static literal), so they are valid only as long as the inputs' views are.
+
+## Implementation (L43-1)
+
+The reference safety filter is in `reference_safety_filter.h` and
+`reference_safety_filter.cc` (C++ only, namespace `intrinsic::safety`; target
+`//intrinsic/safety:reference_safety_filter`). It is opt-in, sim and test only,
+and is not part of the protected manipulator baseline. See the header for the
+API and `LOCK l43-1-reference-safety-filter-v1` on issue #261 for the contract.
+`ReferenceSafetyFilter::Evaluate` turns a requested `DesiredMotion` into one
+`SafetyDecision`. `ReferenceSafetyFilter::Surface` builds the SURFACE decision.
+
+Finding ids that the filter adds besides the rule ids:
+
+| Id | Severity | Meaning |
+|---|---|---|
+| `filter.intent.invalid` | CRITICAL | The requested intent is unusable. |
+| `filter.projection.invalid` | CRITICAL | A projected intent failed its checks. |
+| `filter.frame.unsupported` | ERROR | A pose intent is not in `world_enu`. |
+| `filter.objective.unsupported` | ERROR | A trajectory objective. |
+| `authority.<mode>` | ERROR | The authority gate denied the kind. |
+| `fallback.planner_no_solution` | CRITICAL | `Surface(kPlannerNoSolution)`. |
+| `fallback.dead_reckoning` | CRITICAL | `Surface(kDeadReckoning)`. |
+
+Behavior to know about:
+
+- Only `depth.max` and `speed.linear.max` can PROJECT. Any other PROJECT, and
+  any conflict between projections, becomes REJECT. The filter never returns
+  ABORT.
+- ACCEPT carries no `applied_intent` (the applied intent is the requested one).
+  PROJECT and SURFACE carry one.
+- The heave rate assumes a level body: `depth_rate = -body_twist.linear.z`.
+- The geofence checks the target point, not the path.
+- A bad config, an empty `snapshot_id`, a non-live held authority mode, a
+  missing trigger intent for `Surface`, and a decision that fails
+  `AssessSafetyDecisionProto` (for example a `snapshot_id` that is not 64
+  lowercase hex characters) return an error and no decision. They do not
+  advance the per-instance decision epoch.
