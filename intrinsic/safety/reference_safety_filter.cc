@@ -89,7 +89,7 @@ bool PositiveFinite(double value) {
   return std::isfinite(value) && value > 0.0;
 }
 
-bool FenceValid(const AabbGeofence &fence) {
+bool FenceValid(const AabbGeofence& fence) {
   return fence.frame_id == kWorldEnuFrameId && !fence.region_id.empty() &&
          std::isfinite(fence.min_x) && std::isfinite(fence.min_y) &&
          std::isfinite(fence.min_z) && std::isfinite(fence.max_x) &&
@@ -98,7 +98,7 @@ bool FenceValid(const AabbGeofence &fence) {
          fence.min_z <= fence.max_z;
 }
 
-bool ConfigValid(const ReferenceSafetyFilterConfig &config) {
+bool ConfigValid(const ReferenceSafetyFilterConfig& config) {
   return std::isfinite(config.surface_z_m) &&
          PositiveFinite(config.max_depth_m) &&
          PositiveFinite(config.max_linear_speed_m_s) &&
@@ -123,19 +123,16 @@ struct Finding {
   double projected_value = 0.0;
 };
 
-bool FindingLess(const Finding &a, const Finding &b) {
-  if (a.rule_id != b.rule_id)
-    return a.rule_id < b.rule_id;
-  if (a.severity != b.severity)
-    return a.severity < b.severity;
+bool FindingLess(const Finding& a, const Finding& b) {
+  if (a.rule_id != b.rule_id) return a.rule_id < b.rule_id;
+  if (a.severity != b.severity) return a.severity < b.severity;
   return a.summary < b.summary;
 }
 
 class Findings {
-public:
-  void Add(const SafetyRuleResult &result) {
-    if (!result.violated)
-      return;
+ public:
+  void Add(const SafetyRuleResult& result) {
+    if (!result.violated) return;
     items_.push_back(
         Finding{std::string(result.rule_id), result.severity,
                 std::string(result.summary), result.recommended_kind,
@@ -152,7 +149,7 @@ public:
   std::vector<SafetyRuleResult> RuleResults() const {
     std::vector<SafetyRuleResult> results;
     results.reserve(items_.size());
-    for (const Finding &item : items_) {
+    for (const Finding& item : items_) {
       results.push_back(SafetyRuleResult{true, item.rule_id, item.severity,
                                          item.summary, item.recommended_kind,
                                          item.has_projected_value,
@@ -167,33 +164,32 @@ public:
     return sorted;
   }
 
-private:
+ private:
   std::vector<Finding> items_;
 };
 
 // Maps the state proto onto the plain view. String views and spans point into
 // `state` and `sources`, which must outlive the view.
-vehicle::VehicleStateView
-VehicleStateViewFromProto(const VehicleState &state,
-                          std::vector<vehicle::SourceView> *sources) {
+vehicle::VehicleStateView VehicleStateViewFromProto(
+    const VehicleState& state, std::vector<vehicle::SourceView>* sources) {
   vehicle::VehicleStateView view;
   view.validity_present = state.header().has_validity();
   view.validity_state = state.header().validity().state();
   view.frame_id = state.header().frame_id();
   view.pose_present = state.has_pose_world_from_body();
-  const auto &pose = state.pose_world_from_body();
+  const auto& pose = state.pose_world_from_body();
   view.position = {pose.position().x(), pose.position().y(),
                    pose.position().z()};
   view.orientation = {pose.orientation().x(), pose.orientation().y(),
                       pose.orientation().z(), pose.orientation().w()};
   view.twist_present = state.has_body_twist();
-  const auto &twist = state.body_twist();
+  const auto& twist = state.body_twist();
   view.twist =
       vehicle::BodyVector{twist.linear_x_m_s(),    twist.linear_y_m_s(),
                           twist.linear_z_m_s(),    twist.angular_x_rad_s(),
                           twist.angular_y_rad_s(), twist.angular_z_rad_s()};
   view.acceleration_present = state.has_body_acceleration();
-  const auto &acceleration = state.body_acceleration();
+  const auto& acceleration = state.body_acceleration();
   view.acceleration = vehicle::BodyVector{
       acceleration.linear_x_m_s2(),    acceleration.linear_y_m_s2(),
       acceleration.linear_z_m_s2(),    acceleration.angular_x_rad_s2(),
@@ -208,7 +204,7 @@ VehicleStateViewFromProto(const VehicleState &state,
                               state.twist_covariance().values_size());
   sources->clear();
   sources->reserve(state.sources_size());
-  for (const auto &source : state.sources()) {
+  for (const auto& source : state.sources()) {
     sources->push_back(
         vehicle::SourceView{source.source_id(), source.has_validity(),
                             static_cast<int>(source.validity().state())});
@@ -220,10 +216,9 @@ VehicleStateViewFromProto(const VehicleState &state,
 // ZYX roll and pitch from a quaternion. The quaternion is normalised first.
 // Returns false when its norm is too small to normalise.
 bool RollPitchFromQuaternion(double x, double y, double z, double w,
-                             double *roll, double *pitch) {
+                             double* roll, double* pitch) {
   const double norm = std::sqrt(x * x + y * y + z * z + w * w);
-  if (!std::isfinite(norm) || norm < kMinQuaternionNorm)
-    return false;
+  if (!std::isfinite(norm) || norm < kMinQuaternionNorm) return false;
   x /= norm;
   y /= norm;
   z /= norm;
@@ -237,12 +232,13 @@ double Magnitude(double x, double y, double z) {
   return std::sqrt(x * x + y * y + z * z);
 }
 
-template <typename Timestamp> void SetTime(Timestamp *stamp, StateTime time) {
+template <typename Timestamp>
+void SetTime(Timestamp* stamp, StateTime time) {
   stamp->set_seconds(time.seconds);
   stamp->set_nanos(time.nanos);
 }
 
-bool IntentPasses(const DesiredMotion &intent) {
+bool IntentPasses(const DesiredMotion& intent) {
   const vehicle::DesiredMotionView view = DesiredMotionViewFromProto(intent);
   return vehicle::AssessDesiredMotion(view).accepted &&
          !EvaluateNonFiniteRule(view).violated;
@@ -250,43 +246,42 @@ bool IntentPasses(const DesiredMotion &intent) {
 
 std::string_view AuthorityName(ProtoAuthorityMode mode) {
   switch (mode) {
-  case intrinsic_proto::safety::AUTHORITY_MODE_SHADOW:
-    return "authority.shadow";
-  case intrinsic_proto::safety::AUTHORITY_MODE_RECOMMEND:
-    return "authority.recommend";
-  case intrinsic_proto::safety::AUTHORITY_MODE_REVOKED:
-    return "authority.revoked";
-  case intrinsic_proto::safety::AUTHORITY_MODE_EMERGENCY:
-    return "authority.emergency";
-  default:
-    return "authority.constrained";
+    case intrinsic_proto::safety::AUTHORITY_MODE_SHADOW:
+      return "authority.shadow";
+    case intrinsic_proto::safety::AUTHORITY_MODE_RECOMMEND:
+      return "authority.recommend";
+    case intrinsic_proto::safety::AUTHORITY_MODE_REVOKED:
+      return "authority.revoked";
+    case intrinsic_proto::safety::AUTHORITY_MODE_EMERGENCY:
+      return "authority.emergency";
+    default:
+      return "authority.constrained";
   }
 }
 
 // D43-8 A. SHADOW, RECOMMEND and CONSTRAINED use the CONSTRAINED row. A denied
 // kind becomes REJECT and its applied intent is dropped.
-void GateAuthority(ProtoAuthorityMode held, ProtoDecisionKind *kind,
-                   bool *has_applied, Findings *findings) {
+void GateAuthority(ProtoAuthorityMode held, ProtoDecisionKind* kind,
+                   bool* has_applied, Findings* findings) {
   const bool uses_own_row =
       held == intrinsic_proto::safety::AUTHORITY_MODE_REVOKED ||
       held == intrinsic_proto::safety::AUTHORITY_MODE_EMERGENCY;
   const ProtoAuthorityMode row =
       uses_own_row ? held : intrinsic_proto::safety::AUTHORITY_MODE_CONSTRAINED;
-  if (AssessDecisionKindUnderAuthority(row, *kind))
-    return;
+  if (AssessDecisionKindUnderAuthority(row, *kind)) return;
   *kind = intrinsic_proto::safety::SAFETY_DECISION_KIND_REJECT;
   *has_applied = false;
   findings->AddReject(AuthorityName(held), kSeverityError, kAuthoritySummary);
 }
 
-ReferenceSafetyFilterResult
-BuildDecision(ProtoDecisionKind kind, const DesiredMotion *applied,
-              const Findings &findings, const DesiredMotion &requested,
-              const WorldSnapshotDescriptor &snapshot, StateTime query_time,
-              uint64_t epoch) {
+ReferenceSafetyFilterResult BuildDecision(
+    ProtoDecisionKind kind, const DesiredMotion* applied,
+    const Findings& findings, const DesiredMotion& requested,
+    const WorldSnapshotDescriptor& snapshot, StateTime query_time,
+    uint64_t epoch) {
   ReferenceSafetyFilterResult result;
   SafetyDecision decision;
-  auto *header = decision.mutable_header();
+  auto* header = decision.mutable_header();
   header->mutable_validity()->set_state(Validity::STATE_VALID);
   SetTime(header->mutable_source_time(), query_time);
   header->set_frame_id(requested.header().frame_id());
@@ -302,8 +297,8 @@ BuildDecision(ProtoDecisionKind kind, const DesiredMotion *applied,
     *decision.mutable_applied_intent() = *applied;
   }
   decision.set_snapshot_id(snapshot.snapshot_id());
-  for (const Finding &finding : findings.Sorted()) {
-    SafetyFinding *out = decision.add_findings();
+  for (const Finding& finding : findings.Sorted()) {
+    SafetyFinding* out = decision.add_findings();
     out->set_rule_id(finding.rule_id);
     out->set_severity(static_cast<SafetyFindingSeverity>(finding.severity));
     out->set_summary(finding.summary);
@@ -318,19 +313,18 @@ BuildDecision(ProtoDecisionKind kind, const DesiredMotion *applied,
   return result;
 }
 
-} // namespace
+}  // namespace
 
 ReferenceSafetyFilter::ReferenceSafetyFilter(
-    const ReferenceSafetyFilterConfig &config)
+    const ReferenceSafetyFilterConfig& config)
     : config_(config) {}
 
 uint64_t ReferenceSafetyFilter::next_epoch() const { return epoch_; }
 
-ReferenceSafetyFilterResult
-ReferenceSafetyFilter::Evaluate(const DesiredMotion &requested,
-                                const VehicleState &state,
-                                const WorldSnapshotDescriptor &snapshot,
-                                ProtoAuthorityMode held, StateTime query_time) {
+ReferenceSafetyFilterResult ReferenceSafetyFilter::Evaluate(
+    const DesiredMotion& requested, const VehicleState& state,
+    const WorldSnapshotDescriptor& snapshot, ProtoAuthorityMode held,
+    StateTime query_time) {
   ReferenceSafetyFilterResult result;
   if (!ConfigValid(config_)) {
     result.error = ReferenceSafetyFilterError::kInvalidConfig;
@@ -386,7 +380,7 @@ ReferenceSafetyFilter::Evaluate(const DesiredMotion &requested,
       findings.Add(EvaluateAttitudeRollMaxRule(roll, config_.max_roll_rad));
     }
   } else if (intent.objective == vehicle::ObjectiveKind::kTwist) {
-    const vehicle::BodyVector &twist = intent.twist;
+    const vehicle::BodyVector& twist = intent.twist;
     findings.Add(EvaluateSpeedMaxRule(
         Magnitude(twist.linear_x, twist.linear_y, twist.linear_z),
         config_.max_linear_speed_m_s));
@@ -421,12 +415,12 @@ ReferenceSafetyFilter::Evaluate(const DesiredMotion &requested,
           ->set_z(config_.surface_z_m - config_.max_depth_m);
       has_applied = true;
     } else if (primary_rule_id == kSpeedMaxRuleId) {
-      const vehicle::BodyVector &twist = intent.twist;
+      const vehicle::BodyVector& twist = intent.twist;
       const double speed =
           Magnitude(twist.linear_x, twist.linear_y, twist.linear_z);
       const double scale = config_.max_linear_speed_m_s / speed;
       applied = requested;
-      auto *body_twist = applied.mutable_twist()->mutable_body_twist();
+      auto* body_twist = applied.mutable_twist()->mutable_body_twist();
       body_twist->set_linear_x_m_s(twist.linear_x * scale);
       body_twist->set_linear_y_m_s(twist.linear_y * scale);
       body_twist->set_linear_z_m_s(twist.linear_z * scale);
@@ -446,14 +440,13 @@ ReferenceSafetyFilter::Evaluate(const DesiredMotion &requested,
   GateAuthority(held, &kind, &has_applied, &findings);
   result = BuildDecision(kind, has_applied ? &applied : nullptr, findings,
                          requested, snapshot, query_time, epoch_);
-  if (result.error == ReferenceSafetyFilterError::kOk)
-    ++epoch_;
+  if (result.error == ReferenceSafetyFilterError::kOk) ++epoch_;
   return result;
 }
 
 ReferenceSafetyFilterResult ReferenceSafetyFilter::Surface(
-    SurfaceTrigger trigger, const DesiredMotion &requested, double truth_x_m,
-    double truth_y_m, const WorldSnapshotDescriptor &snapshot,
+    SurfaceTrigger trigger, const DesiredMotion& requested, double truth_x_m,
+    double truth_y_m, const WorldSnapshotDescriptor& snapshot,
     ProtoAuthorityMode held, StateTime query_time) {
   ReferenceSafetyFilterResult result;
   if (!ConfigValid(config_)) {
@@ -486,11 +479,11 @@ ReferenceSafetyFilterResult ReferenceSafetyFilter::Surface(
     findings.AddReject(kIntentInvalidId, kSeverityCritical,
                        kIntentInvalidSummary);
   } else {
-    auto *header = applied.mutable_header();
+    auto* header = applied.mutable_header();
     header->mutable_validity()->set_state(Validity::STATE_VALID);
     SetTime(header->mutable_source_time(), query_time);
     header->set_frame_id(std::string(kWorldEnuFrameId));
-    auto *pose = applied.mutable_pose()->mutable_pose_world_from_body();
+    auto* pose = applied.mutable_pose()->mutable_pose_world_from_body();
     pose->mutable_position()->set_x(truth_x_m);
     pose->mutable_position()->set_y(truth_y_m);
     pose->mutable_position()->set_z(config_.surface_z_m - kSurfaceDepthOffsetM);
@@ -510,9 +503,8 @@ ReferenceSafetyFilterResult ReferenceSafetyFilter::Surface(
   GateAuthority(held, &kind, &has_applied, &findings);
   result = BuildDecision(kind, has_applied ? &applied : nullptr, findings,
                          requested, snapshot, query_time, epoch_);
-  if (result.error == ReferenceSafetyFilterError::kOk)
-    ++epoch_;
+  if (result.error == ReferenceSafetyFilterError::kOk) ++epoch_;
   return result;
 }
 
-} // namespace intrinsic::safety
+}  // namespace intrinsic::safety

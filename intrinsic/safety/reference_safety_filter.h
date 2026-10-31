@@ -88,36 +88,36 @@ struct ReferenceSafetyFilterResult {
 // Not thread-safe: use one caller per instance. The decision epoch is per
 // instance. It starts at 1 and advances only when a decision is returned.
 class ReferenceSafetyFilter {
-public:
-  explicit ReferenceSafetyFilter(const ReferenceSafetyFilterConfig &config);
+ public:
+  explicit ReferenceSafetyFilter(const ReferenceSafetyFilterConfig& config);
 
   // Judges `requested`. `state` supplies the state-age and non-finite checks.
   // The heave rate assumes a level body: depth_rate = -body_twist.linear.z.
   // `held` must be a live authority mode. `query_time` is simulation time.
-  ReferenceSafetyFilterResult
-  Evaluate(const intrinsic_proto::vehicle::DesiredMotion &requested,
-           const intrinsic_proto::vehicle::VehicleState &state,
-           const intrinsic_proto::world::WorldSnapshotDescriptor &snapshot,
-           intrinsic_proto::safety::AuthorityMode held, StateTime query_time);
+  ReferenceSafetyFilterResult Evaluate(
+      const intrinsic_proto::vehicle::DesiredMotion& requested,
+      const intrinsic_proto::vehicle::VehicleState& state,
+      const intrinsic_proto::world::WorldSnapshotDescriptor& snapshot,
+      intrinsic_proto::safety::AuthorityMode held, StateTime query_time);
 
   // Builds a SURFACE decision for a fallback trigger. `requested` is the
   // intent that was superseded: it must have its objective set, and its digest
   // is recorded. truth_x_m and truth_y_m come from the caller.
-  ReferenceSafetyFilterResult
-  Surface(SurfaceTrigger trigger,
-          const intrinsic_proto::vehicle::DesiredMotion &requested,
-          double truth_x_m, double truth_y_m,
-          const intrinsic_proto::world::WorldSnapshotDescriptor &snapshot,
-          intrinsic_proto::safety::AuthorityMode held, StateTime query_time);
+  ReferenceSafetyFilterResult Surface(
+      SurfaceTrigger trigger,
+      const intrinsic_proto::vehicle::DesiredMotion& requested,
+      double truth_x_m, double truth_y_m,
+      const intrinsic_proto::world::WorldSnapshotDescriptor& snapshot,
+      intrinsic_proto::safety::AuthorityMode held, StateTime query_time);
 
   // The epoch the next returned decision will carry. For tests.
   uint64_t next_epoch() const;
 
-private:
+ private:
   ReferenceSafetyFilterConfig config_;
   uint64_t epoch_ = 1;
 };
 
-} // namespace intrinsic::safety
+}  // namespace intrinsic::safety
 
-#endif // INTRINSIC_SAFETY_REFERENCE_SAFETY_FILTER_H_
+#endif  // INTRINSIC_SAFETY_REFERENCE_SAFETY_FILTER_H_

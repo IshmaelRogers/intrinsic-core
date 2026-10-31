@@ -21,6 +21,7 @@
 #include <string>
 #include <vector>
 
+#include "gtest/gtest.h"
 #include "intrinsic/embodiment/proto/stamped_header.pb.h"
 #include "intrinsic/safety/proto/authority_mode.pb.h"
 #include "intrinsic/safety/proto/safety_decision.pb.h"
@@ -29,7 +30,6 @@
 #include "intrinsic/vehicle/proto/vehicle_command.pb.h"
 #include "intrinsic/vehicle/proto/vehicle_state.pb.h"
 #include "intrinsic/world/proto/world_snapshot_descriptor.pb.h"
-#include "gtest/gtest.h"
 
 namespace intrinsic::safety {
 namespace {
@@ -76,13 +76,13 @@ ReferenceSafetyFilterConfig Config() {
 
 std::string SnapshotId(char fill = 'a') { return std::string(64, fill); }
 
-WorldSnapshotDescriptor Snapshot(const std::string &id) {
+WorldSnapshotDescriptor Snapshot(const std::string& id) {
   WorldSnapshotDescriptor snapshot;
   snapshot.set_snapshot_id(id);
   return snapshot;
 }
 
-void FillHeader(StampedHeader *header, const std::string &frame_id,
+void FillHeader(StampedHeader* header, const std::string& frame_id,
                 StateTime time) {
   header->set_sequence(1);
   header->mutable_source_time()->set_seconds(time.seconds);
@@ -94,12 +94,12 @@ void FillHeader(StampedHeader *header, const std::string &frame_id,
 }
 
 // Single-axis or ZYX (yaw 0) rotation.
-void SetOrientation(DesiredMotion *motion, double roll, double pitch) {
+void SetOrientation(DesiredMotion* motion, double roll, double pitch) {
   const double cr = std::cos(roll / 2.0);
   const double sr = std::sin(roll / 2.0);
   const double cp = std::cos(pitch / 2.0);
   const double sp = std::sin(pitch / 2.0);
-  auto *q = motion->mutable_pose()
+  auto* q = motion->mutable_pose()
                 ->mutable_pose_world_from_body()
                 ->mutable_orientation();
   q->set_w(cr * cp);
@@ -110,10 +110,10 @@ void SetOrientation(DesiredMotion *motion, double roll, double pitch) {
 
 DesiredMotion PoseIntent(double x, double y, double z, double roll = 0.0,
                          double pitch = 0.0,
-                         const std::string &frame = "world_enu") {
+                         const std::string& frame = "world_enu") {
   DesiredMotion motion;
   FillHeader(motion.mutable_header(), frame, kQueryTime);
-  auto *position =
+  auto* position =
       motion.mutable_pose()->mutable_pose_world_from_body()->mutable_position();
   position->set_x(x);
   position->set_y(y);
@@ -126,7 +126,7 @@ DesiredMotion TwistIntent(double lx, double ly, double lz, double ax = 0.0,
                           double ay = 0.0, double az = 0.0) {
   DesiredMotion motion;
   FillHeader(motion.mutable_header(), "body", kQueryTime);
-  auto *twist = motion.mutable_twist()->mutable_body_twist();
+  auto* twist = motion.mutable_twist()->mutable_body_twist();
   twist->set_linear_x_m_s(lx);
   twist->set_linear_y_m_s(ly);
   twist->set_linear_z_m_s(lz);
@@ -153,16 +153,16 @@ VehicleState FreshState(StateTime age_origin = kQueryTime,
   return state;
 }
 
-std::vector<std::string> Ids(const SafetyDecision &decision) {
+std::vector<std::string> Ids(const SafetyDecision& decision) {
   std::vector<std::string> ids;
-  for (const auto &finding : decision.findings()) {
+  for (const auto& finding : decision.findings()) {
     ids.push_back(finding.rule_id());
   }
   return ids;
 }
 
 // Every returned decision must pass the structural assessor.
-void ExpectAssessed(const ReferenceSafetyFilterResult &result) {
+void ExpectAssessed(const ReferenceSafetyFilterResult& result) {
   ASSERT_EQ(result.error, ReferenceSafetyFilterError::kOk);
   const SafetyDecisionAssessment assessment =
       AssessSafetyDecisionProto(result.decision);
@@ -170,16 +170,16 @@ void ExpectAssessed(const ReferenceSafetyFilterResult &result) {
   EXPECT_EQ(assessment.error, SafetyDecisionError::kNone);
 }
 
-ReferenceSafetyFilterResult
-Eval(ReferenceSafetyFilter &filter, const DesiredMotion &requested,
-     ProtoAuthorityMode held = kConstrained,
-     const VehicleState &state = FreshState(),
-     const std::string &snapshot_id = SnapshotId()) {
+ReferenceSafetyFilterResult Eval(
+    ReferenceSafetyFilter& filter, const DesiredMotion& requested,
+    ProtoAuthorityMode held = kConstrained,
+    const VehicleState& state = FreshState(),
+    const std::string& snapshot_id = SnapshotId()) {
   return filter.Evaluate(requested, state, Snapshot(snapshot_id), held,
                          kQueryTime);
 }
 
-void ExpectEmptyError(const ReferenceSafetyFilterResult &result,
+void ExpectEmptyError(const ReferenceSafetyFilterResult& result,
                       ReferenceSafetyFilterError error) {
   EXPECT_EQ(result.error, error);
   EXPECT_EQ(result.decision.ByteSizeLong(), 0u);
@@ -222,7 +222,7 @@ TEST(ReferenceSafetyFilterTest, F3DeepPoseIsProjectedToMaxDepth) {
   ExpectAssessed(result);
   EXPECT_EQ(result.decision.kind(), kProject);
   ASSERT_TRUE(result.decision.has_applied_intent());
-  const auto &applied =
+  const auto& applied =
       result.decision.applied_intent().pose().pose_world_from_body();
   EXPECT_DOUBLE_EQ(applied.position().z(), 2.0 - 100.0);
   EXPECT_DOUBLE_EQ(applied.position().x(), 5.0);
@@ -238,7 +238,7 @@ TEST(ReferenceSafetyFilterTest, F4FastTwistIsProjectedToMaxSpeed) {
   ExpectAssessed(result);
   EXPECT_EQ(result.decision.kind(), kProject);
   ASSERT_TRUE(result.decision.has_applied_intent());
-  const auto &twist = result.decision.applied_intent().twist().body_twist();
+  const auto& twist = result.decision.applied_intent().twist().body_twist();
   EXPECT_NEAR(twist.linear_x_m_s(), 0.9, 1e-12);
   EXPECT_NEAR(twist.linear_y_m_s(), 1.2, 1e-12);
   EXPECT_DOUBLE_EQ(twist.linear_z_m_s(), 0.0);
@@ -428,12 +428,12 @@ TEST(ReferenceSafetyFilterTest, F16SurfaceBuildsSurfacePose) {
       ExpectAssessed(result);
       EXPECT_EQ(result.decision.kind(), kSurface) << held;
       ASSERT_TRUE(result.decision.has_applied_intent());
-      const auto &applied = result.decision.applied_intent();
+      const auto& applied = result.decision.applied_intent();
       EXPECT_EQ(applied.header().frame_id(), "world_enu");
       EXPECT_EQ(applied.header().validity().state(), Validity::STATE_VALID);
       EXPECT_EQ(applied.header().source_time().seconds(), kQueryTime.seconds);
       EXPECT_EQ(applied.header().source_time().nanos(), kQueryTime.nanos);
-      const auto &pose = applied.pose().pose_world_from_body();
+      const auto& pose = applied.pose().pose_world_from_body();
       EXPECT_DOUBLE_EQ(pose.position().x(), 12.5);
       EXPECT_DOUBLE_EQ(pose.position().y(), -7.5);
       EXPECT_DOUBLE_EQ(pose.position().z(), 2.0 - 0.25);
@@ -499,7 +499,7 @@ TEST(ReferenceSafetyFilterTest, F18DigestAndSnapshotIdAreFilled) {
   const DesiredMotion accepted = PoseIntent(0.0, 0.0, -10.0);
   const DesiredMotion projected = PoseIntent(0.0, 0.0, -150.0);
   const DesiredMotion rejected = PoseIntent(500.0, 0.0, -10.0);
-  for (const DesiredMotion *requested : {&accepted, &projected, &rejected}) {
+  for (const DesiredMotion* requested : {&accepted, &projected, &rejected}) {
     const auto result =
         Eval(filter, *requested, kConstrained, FreshState(), snapshot_id);
     ExpectAssessed(result);
@@ -523,7 +523,7 @@ TEST(ReferenceSafetyFilterTest, F19InvalidInputsReturnErrors) {
   const std::vector<ReferenceSafetyFilterConfig> bad_configs = [] {
     std::vector<ReferenceSafetyFilterConfig> configs;
     const double nan = std::numeric_limits<double>::quiet_NaN();
-    for (double ReferenceSafetyFilterConfig::*field :
+    for (double ReferenceSafetyFilterConfig::* field :
          {&ReferenceSafetyFilterConfig::surface_z_m,
           &ReferenceSafetyFilterConfig::max_depth_m,
           &ReferenceSafetyFilterConfig::max_linear_speed_m_s,
@@ -556,15 +556,15 @@ TEST(ReferenceSafetyFilterTest, F19InvalidInputsReturnErrors) {
     configs.push_back(negative_age);
     return configs;
   }();
-  for (const ReferenceSafetyFilterConfig &config : bad_configs) {
+  for (const ReferenceSafetyFilterConfig& config : bad_configs) {
     ReferenceSafetyFilter filter(config);
     ExpectEmptyError(Eval(filter, PoseIntent(0.0, 0.0, -10.0)),
                      ReferenceSafetyFilterError::kInvalidConfig);
-    ExpectEmptyError(filter.Surface(SurfaceTrigger::kDeadReckoning,
-                                    PoseIntent(0.0, 0.0, -10.0), 0.0, 0.0,
-                                    Snapshot(SnapshotId()), kConstrained,
-                                    kQueryTime),
-                     ReferenceSafetyFilterError::kInvalidConfig);
+    ExpectEmptyError(
+        filter.Surface(SurfaceTrigger::kDeadReckoning,
+                       PoseIntent(0.0, 0.0, -10.0), 0.0, 0.0,
+                       Snapshot(SnapshotId()), kConstrained, kQueryTime),
+        ReferenceSafetyFilterError::kInvalidConfig);
     EXPECT_EQ(filter.next_epoch(), 1u);
   }
 
@@ -621,10 +621,10 @@ TEST(ReferenceSafetyFilterTest, EqualityAtTheLimitIsCompliant) {
   EXPECT_EQ(speed.decision.kind(), kAccept);
 }
 
-std::vector<std::string> RunSequence(std::vector<std::string> *digests) {
+std::vector<std::string> RunSequence(std::vector<std::string>* digests) {
   ReferenceSafetyFilter filter(Config());
   std::vector<std::string> serialized;
-  auto record = [&](const ReferenceSafetyFilterResult &result) {
+  auto record = [&](const ReferenceSafetyFilterResult& result) {
     EXPECT_EQ(result.error, ReferenceSafetyFilterError::kOk);
     serialized.push_back(result.decision.SerializeAsString());
     digests->push_back(result.decision.original_intent_digest());
@@ -655,5 +655,5 @@ TEST(ReferenceSafetyFilterTest, F20RepeatedSequenceIsBitIdentical) {
   EXPECT_EQ(digests_a, digests_b);
 }
 
-} // namespace
-} // namespace intrinsic::safety
+}  // namespace
+}  // namespace intrinsic::safety
