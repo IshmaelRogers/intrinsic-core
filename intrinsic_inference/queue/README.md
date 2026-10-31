@@ -222,3 +222,50 @@ All targets are opt-in.
 ```
 bazel test //intrinsic_inference/queue/...
 ```
+
+## Policy workers (L44-1)
+
+Test seams for a learned policy whose result names a `DesiredMotion` by digest
+(issue #264, `LOCK l44-1-policy-workers-v1`). Defined in `policy_worker.h`,
+target `policy_worker` (`testonly`). `inference_client`, `replay_worker` and
+`stub_worker` do not depend on it, and have no safety or vehicle dependency.
+No queue, enum or proto change. Not part of the protected manipulator baseline.
+
+- `DesiredMotionStore`: insert-only, mutex-guarded side store of
+  `DesiredMotion`, keyed by `intrinsic::safety::ComputeOriginalIntentDigest`.
+  `Find` pointers stay valid for the lifetime of the store. `Put` is
+  idempotent.
+- The result's `output_digest` is that key: the **bare 64-character lowercase
+  hex** SHA-256, with no `sha256:` prefix (unlike the #120 fixtures'
+  `sha256:...` strings, which `AssessInferenceResult` accepts as any non-empty
+  value).
+- `MockPolicyWorker(store, script)`: `script` maps an envelope
+  `common.input_digest` to a motion. Every motion is `Put` in the constructor;
+  `Complete` only reads. A hit is `kComplete` with the `StubWorker::Run` echo
+  and `output_digest` set to the motion digest. A key not in the script is
+  `kReplayMiss`. That enum value is reused: its "replay worker only" comment
+  predates this worker, and no new `WorkerStatus` exists.
+- `RecordedPolicyWorker(store, fixture_dir)`: owns a `ReplayWorker` over the
+  directory and delegates `Complete` to it unchanged, so statuses, expiry and
+  corrupt-fixture handling are #120's. Its constructor also loads every
+  `*.motion.textproto` (text format, sorted) directly in the directory into the
+  store. Unparseable ones are listed in `skipped_motion_files()`. Motion files
+  are not paired with the JSON files at load time: a result whose
+  `output_digest` has no stored motion shows up as `Find(...) == nullptr`,
+  which the caller treats as failed.
+- File reads happen only in the `RecordedPolicyWorker` constructor. No clock,
+  sleep, thread, socket, OIP or Triton.
+
+Fixtures are in `fixtures/policy/` (not matched by the #120 `fixtures`
+filegroup, which is non-recursive) and are the `policy_fixtures` filegroup:
+`active`, `late` (recorded deadline strictly before the test clock) and
+`mismatch` (digest is not that of its motion), each with a JSON and a
+`.motion.textproto`, plus `corrupt_incomplete.json` (`kCorruptFixture`),
+`corrupt_unparseable.json` (skipped, so `kReplayMiss`) and `bad.motion.textproto`
+(skipped). Digests are checked in, not generated at test time.
+
+| Target | Purpose |
+| --- | --- |
+| `policy_worker` | Store, mock and recorded policy workers. |
+| `policy_fixtures` | The checked-in policy fixtures. |
+| `policy_worker_test` | Store, mock hit/miss/tamper, recorded active/late/mismatch/corrupt, empty and missing directory, determinism. |

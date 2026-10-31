@@ -1,0 +1,4 @@
+{
+  "match": {"provenance_model_id": "uuv_shadow_policy", "input_digest": "sha256:policy-unparseable",
+  "state_epoch": 1},
+  "result": {"frame_id": "world_en

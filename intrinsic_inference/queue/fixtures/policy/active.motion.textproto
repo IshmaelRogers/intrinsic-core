@@ -1,0 +1,21 @@
+header {
+  sequence: 1
+  source_time { seconds: 1700000000 nanos: 0 }
+  receive_time { seconds: 1700000000 nanos: 1000000 }
+  source_id: "uuv_shadow_policy"
+  frame_id: "world_enu"
+  clock_domain: "utc"
+  validity { state: STATE_VALID }
+}
+pose {
+  pose_world_from_body {
+    position { x: 4 y: 0 z: -10 }
+    orientation { w: 1 }
+  }
+}
+horizon { seconds: 2 }
+confidence: 0.9
+provenance {
+  model_id: "uuv_shadow_policy"
+  model_version: "1"
+}

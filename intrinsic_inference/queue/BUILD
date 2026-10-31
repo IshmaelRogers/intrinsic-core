@@ -138,3 +138,46 @@ py_test(
         "//intrinsic_inference/envelope:inference_envelope_contract_policy_py",
     ],
 )
+
+# L44-1 policy workers (issue #264, LOCK l44-1-policy-workers-v1): scripted and
+# recorded workers whose result output_digest keys a DesiredMotion side store.
+# Test seams only, so testonly. The queue libraries above must not depend on
+# safety or vehicle targets.
+filegroup(
+    name = "policy_fixtures",
+    testonly = True,
+    srcs = glob(["fixtures/policy/*"]),
+)
+
+cc_library(
+    name = "policy_worker",
+    testonly = True,
+    srcs = ["policy_worker.cc"],
+    hdrs = ["policy_worker.h"],
+    deps = [
+        ":replay_worker",
+        ":stub_worker",
+        "//intrinsic/embodiment:frame_policy",
+        "//intrinsic/safety:safety_decision_assessor",
+        "//intrinsic_inference/envelope:inference_envelope_contract_policy",
+        "@com_google_protobuf//:protobuf",
+        "@intrinsic_apis//intrinsic/vehicle/proto:vehicle_command_cc_proto",
+    ],
+)
+
+cc_test(
+    name = "policy_worker_test",
+    size = "small",
+    srcs = ["policy_worker_test.cc"],
+    data = [":policy_fixtures"],
+    deps = [
+        ":inference_client",
+        ":policy_worker",
+        ":stub_worker",
+        "//intrinsic/embodiment:frame_policy",
+        "//intrinsic/safety:safety_decision_assessor",
+        "//intrinsic_inference/envelope:inference_envelope_contract_policy",
+        "@com_google_googletest//:gtest_main",
+        "@intrinsic_apis//intrinsic/vehicle/proto:vehicle_command_cc_proto",
+    ],
+)
