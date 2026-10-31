@@ -1,0 +1,32 @@
+{
+  "match": {
+    "provenance_model_id": "uuv_shadow_policy",
+    "input_digest": "sha256:policy-active",
+    "state_epoch": 1
+  },
+  "result": {
+    "frame_id": "world_enu",
+    "validity_state": 1,
+    "source_time": {
+      "seconds": 1700000000,
+      "nanos": 0
+    },
+    "deadline": {
+      "seconds": 1700000000,
+      "nanos": 500000000
+    },
+    "validity_horizon": {
+      "seconds": 2,
+      "nanos": 0
+    },
+    "confidence": 0.9,
+    "uncertainty": 0.05,
+    "oip": {
+      "model_name": "uuv_shadow_policy",
+      "model_version": "1",
+      "request_id": "rec-policy-active"
+    },
+    "output_digest": "c7e786200c44ce9cbeb11b37414d8af656486ee92f85bb24b7249c4af2dca797",
+    "world_snapshot_id": "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+  }
+}

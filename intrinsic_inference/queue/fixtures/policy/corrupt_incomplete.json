@@ -1,0 +1,20 @@
+{
+  "match": {
+    "provenance_model_id": "uuv_shadow_policy",
+    "input_digest": "sha256:policy-corrupt",
+    "state_epoch": 1
+  },
+  "result": {
+    "frame_id": "world_enu",
+    "validity_state": 1,
+    "source_time": {
+      "seconds": 1700000000,
+      "nanos": 0
+    },
+    "oip": {
+      "model_name": "uuv_shadow_policy",
+      "model_version": "1",
+      "request_id": "rec-policy-corrupt"
+    }
+  }
+}
