@@ -98,3 +98,54 @@ bazel test //intrinsic/simulation/gazebo/scenarios/uuv_reference:all
 L43-5, L43-6, L44-2, L44-4 and L44-9 append their targets and sections below
 the existing ones in `BUILD` and in this file. They do not reorder or edit the
 playback entries.
+
+## Shadow policy runner (L44-2, #266)
+
+`ShadowPolicyRunner` (`shadow_policy_runner.{h,cc}`) runs a policy worker in
+shadow once per sim step through the L44-1 `InferenceClient`, and classifies
+every request as absent, failed, late or active. Contract: LOCK
+`l44-2-shadow-policy-runner-v1` on #266, on top of S44-1 (#260) D44-4 A and
+D44-1 A. Plain C++, sim and test only: no Gazebo, HAL, driver, socket, OIP or
+Triton, no clock read, no sleep, no thread. `:shadow_policy_runner` is
+`testonly` because `:policy_worker` is.
+
+### Decisions
+
+| # | Rule |
+| --- | --- |
+| P1 | The runner owns the sim clock. Its client clock returns `now_`, and `Step` sets `now_` from `sim_time_ns` before any queue call. The client never has an empty clock. |
+| P2 | `dt_ns > 0` and `sim_time_ns >= 0` are integers. The clock is `clock_origin + sim_time_ns` in integer arithmetic (`clock_origin` defaults to `{0, 0}`). `deadline_ns = sim_time_ns + 2 * dt_ns` (N = 2, `kShadowDeadlineSteps`), and a request is late when `sim_time_ns > deadline_ns`. The recorded L44-1 fixtures need `clock_origin = {1700000000, 0}`. |
+| P3 | `StepResult{error, submitted_request_id, resolutions}`. One resolution per request that reached a terminal class this step, oldest `submit_k` first, then a rejected submit of this step. Absent: exactly one `kAbsent`. |
+| P4 | Step order: validate and set the clock; no worker is `kAbsent`; `Tick(ticks_per_step)` when > 0; poll every pending request oldest first (a terminal one is reaped and classified, an in-progress one past its deadline is cancelled and is `kLate`); submit this step's envelope (rejected is `kFailed`, accepted is polled and reaped if already terminal). In tick mode a request is never completed in the step that submitted it. |
+| P5 | `complete_on_submit = true` and `ticks_per_step = 0` by default, passed through to the queue. |
+| P6 | Envelope: header and validity present, `STATE_VALID`, `frame_id = world_enu`, `source_time = now`, `deadline = origin + deadline_ns`, `validity_horizon = 2 * dt`, OIP request `{model_name, model_version, "shadow-<k>"}`, provenance `model_id`. `input_digest`, `state_epoch` and `world_snapshot_id` come verbatim from the caller (P7). No confidence, uncertainty or metadata. Defaults are the L44-1 fixtures' `uuv_shadow_policy` / `1`. |
+| P9 | `ClassifySubmitStatus` and `ClassifyTerminal` are public pure functions, tested over every `InferenceQueueStatus`. |
+| P10 | `StepResult.error = true`, no queue call and no state change when `dt_ns <= 0`, a worker has no store, `clock_origin` is negative or has nanos out of range, `k` or `sim_time_ns` does not increase, or `sim_time_ns < 0`. The runner also rejects values whose deadline or clock would overflow `int64`. |
+| P11 | A cancel race is not handled beyond the `kAlreadyComplete` branch: the runner is single threaded and the only caller of its client. |
+
+### Classes
+
+| Class | Source |
+| --- | --- |
+| `kFailed` | Submit `kQueueFull`, `kInvalidEnvelope`, `kDeadlineExpiredAtSubmit`, `kShutdown`. Terminal `kReplayMiss`, `kCorruptFixture`. `kComplete` whose `output_digest` is not in the store (`digest_mismatch = true`). Any other status. |
+| `kLate` | Terminal `kReplayExpired` (result shell kept, no motion), or `kCancelled` from the runner's own cancel. |
+| `kActive` | `kComplete` with a motion found in the store (copied into the resolution). |
+| `kAbsent` | No worker configured. |
+
+### Corrections to the issue text
+
+- F5: with one-dt step spacing and N = 2, runner-driven cancels keep at most 3
+  requests outstanding, so "9 submits with no completion" never fills the
+  queue. The queue-full test uses 9 steps inside one deadline window
+  (`sim_time_ns = k` ns, tick mode, 0 ticks).
+- F6: `kDeadlineExpiredAtSubmit` is unreachable through `Step` (the deadline is
+  never before the submit clock). It is covered on the pure classifier.
+- F7: `receive_time` stamping and the wire `ShadowPolicyOutcome` record belong
+  to S44-2 and L44-6, not to this leaf. `InferenceEnvelopeView` has no receive
+  time.
+
+### Build and test
+
+```
+bazel test //intrinsic/simulation/gazebo/scenarios/uuv_reference:shadow_policy_runner_test
+```
