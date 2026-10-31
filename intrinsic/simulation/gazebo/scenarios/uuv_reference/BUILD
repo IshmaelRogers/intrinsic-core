@@ -60,3 +60,43 @@ cc_test(
 )
 
 # Later leaves append below.
+
+# L44-2 shadow policy runner (issue #266, LOCK l44-2-shadow-policy-runner-v1).
+# Testonly: it depends on the testonly //intrinsic_inference/queue:policy_worker
+# for DesiredMotionStore.
+cc_library(
+    name = "shadow_policy_runner",
+    testonly = True,
+    srcs = ["shadow_policy_runner.cc"],
+    hdrs = ["shadow_policy_runner.h"],
+    deps = [
+        "//intrinsic/embodiment:frame_policy",
+        "//intrinsic_inference/envelope:inference_envelope_contract_policy",
+        "//intrinsic_inference/queue:inference_client",
+        "//intrinsic_inference/queue:policy_worker",
+        "//intrinsic_inference/queue:stub_worker",
+        "@intrinsic_apis//intrinsic/vehicle/proto:vehicle_command_cc_proto",
+    ],
+)
+
+cc_test(
+    name = "shadow_policy_runner_test",
+    size = "small",
+    srcs = ["shadow_policy_runner_test.cc"],
+    data = [
+        "shadow_policy_runner.cc",
+        "shadow_policy_runner.h",
+        "//intrinsic_inference/queue:policy_fixtures",
+    ],
+    deps = [
+        ":shadow_policy_runner",
+        "//intrinsic/embodiment:frame_policy",
+        "//intrinsic_inference/envelope:inference_envelope_contract_policy",
+        "//intrinsic_inference/queue:inference_client",
+        "//intrinsic_inference/queue:policy_worker",
+        "//intrinsic_inference/queue:stub_worker",
+        "@com_google_googletest//:gtest_main",
+        "@com_google_protobuf//:protobuf",
+        "@intrinsic_apis//intrinsic/vehicle/proto:vehicle_command_cc_proto",
+    ],
+)
