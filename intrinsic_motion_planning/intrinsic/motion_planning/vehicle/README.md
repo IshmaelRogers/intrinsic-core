@@ -647,6 +647,39 @@ obstacle), which is why the replan picks a different route. A stale
 `snapshot_id` against the updated descriptor is `kInvalidRequest`. Each plan
 is repeated and compared sample for sample.
 
+## DesiredMotion plan adapter (L43-2)
+
+`AdaptDesiredMotionToPlanRequest(motion, start, trajectory_id)` maps a pose
+`DesiredMotionView` and a caller-supplied start state to a `VehiclePlanRequest`.
+It is a pure function: no planner call, registry, World read, clock, or I/O.
+Callers that hold the `DesiredMotion` proto map it with
+`intrinsic::safety::DesiredMotionViewFromProto`. There is no Python mirror.
+
+| Language | Target | Header |
+| --- | --- | --- |
+| C++ | `//intrinsic_motion_planning/intrinsic/motion_planning/vehicle:desired_motion_plan_adapter` | `intrinsic/motion_planning/vehicle/desired_motion_plan_adapter.h` |
+
+Check order, first defect wins:
+
+| Order | Check | Status |
+| --- | --- | --- |
+| 1 | `AssessDesiredMotion(motion).accepted` is false (empty, not `STATE_VALID`, or a structural defect, including a malformed twist) | `kInvalidMotion` |
+| 2 | Objective is not pose (a well-formed twist or trajectory) | `kUnsupportedObjective` |
+| 3 | Pose `frame_id` is not exactly `world_enu` (no NED conversion) | `kUnsupportedFrame` |
+| 4 | `Validate(start, VehicleStateBounds{})` is not `kOk` | `kInvalidStart` |
+
+On `kOk` the request has empty labels, the given `trajectory_id` (an empty id
+is copied, so the planner stamps its own), `states_present == true`,
+`start_state` equal to `start`, and a goal state from the motion pose with an
+all-zero twist (a pose target is a rest goal). Doubles are copied verbatim: no
+quaternion sign canonicalisation, no renormalisation, and `-0.0` is kept.
+`confidence`, `horizon`, `provenance`, and labels are not mapped. Every non-`kOk`
+result carries a default `VehiclePlanRequest`.
+
+The test runs the replan fixture (epoch 1, `Fx = 10, -10, 5, -5`) through the
+adapter and the kinodynamic baseline: a pose target `(1, 0, 0)` plans to 5
+samples ending at `t = 2`, bit-identical to the hand-built request.
+
 ## Out of scope
 
 * Sampling, RRT, SST, PRM, heuristic A*, anytime repair, trajectory
